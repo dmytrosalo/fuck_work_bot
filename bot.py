@@ -6,6 +6,7 @@ For deployment on Fly.io
 import os
 import random
 import logging
+from datetime import time
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from work_classifier import WorkClassifier
@@ -22,45 +23,84 @@ classifier = WorkClassifier()
 # Statistics per user: {user_id: {'work': 0, 'personal': 0, 'name': ''}}
 stats = {}
 
+# Daily statistics per user: {user_id: {'work': 0, 'personal': 0, 'name': ''}}
+daily_stats = {}
+
 # Muted users (no tracking, no replies)
 muted_users = set()
 
-# Funny work detection messages
+# Chat IDs where bot is active (for daily report)
+active_chats = set()
+
+# Savage work detection messages
 WORK_REPLIES = [
-    "Здається, попався 🕵️",
-    "Оце робота в чаті! Ай-ай-ай 👀",
-    "Хтось тут працює замість того щоб відпочивати 🤨",
-    "Воу-воу, полегше з роботою! 🛑",
-    "Робота detected! Alarm! 🚨",
-    "Знову ця робота... Коли вже відпочинеш? 😩",
-    "Ловимо на гарячому! Робочі теми в чаті! 🔥",
-    "Так-так, бачу шо робиш... працюєш 👁️",
-    "Work-life balance порушено! ⚖️",
-    "Ей, це ж робота! Фу таким бути 🙈",
-    "Знову про роботу? Серйозно? 😒",
-    "Робота в неробочий час? Ганьба! 🔔",
-    "Стоп-стоп, тут пахне роботою 👃",
-    "О, хтось кар'єрист тут 📈",
-    "Менше роботи, більше мемів! 🐸",
-    "Роботоголік spotted! 🎯",
-    "Це що, продуктивність? В цьому чаті?! 😱",
-    "Йой, знову ця корпоративна лексика 🏢",
-    "Тихо! Чую звук роботи... 🔊",
-    "А можна без роботи? Ні? Ок... 😔",
-    "Оу, хтось дуже відповідальний 🫡",
-    "Робота? В МОЄму чаті? 😤",
-    "Увага! Зафіксовано робочу активність! 📡",
-    "Ех, знову ці дорослі розмови про роботу 👴",
-    "Так, я все бачу. Все записую. 📝",
-    "Невже не можна просто покидати мемчики? 🤷",
-    "От би замість роботи щось цікаве... 💭",
-    "Ого, хтось тут серйозний! 🧐",
-    "Пахне овертаймом... 🕐",
-    "Стривай, це що - відповідальність?! 😰",
+    "О, хтось знову не може відпустити роботу навіть у чаті 🤡",
+    "Так, ми всі вражені твоєю зайнятістю. Ні, насправді ні.",
+    "Чат для відпочинку, а не для твоїх робочих драм",
+    "Ти взагалі вмієш говорити про щось крім роботи?",
+    "Вау, робота. Як оригінально. Всім дуже цікаво.",
+    "Хтось явно не вміє відділяти роботу від життя",
+    "Знову ця корпоративна нудьга в чаті...",
+    "Ми зрозуміли, ти працюєш. Можна далі жити?",
+    "Робота-робота... А особистість у тебе є?",
+    "Чергова робоча тема? Як несподівано від тебе.",
+    "Ти на годиннику чи просто не можеш зупинитись?",
+    "Слухай, є інші теми для розмов. Google допоможе.",
+    "О ні, знову хтось важливий зі своєю важливою роботою",
+    "Так, так, дедлайни, мітинги, ми в захваті. Далі що?",
+    "Може краще в робочий чат? Або в щоденник?",
+    "Друже, це чат, а не твій LinkedIn",
+    "Знову робочі проблеми? Психотерапевт дешевший",
+    "Цікаво, ти й уві сні про роботу говориш?",
+    "Нагадую: тут люди відпочивають від роботи. Ну, крім тебе.",
+    "Ого, ще одне повідомлення про роботу! Який сюрприз!",
+    "Може хоч раз поговоримо про щось людське?",
+    "Твій роботодавець не платить за рекламу в цьому чаті",
+    "Роботоголізм — це діагноз, до речі",
+    "Дивно, що ти ще не створив окремий чат для своїх тікетів",
+    "О, знову ти зі своїми важливими справами. Фанфари!",
+    "Тут є правило: хто пише про роботу — той лох",
+    "Знаєш що крутіше за роботу? Буквально все.",
+    "А ти точно не бот? Бо тільки боти так багато про роботу",
+    "Ми не твої колеги, можеш розслабитись",
+    "Хтось забув вимкнути робочий режим 🙄",
 ]
 
 # Random cars for /car command
 from cars_db import CARS, get_random_car, get_coolness_emoji, get_hp_comment
+
+
+def get_car_by_work_percentage(work_pct):
+    """Returns car based on work percentage - more work = worse car"""
+    if work_pct >= 80:
+        # 80-100% work = worst cars (coolness 2)
+        pool = [c for c in CARS if c[2] <= 2]
+    elif work_pct >= 60:
+        # 60-80% work = bad cars (coolness 3)
+        pool = [c for c in CARS if c[2] == 3]
+    elif work_pct >= 40:
+        # 40-60% work = average cars (coolness 4-5)
+        pool = [c for c in CARS if c[2] in [4, 5]]
+    elif work_pct >= 20:
+        # 20-40% work = good cars (coolness 6-7)
+        pool = [c for c in CARS if c[2] in [6, 7]]
+    elif work_pct >= 10:
+        # 10-20% work = great cars (coolness 8-9)
+        pool = [c for c in CARS if c[2] in [8, 9]]
+    else:
+        # <10% work = best cars (coolness 10)
+        pool = [c for c in CARS if c[2] == 10]
+
+    if not pool:
+        pool = CARS
+
+    car = random.choice(pool)
+    return {
+        'name': car[0],
+        'hp': car[1],
+        'coolness': car[2],
+        'comment': car[3]
+    }
 
 
 async def car(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,10 +108,10 @@ async def car(update: Update, context: ContextTypes.DEFAULT_TYPE):
     car_data = get_random_car()
     user = update.effective_user
     name = user.first_name or user.username or "Анонім"
-    
+
     coolness_emoji = get_coolness_emoji(car_data['coolness'])
     hp_comment = get_hp_comment(car_data['hp'])
-    
+
     await update.message.reply_text(
         f"🎰 *{name}*, твоя машина:\n\n"
         f"🚗 *{car_data['name']}*\n"
@@ -179,11 +219,15 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get user info
     user = update.effective_user
     user_id = user.id
-    
+    chat_id = update.effective_chat.id
+
+    # Track active chats for daily report
+    active_chats.add(chat_id)
+
     # Skip if user is muted
     if user_id in muted_users:
         return
-    
+
     user_name = user.first_name or user.username or str(user_id)
 
     result = classifier.predict(text)
@@ -191,23 +235,88 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Initialize user stats if needed
     if user_id not in stats:
         stats[user_id] = {'work': 0, 'personal': 0, 'name': user_name}
+    if user_id not in daily_stats:
+        daily_stats[user_id] = {'work': 0, 'personal': 0, 'name': user_name}
 
     # Update statistics
     if result['is_work']:
         stats[user_id]['work'] += 1
+        daily_stats[user_id]['work'] += 1
     else:
         stats[user_id]['personal'] += 1
+        daily_stats[user_id]['personal'] += 1
 
     # Log
     logger.info(f"[{user_name}] [{result['label']}] ({result['confidence']:.0%}) {text[:50]}...")
 
     # Reply only if work with 95%+ confidence
     if result['is_work'] and result['confidence'] >= 0.95:
+        # React with clown emoji
+        try:
+            await context.bot.set_message_reaction(
+                chat_id=update.effective_chat.id,
+                message_id=update.message.message_id,
+                reaction=[{"type": "emoji", "emoji": "🤡"}]
+            )
+        except Exception as e:
+            logger.warning(f"Reaction failed: {e}")
+
+        # Text reply
         reply = random.choice(WORK_REPLIES)
         await update.message.reply_text(
             f"{reply} ({result['confidence']:.0%})",
             quote=True
         )
+
+
+async def daily_report(context: ContextTypes.DEFAULT_TYPE):
+    """Send daily car assignment based on work stats"""
+    global daily_stats
+
+    if not daily_stats:
+        return
+
+    # Build report
+    lines = ["🚗 *ЩОДЕННИЙ РОЗПОДІЛ МАШИН* 🚗\n"]
+    lines.append("_Чим більше робочих повідомлень — тим гірша машина_\n")
+
+    # Sort by work percentage (most work first = worst car first)
+    sorted_users = []
+    for user_id, data in daily_stats.items():
+        total = data['work'] + data['personal']
+        if total > 0:
+            work_pct = data['work'] / total * 100
+            sorted_users.append((user_id, data, work_pct, total))
+
+    sorted_users.sort(key=lambda x: x[2], reverse=True)
+
+    for user_id, data, work_pct, total in sorted_users:
+        name = data['name']
+        car = get_car_by_work_percentage(work_pct)
+        coolness_emoji = get_coolness_emoji(car['coolness'])
+
+        lines.append(f"👤 *{name}*")
+        lines.append(f"   📊 {total} повідомлень ({work_pct:.0f}% робочих)")
+        lines.append(f"   🚗 {car['name']}")
+        lines.append(f"   {coolness_emoji} Крутість: {car['coolness']}/10")
+        lines.append(f"   💬 _{car['comment']}_\n")
+
+    report = "\n".join(lines)
+
+    # Send to all active chats
+    for chat_id in active_chats:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=report,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send daily report to {chat_id}: {e}")
+
+    # Reset daily stats
+    daily_stats = {}
+    logger.info("Daily report sent, stats reset")
 
 
 def main():
@@ -224,6 +333,16 @@ def main():
     app.add_handler(CommandHandler("mute", mute))
     app.add_handler(CommandHandler("unmute", unmute))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+
+    # Schedule daily report at 23:00 Kyiv time (UTC+2 or UTC+3)
+    # Using UTC+2 (21:00 UTC)
+    job_queue = app.job_queue
+    job_queue.run_daily(
+        daily_report,
+        time=time(hour=21, minute=0, second=0),  # 23:00 Kyiv (UTC+2)
+        name="daily_car_report"
+    )
+    logger.info("Daily report scheduled for 23:00 Kyiv time")
 
     logger.info("Bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
