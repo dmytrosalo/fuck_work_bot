@@ -4,9 +4,11 @@ For deployment on Fly.io
 """
 
 import os
+import json
 import random
 import logging
 from datetime import time
+from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from work_classifier import WorkClassifier
@@ -20,17 +22,43 @@ logger = logging.getLogger(__name__)
 # Initialize classifier
 classifier = WorkClassifier()
 
-# Statistics per user: {user_id: {'work': 0, 'personal': 0, 'name': ''}}
-stats = {}
+# Data directory (persistent on Fly.io with volume)
+DATA_DIR = Path(os.environ.get('DATA_DIR', '/data'))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Daily statistics per user: {user_id: {'work': 0, 'personal': 0, 'name': ''}}
-daily_stats = {}
+STATS_FILE = DATA_DIR / 'stats.json'
+DAILY_STATS_FILE = DATA_DIR / 'daily_stats.json'
+MUTED_FILE = DATA_DIR / 'muted.json'
+CHATS_FILE = DATA_DIR / 'chats.json'
 
-# Muted users (no tracking, no replies)
-muted_users = set()
 
-# Chat IDs where bot is active (for daily report)
-active_chats = set()
+def load_json(filepath, default):
+    """Load JSON file or return default"""
+    try:
+        if filepath.exists():
+            with open(filepath, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading {filepath}: {e}")
+    return default
+
+
+def save_json(filepath, data):
+    """Save data to JSON file"""
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving {filepath}: {e}")
+
+
+# Load persistent data
+stats = load_json(STATS_FILE, {})
+daily_stats = load_json(DAILY_STATS_FILE, {})
+muted_users = set(load_json(MUTED_FILE, []))
+active_chats = set(load_json(CHATS_FILE, []))
+
+logger.info(f"Loaded stats: {len(stats)} users, {len(daily_stats)} daily, {len(muted_users)} muted, {len(active_chats)} chats")
 
 # Savage work detection messages
 WORK_REPLIES = [
@@ -192,6 +220,7 @@ async def mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Disable tracking for user"""
     user_id = update.effective_user.id
     muted_users.add(user_id)
+    save_json(MUTED_FILE, list(muted_users))
     await update.message.reply_text(
         "🔇 Трекінг вимкнено. Я більше не буду:\n"
         "• Відстежувати твої повідомлення\n"
@@ -204,6 +233,7 @@ async def unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enable tracking for user"""
     user_id = update.effective_user.id
     muted_users.discard(user_id)
+    save_json(MUTED_FILE, list(muted_users))
     await update.message.reply_text(
         "🔊 Трекінг увімкнено! Тепер я знову слідкую за тобою 👀"
     )
@@ -232,19 +262,27 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = classifier.predict(text)
 
-    # Initialize user stats if needed
-    if user_id not in stats:
-        stats[user_id] = {'work': 0, 'personal': 0, 'name': user_name}
-    if user_id not in daily_stats:
-        daily_stats[user_id] = {'work': 0, 'personal': 0, 'name': user_name}
+    # Initialize user stats if needed (use string keys for JSON)
+    user_id_str = str(user_id)
+    if user_id_str not in stats:
+        stats[user_id_str] = {'work': 0, 'personal': 0, 'name': user_name}
+    if user_id_str not in daily_stats:
+        daily_stats[user_id_str] = {'work': 0, 'personal': 0, 'name': user_name}
 
     # Update statistics
     if result['is_work']:
-        stats[user_id]['work'] += 1
-        daily_stats[user_id]['work'] += 1
+        stats[user_id_str]['work'] += 1
+        daily_stats[user_id_str]['work'] += 1
     else:
-        stats[user_id]['personal'] += 1
-        daily_stats[user_id]['personal'] += 1
+        stats[user_id_str]['personal'] += 1
+        daily_stats[user_id_str]['personal'] += 1
+
+    # Save periodically (every 10 messages to reduce disk writes)
+    total_msgs = stats[user_id_str]['work'] + stats[user_id_str]['personal']
+    if total_msgs % 10 == 0:
+        save_json(STATS_FILE, stats)
+        save_json(DAILY_STATS_FILE, daily_stats)
+        save_json(CHATS_FILE, list(active_chats))
 
     # Log
     logger.info(f"[{user_name}] [{result['label']}] ({result['confidence']:.0%}) {text[:50]}...")
@@ -308,7 +346,8 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Failed to send daily report to {chat_id}: {e}")
 
     # Reset daily stats
-    daily_stats = {}
+    daily_stats.clear()
+    save_json(DAILY_STATS_FILE, daily_stats)
     logger.info("Daily report sent, stats reset")
 
 
