@@ -461,12 +461,10 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats[user_id_str]['personal'] += 1
         daily_stats[user_id_str]['personal'] += 1
 
-    # Save periodically (every 10 messages to reduce disk writes)
-    total_msgs = stats[user_id_str]['work'] + stats[user_id_str]['personal']
-    if total_msgs % 10 == 0:
-        save_json(STATS_FILE, stats)
-        save_json(DAILY_STATS_FILE, daily_stats)
-        save_json(CHATS_FILE, list(active_chats))
+    # Save stats
+    save_json(STATS_FILE, stats)
+    save_json(DAILY_STATS_FILE, daily_stats)
+    save_json(CHATS_FILE, list(active_chats))
 
     # Log
     logger.info(f"[{user_name}] [{result['label']}] ({result['confidence']:.0%}) {text[:50]}...")
