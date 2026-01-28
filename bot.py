@@ -63,7 +63,42 @@ balances = load_json(BALANCE_FILE, {})
 logger.info(f"Loaded stats: {len(stats)} users, {len(daily_stats)} daily, {len(muted_users)} muted, {len(active_chats)} chats, {len(balances)} balances")
 
 
-# === SLOTS GAME ===
+# === ROASTS AND COMPLIMENTS ===
+from jokes_db import get_random_roast, get_random_compliment
+
+
+async def roast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Roast a user"""
+    # Get target user
+    if update.message.reply_to_message:
+        target = update.message.reply_to_message.from_user
+        target_name = target.first_name or target.username or "Анонім"
+    elif context.args:
+        target_name = " ".join(context.args).replace("@", "")
+    else:
+        # Roast yourself
+        target_name = update.effective_user.first_name or "Хтось"
+
+    roast_text = get_random_roast(target_name)
+
+    await update.message.reply_text(f"🔥 {roast_text}")
+
+
+async def compliment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Compliment a user"""
+    # Get target user
+    if update.message.reply_to_message:
+        target = update.message.reply_to_message.from_user
+        target_name = target.first_name or target.username or "Анонім"
+    elif context.args:
+        target_name = " ".join(context.args).replace("@", "")
+    else:
+        # Compliment yourself
+        target_name = update.effective_user.first_name or "Ти"
+
+    compliment_text = get_random_compliment(target_name)
+
+    await update.message.reply_text(f"💖 {compliment_text}")
 SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '🔔', '⭐', '7️⃣', '💎']
 SLOT_WEIGHTS = [25, 20, 18, 15, 10, 7, 4, 1]  # probability weights
 
@@ -342,7 +377,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/slots <ставка> - слоти 🎰\n"
         "/balance - баланс 💰\n"
         "/top - лідерборд 🏆\n"
-        "/bonus - щоденний бонус 🎁",
+        "/bonus - щоденний бонус 🎁\n"
+        "/roast - підколка 🔥\n"
+        "/compliment - комплімент 💖",
         parse_mode="Markdown"
     )
 
@@ -553,6 +590,8 @@ def main():
     app.add_handler(CommandHandler("top", leaderboard))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("bonus", daily_bonus))
+    app.add_handler(CommandHandler("roast", roast))
+    app.add_handler(CommandHandler("compliment", compliment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
     # Schedule daily report at 23:00 Kyiv time (UTC+2 or UTC+3)
