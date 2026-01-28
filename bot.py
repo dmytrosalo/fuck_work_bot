@@ -30,6 +30,7 @@ STATS_FILE = DATA_DIR / 'stats.json'
 DAILY_STATS_FILE = DATA_DIR / 'daily_stats.json'
 MUTED_FILE = DATA_DIR / 'muted.json'
 CHATS_FILE = DATA_DIR / 'chats.json'
+BALANCE_FILE = DATA_DIR / 'balance.json'
 
 
 def load_json(filepath, default):
@@ -57,8 +58,184 @@ stats = load_json(STATS_FILE, {})
 daily_stats = load_json(DAILY_STATS_FILE, {})
 muted_users = set(load_json(MUTED_FILE, []))
 active_chats = set(load_json(CHATS_FILE, []))
+balances = load_json(BALANCE_FILE, {})
 
-logger.info(f"Loaded stats: {len(stats)} users, {len(daily_stats)} daily, {len(muted_users)} muted, {len(active_chats)} chats")
+logger.info(f"Loaded stats: {len(stats)} users, {len(daily_stats)} daily, {len(muted_users)} muted, {len(active_chats)} chats, {len(balances)} balances")
+
+
+# === SLOTS GAME ===
+SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '🔔', '⭐', '7️⃣', '💎']
+SLOT_WEIGHTS = [25, 20, 18, 15, 10, 7, 4, 1]  # probability weights
+
+SLOT_PAYOUTS = {
+    ('💎', '💎', '💎'): 100,  # Jackpot
+    ('7️⃣', '7️⃣', '7️⃣'): 50,
+    ('⭐', '⭐', '⭐'): 25,
+    ('🔔', '🔔', '🔔'): 15,
+    ('🍇', '🍇', '🍇'): 10,
+    ('🍊', '🍊', '🍊'): 8,
+    ('🍋', '🍋', '🍋'): 5,
+    ('🍒', '🍒', '🍒'): 3,
+}
+
+STARTING_BALANCE = 100
+DEFAULT_BET = 10
+
+
+def get_balance(user_id: str) -> int:
+    """Get user balance, create if not exists"""
+    if user_id not in balances:
+        balances[user_id] = {'coins': STARTING_BALANCE, 'name': ''}
+    return balances[user_id]['coins']
+
+
+def update_balance(user_id: str, amount: int, name: str = ''):
+    """Update user balance"""
+    if user_id not in balances:
+        balances[user_id] = {'coins': STARTING_BALANCE, 'name': name}
+    balances[user_id]['coins'] += amount
+    if name:
+        balances[user_id]['name'] = name
+    save_json(BALANCE_FILE, balances)
+
+
+def spin_slots():
+    """Spin the slot machine"""
+    return tuple(random.choices(SLOT_SYMBOLS, weights=SLOT_WEIGHTS, k=3))
+
+
+def calculate_winnings(result: tuple, bet: int) -> int:
+    """Calculate winnings based on result"""
+    # Check for three of a kind
+    if result in SLOT_PAYOUTS:
+        return bet * SLOT_PAYOUTS[result]
+
+    # Two of a kind
+    if result[0] == result[1] or result[1] == result[2] or result[0] == result[2]:
+        return bet  # Return bet (no loss)
+
+    return 0  # Loss
+
+
+async def slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Play slots"""
+    user = update.effective_user
+    user_id = str(user.id)
+    user_name = user.first_name or user.username or "Анонім"
+
+    # Parse bet amount
+    bet = DEFAULT_BET
+    if context.args:
+        try:
+            bet = int(context.args[0])
+            if bet < 1:
+                bet = 1
+            elif bet > 1000:
+                bet = 1000
+        except ValueError:
+            pass
+
+    # Check balance
+    balance = get_balance(user_id)
+    if balance < bet:
+        await update.message.reply_text(
+            f"💸 Недостатньо коінів!\n"
+            f"Твій баланс: {balance} 🪙\n"
+            f"Ставка: {bet} 🪙\n\n"
+            f"_Почекай завтра на поповнення або грай менше_",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Spin!
+    result = spin_slots()
+    winnings = calculate_winnings(result, bet)
+    profit = winnings - bet
+
+    # Update balance
+    update_balance(user_id, profit, user_name)
+    new_balance = get_balance(user_id)
+
+    # Build message
+    slot_display = f"╔══════════╗\n║ {result[0]} │ {result[1]} │ {result[2]} ║\n╚══════════╝"
+
+    if winnings > bet:
+        # Big win
+        if result == ('💎', '💎', '💎'):
+            msg = f"🎰 *ДЖЕКПОТ!!!* 🎰\n\n{slot_display}\n\n💎💎💎 НЕЙМОВІРНО! 💎💎💎\n\n"
+        elif result == ('7️⃣', '7️⃣', '7️⃣'):
+            msg = f"🎰 *MEGA WIN!* 🎰\n\n{slot_display}\n\n🔥🔥🔥 КРАСАВА! 🔥🔥🔥\n\n"
+        else:
+            msg = f"🎰 *ВИГРАШ!* 🎰\n\n{slot_display}\n\n"
+        msg += f"Ставка: {bet} 🪙\nВиграш: +{winnings} 🪙\nБаланс: {new_balance} 🪙"
+    elif winnings == bet:
+        msg = f"🎰 Майже! 🎰\n\n{slot_display}\n\nСтавка повернута\nБаланс: {new_balance} 🪙"
+    else:
+        msg = f"🎰 Не пощастило 🎰\n\n{slot_display}\n\nВтрата: -{bet} 🪙\nБаланс: {new_balance} 🪙"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check balance"""
+    user = update.effective_user
+    user_id = str(user.id)
+    user_name = user.first_name or user.username or "Анонім"
+
+    bal = get_balance(user_id)
+    if user_id in balances:
+        balances[user_id]['name'] = user_name
+
+    await update.message.reply_text(
+        f"💰 *Баланс {user_name}*\n\n"
+        f"🪙 {bal} коінів\n\n"
+        f"_/slots <ставка> - грати (за замовч. {DEFAULT_BET})_",
+        parse_mode="Markdown"
+    )
+
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show casino leaderboard"""
+    if not balances:
+        await update.message.reply_text("🏆 Ще немає гравців!")
+        return
+
+    # Sort by coins
+    sorted_players = sorted(
+        balances.items(),
+        key=lambda x: x[1]['coins'],
+        reverse=True
+    )[:10]  # Top 10
+
+    lines = ["🏆 *ЛІДЕРБОРД КАЗИНО* 🏆\n"]
+
+    medals = ['🥇', '🥈', '🥉']
+    for i, (user_id, data) in enumerate(sorted_players):
+        medal = medals[i] if i < 3 else f"{i+1}."
+        name = data.get('name', 'Unknown')
+        coins = data['coins']
+        lines.append(f"{medal} {name}: {coins} 🪙")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Give daily bonus coins"""
+    user = update.effective_user
+    user_id = str(user.id)
+    user_name = user.first_name or user.username or "Анонім"
+
+    # Simple daily bonus (in production would check last claim time)
+    bonus = 50
+    update_balance(user_id, bonus, user_name)
+    new_balance = get_balance(user_id)
+
+    await update.message.reply_text(
+        f"🎁 *Щоденний бонус!*\n\n"
+        f"+{bonus} 🪙\n"
+        f"Баланс: {new_balance} 🪙",
+        parse_mode="Markdown"
+    )
 
 # Savage work detection messages
 WORK_REPLIES = [
@@ -155,11 +332,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 Hello! Я тут рішатиму чи твій текст робота чи персональний:\n\n"
         "💼 клята робота \n"
         "😎 персональне\n\n"
+        "*Команди:*\n"
         "/check <text> - перевірити текст\n"
         "/stats - статистика\n"
-        "/car - яка твоя машина? 🚗\n"
         "/mute - вимкнути трекінг\n"
-        "/unmute - увімкнути трекінг"
+        "/unmute - увімкнути трекінг\n\n"
+        "*Розваги:*\n"
+        "/car - яка твоя машина? 🚗\n"
+        "/slots <ставка> - слоти 🎰\n"
+        "/balance - баланс 💰\n"
+        "/top - лідерборд 🏆\n"
+        "/bonus - щоденний бонус 🎁",
+        parse_mode="Markdown"
     )
 
 
@@ -364,6 +548,13 @@ def main():
     app.add_handler(CommandHandler("car", car))
     app.add_handler(CommandHandler("mute", mute))
     app.add_handler(CommandHandler("unmute", unmute))
+    app.add_handler(CommandHandler("slots", slots))
+    app.add_handler(CommandHandler("slot", slots))
+    app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("bal", balance))
+    app.add_handler(CommandHandler("top", leaderboard))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("bonus", daily_bonus))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
     # Schedule daily report at 23:00 Kyiv time (UTC+2 or UTC+3)
