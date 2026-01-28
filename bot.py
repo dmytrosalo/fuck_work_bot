@@ -253,20 +253,18 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result['is_work'] and result['confidence'] >= 0.95:
         # React with clown emoji
         try:
+            from telegram import ReactionTypeEmoji
             await context.bot.set_message_reaction(
                 chat_id=update.effective_chat.id,
                 message_id=update.message.message_id,
-                reaction=[{"type": "emoji", "emoji": "🤡"}]
+                reaction=[ReactionTypeEmoji("🤡")]
             )
         except Exception as e:
             logger.warning(f"Reaction failed: {e}")
 
         # Text reply
         reply = random.choice(WORK_REPLIES)
-        await update.message.reply_text(
-            f"{reply} ({result['confidence']:.0%})",
-            quote=True
-        )
+        await update.message.reply_text(f"{reply} ({result['confidence']:.0%})")
 
 
 async def daily_report(context: ContextTypes.DEFAULT_TYPE):
