@@ -253,12 +253,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result['is_work'] and result['confidence'] >= 0.95:
         # React with clown emoji
         try:
-            from telegram import ReactionTypeEmoji
-            await context.bot.set_message_reaction(
-                chat_id=update.effective_chat.id,
-                message_id=update.message.message_id,
-                reaction=[ReactionTypeEmoji("🤡")]
-            )
+            await update.message.set_reaction(reaction="🤡")
         except Exception as e:
             logger.warning(f"Reaction failed: {e}")
 
