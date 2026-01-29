@@ -1022,6 +1022,58 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Daily report sent, stats reset")
 
 
+async def generate_startup_idea_with_gemini() -> str:
+    """Generate a funny/genius startup idea using Gemini"""
+    if not GEMINI_API_KEY:
+        return ""
+
+    prompt = """Згенеруй одну коротку, смішну або геніальну ідею для стартапу українською мовою.
+Це може бути щось абсурдне, але з ноткою логіки.
+Приклад: "Uber для котів - щоб вони могли їздити в гості до інших котів без людей."
+Без вступу, тільки сама ідея."""
+
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 1.0}
+                },
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status != 200:
+                    logger.error(f"Gemini API error (startup): {response.status}")
+                    return ""
+
+                data = await response.json()
+                text = data['candidates'][0]['content']['parts'][0]['text']
+                return text.strip()
+
+    except Exception as e:
+        logger.error(f"Error generating startup idea: {e}")
+        return ""
+
+
+async def startup_idea_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job to post a startup idea"""
+    idea = await generate_startup_idea_with_gemini()
+
+    if idea:
+        # Notify active chats
+        for chat_id in active_chats:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Ідея для стартапу на мільйон!*\n\n{idea}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send startup idea to {chat_id}: {e}")
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log the error and send a telegram message to notify the developer."""
     logger.error("Exception while handling an update:", exc_info=context.error)
