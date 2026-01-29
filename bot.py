@@ -7,6 +7,7 @@ import os
 import json
 import random
 import logging
+import aiohttp
 from datetime import time, datetime, timedelta
 from pathlib import Path
 from telegram import Update
@@ -33,6 +34,10 @@ CHATS_FILE = DATA_DIR / 'chats.json'
 BALANCE_FILE = DATA_DIR / 'balance.json'
 BONUS_FILE = DATA_DIR / 'bonus.json'  # Track last bonus claim
 RIDDLE_STATE_FILE = DATA_DIR / 'riddle_state.json'  # Track active riddles
+GENERATED_RIDDLES_FILE = DATA_DIR / 'generated_riddles.json'  # AI-generated riddles
+
+# Gemini API
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 
 def load_json(filepath, default):
@@ -61,17 +66,123 @@ daily_stats = load_json(DAILY_STATS_FILE, {})
 muted_users = set(load_json(MUTED_FILE, []))
 active_chats = set(load_json(CHATS_FILE, []))
 balances = load_json(BALANCE_FILE, {})
-bonus_claims = load_json(BONUS_FILE, {})  # {user_id: "2024-01-15"}
+bonus_claims = load_json(BONUS_FILE, {})  # {user_id: {"date": "2024-01-15", "count": 5}}
 riddle_state = load_json(RIDDLE_STATE_FILE, {})  # {user_id: {"riddle": ..., "answer": ...}}
+generated_riddles = load_json(GENERATED_RIDDLES_FILE, {})  # {1: [...], 2: [...], ...}
 
 logger.info(f"Loaded stats: {len(stats)} users, {len(daily_stats)} daily, {len(muted_users)} muted, {len(active_chats)} chats, {len(balances)} balances")
 
+
+async def generate_riddles_with_gemini():
+    """Generate new riddles using Gemini Flash API"""
+    global generated_riddles
+
+    if not GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY not set, skipping riddle generation")
+        return False
+
+    prompt = """Згенеруй 20 унікальних питань для вікторини українською мовою.
+
+Формат JSON (без markdown, тільки чистий JSON):
+{
+    "1": [{"q": "питання", "a": ["відповідь1", "відповідь2"]}],
+    "2": [{"q": "питання", "a": ["відповідь"]}],
+    "3": [{"q": "питання", "a": ["відповідь"]}],
+    "4": [{"q": "питання", "a": ["відповідь"]}],
+    "5": [{"q": "питання", "a": ["відповідь"]}]
+}
+
+Рівні складності:
+1 (Easy): 4 питання - базова математика (2+2), прості факти
+2 (Medium): 4 питання - географія столиць, базове IT
+3 (Hard): 4 питання - програмування, історія
+4 (Expert): 4 питання - складне IT (порти, протоколи, алгоритми)
+5 (Genius): 4 питання - дуже складне (Big O notation, системний дизайн)
+
+Вимоги:
+- Відповіді коротші, в нижньому регістрі
+- Для чисел можна давати кілька варіантів: ["42", "сорок два"]
+- Теми: математика, IT, програмування, географія, наука, авто
+- НЕ згадуй росію
+- Питання мають бути цікавими для IT спеціалістів"""
+
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.9}
+                },
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status != 200:
+                    logger.error(f"Gemini API error: {response.status}")
+                    return False
+
+                data = await response.json()
+                text = data['candidates'][0]['content']['parts'][0]['text']
+
+                # Clean markdown if present
+                text = text.strip()
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[1]
+                if text.endswith("```"):
+                    text = text.rsplit("```", 1)[0]
+                text = text.strip()
+
+                new_riddles = json.loads(text)
+
+                # Convert string keys to int
+                generated_riddles = {int(k): v for k, v in new_riddles.items()}
+                save_json(GENERATED_RIDDLES_FILE, generated_riddles)
+
+                total = sum(len(v) for v in generated_riddles.values())
+                logger.info(f"Generated {total} new riddles with Gemini")
+                return True
+
+    except Exception as e:
+        logger.error(f"Error generating riddles: {e}")
+        return False
+
+
+async def refresh_riddles_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job to refresh riddles at noon"""
+    success = await generate_riddles_with_gemini()
+
+    if success:
+        # Notify active chats
+        for chat_id in active_chats:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="🧩 *Нові загадки!*\n\n"
+                         "Gemini згенерував свіжі питання для вікторини.\n"
+                         "Напиши /bonus щоб спробувати!",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify {chat_id}: {e}")
+
+
+def get_riddles_for_level(level: int) -> list:
+    """Get riddles for a level, combining static and generated"""
+    static = RIDDLES_BY_LEVEL.get(level, [])
+    generated = generated_riddles.get(level, [])
+
+    # Combine both, prefer generated if available
+    combined = generated + static if generated else static
+    return combined
+
+
 # === RIDDLES DATABASE BY DIFFICULTY ===
-# Level 1: Easy (bonus 1-5) - 20 coins
-# Level 2: Medium (bonus 6-10) - 35 coins
-# Level 3: Hard (bonus 11-15) - 50 coins
-# Level 4: Expert (bonus 16-20) - 75 coins
-# Level 5: Genius (bonus 21+) - 100 coins
+# Level 1: Easy (bonus 1-5) - 20 шмеркелів
+# Level 2: Medium (bonus 6-10) - 35 шмеркелів
+# Level 3: Hard (bonus 11-15) - 50 шмеркелів
+# Level 4: Expert (bonus 16-20) - 75 шмеркелів
+# Level 5: Genius (bonus 21+) - 100 шмеркелів
 
 RIDDLES_BY_LEVEL = {
     1: [  # Easy - базова математика та загальні знання
@@ -304,17 +415,17 @@ async def slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             bet = int(context.args[0])
             if bet < 1:
-                bet = 1
-            elif bet > 1000:
-                bet = 1000
+                await update.message.reply_text("❌ Мінімальна ставка: 1 🪙")
+                return
         except ValueError:
-            pass
+            await update.message.reply_text("❌ Введіть число!")
+            return
 
     # Check balance
     balance = get_balance(user_id)
     if balance < bet:
         await update.message.reply_text(
-            f"💸 Недостатньо коінів!\n"
+            f"💸 Недостатньо шмеркелів!\n"
             f"Твій баланс: {balance} 🪙\n"
             f"Ставка: {bet} 🪙\n\n"
             f"_Почекай завтра на поповнення або грай менше_",
@@ -363,7 +474,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"💰 *Баланс {user_name}*\n\n"
-        f"🪙 {bal} коінів\n\n"
+        f"🪙 {bal} шмеркелів\n\n"
         f"_/slots <ставка> - грати (за замовч. {DEFAULT_BET})_",
         parse_mode="Markdown"
     )
@@ -424,7 +535,7 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_bonus_data = bonus_claims.get(user_id, {"date": "", "count": 0})
 
     if user_bonus_data.get("date") != today:
-        # First bonus of the day — free 50 coins
+        # First bonus of the day — free 50 шмеркелів
         bonus = 50
         update_balance(user_id, bonus, user_name)
         new_balance = get_balance(user_id)
@@ -447,7 +558,7 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # count 1-5 = level 1, count 6-10 = level 2, etc.
         level = min(5, (count // 5) + 1)
 
-        riddle = random.choice(RIDDLES_BY_LEVEL[level])
+        riddle = random.choice(get_riddles_for_level(level))
         riddle_with_meta = {**riddle, "level": level}
         riddle_state[user_id] = riddle_with_meta
         save_json(RIDDLE_STATE_FILE, riddle_state)
@@ -737,6 +848,31 @@ async def unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def reset_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reset bonus history for user (back to level 1)"""
+    global bonus_claims, riddle_state
+
+    user = update.effective_user
+    user_id = str(user.id)
+
+    # Reset bonus count
+    if user_id in bonus_claims:
+        del bonus_claims[user_id]
+        save_json(BONUS_FILE, bonus_claims)
+
+    # Clear active riddle
+    if user_id in riddle_state:
+        del riddle_state[user_id]
+        save_json(RIDDLE_STATE_FILE, riddle_state)
+
+    await update.message.reply_text(
+        "🔄 *Бонуси скинуто!*\n\n"
+        "Твій рівень загадок повернувся на 🟢 Easy\n"
+        "Напиши /bonus щоб почати заново!",
+        parse_mode="Markdown"
+    )
+
+
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Classifies every message, replies only if work with high confidence"""
     text = update.message.text
@@ -871,6 +1007,7 @@ def main():
     app.add_handler(CommandHandler("top", leaderboard))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("bonus", daily_bonus))
+    app.add_handler(CommandHandler("resetbonus", reset_bonus))
     app.add_handler(CommandHandler("roast", roast))
     app.add_handler(CommandHandler("compliment", compliment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
@@ -892,6 +1029,17 @@ def main():
         name="midnight_bonus"
     )
     logger.info("Midnight bonus scheduled for 00:00 Kyiv time")
+
+    # Schedule riddle refresh at 12:00 Kyiv time (10:00 UTC)
+    if GEMINI_API_KEY:
+        job_queue.run_daily(
+            refresh_riddles_job,
+            time=time(hour=10, minute=0, second=0),  # 12:00 Kyiv (UTC+2)
+            name="refresh_riddles"
+        )
+        logger.info("Riddle refresh scheduled for 12:00 Kyiv time")
+    else:
+        logger.warning("GEMINI_API_KEY not set, riddle refresh disabled")
 
     logger.info("Bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
