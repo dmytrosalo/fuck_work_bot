@@ -987,6 +987,10 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Daily report sent, stats reset")
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
 def main():
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     if not token:
@@ -1011,6 +1015,9 @@ def main():
     app.add_handler(CommandHandler("roast", roast))
     app.add_handler(CommandHandler("compliment", compliment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+
+    # Add error handler
+    app.add_error_handler(error_handler)
 
     # Schedule daily report at 23:00 Kyiv time (UTC+2 or UTC+3)
     # Using UTC+2 (21:00 UTC)
