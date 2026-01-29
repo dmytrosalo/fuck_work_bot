@@ -7,7 +7,7 @@ import os
 import json
 import random
 import logging
-from datetime import time
+from datetime import time, datetime, timedelta
 from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
@@ -31,6 +31,8 @@ DAILY_STATS_FILE = DATA_DIR / 'daily_stats.json'
 MUTED_FILE = DATA_DIR / 'muted.json'
 CHATS_FILE = DATA_DIR / 'chats.json'
 BALANCE_FILE = DATA_DIR / 'balance.json'
+BONUS_FILE = DATA_DIR / 'bonus.json'  # Track last bonus claim
+RIDDLE_STATE_FILE = DATA_DIR / 'riddle_state.json'  # Track active riddles
 
 
 def load_json(filepath, default):
@@ -59,8 +61,128 @@ daily_stats = load_json(DAILY_STATS_FILE, {})
 muted_users = set(load_json(MUTED_FILE, []))
 active_chats = set(load_json(CHATS_FILE, []))
 balances = load_json(BALANCE_FILE, {})
+bonus_claims = load_json(BONUS_FILE, {})  # {user_id: "2024-01-15"}
+riddle_state = load_json(RIDDLE_STATE_FILE, {})  # {user_id: {"riddle": ..., "answer": ...}}
 
 logger.info(f"Loaded stats: {len(stats)} users, {len(daily_stats)} daily, {len(muted_users)} muted, {len(active_chats)} chats, {len(balances)} balances")
+
+# === RIDDLES DATABASE ===
+RIDDLES = [
+    # Математика базова
+    {"q": "Скільки буде 7 * 8?", "a": ["56"]},
+    {"q": "Скільки буде 144 / 12?", "a": ["12"]},
+    {"q": "Скільки буде 15% від 200?", "a": ["30"]},
+    {"q": "Скільки буде 123 + 456?", "a": ["579"]},
+    {"q": "Скільки буде sqrt(81)?", "a": ["9"]},
+    {"q": "Скільки буде 2^10?", "a": ["1024"]},
+    {"q": "Скільки буде 17 * 6?", "a": ["102"]},
+    {"q": "Скільки буде 1000 - 777?", "a": ["223"]},
+    {"q": "Скільки буде 25 * 4?", "a": ["100"]},
+    {"q": "Скільки буде 999 + 1?", "a": ["1000"]},
+    {"q": "Скільки буде 50% від 84?", "a": ["42"]},
+    {"q": "Скільки буде 12^2?", "a": ["144"]},
+    {"q": "Скільки буде 256 / 16?", "a": ["16"]},
+    {"q": "Скільки буде 33 * 3?", "a": ["99"]},
+    {"q": "Скільки буде sqrt(144)?", "a": ["12"]},
+    {"q": "Що більше: 0.5 чи 1/3?", "a": ["0.5", "перше"]},
+    {"q": "Скільки буде 2^8?", "a": ["256"]},
+    {"q": "Скільки буде 15 * 15?", "a": ["225"]},
+    {"q": "Скільки буде 1024 / 2?", "a": ["512"]},
+    {"q": "Скільки буде 7^2?", "a": ["49"]},
+
+    # Географія
+    {"q": "Яка столиця Японії?", "a": ["токіо", "tokyo"]},
+    {"q": "Яка найбільша країна світу за площею?", "a": ["росія", "russia", "рф"]},
+    {"q": "Яка столиця України?", "a": ["київ", "kyiv", "kiev"]},
+    {"q": "Яка столиця Франції?", "a": ["париж", "paris"]},
+    {"q": "Яка найдовша річка в світі?", "a": ["ніл", "nile", "амазонка", "amazon"]},
+    {"q": "Яка столиця Німеччини?", "a": ["берлін", "berlin"]},
+    {"q": "Яка столиця Іспанії?", "a": ["мадрид", "madrid"]},
+    {"q": "Яка столиця Італії?", "a": ["рим", "rome", "roma"]},
+    {"q": "Яка столиця Польщі?", "a": ["варшава", "warsaw", "warszawa"]},
+    {"q": "Яка столиця Великобританії?", "a": ["лондон", "london"]},
+    {"q": "Яка столиця Канади?", "a": ["оттава", "ottawa"]},
+    {"q": "Яка столиця Австралії?", "a": ["канберра", "canberra"]},
+    {"q": "На якому континенті Єгипет?", "a": ["африка", "africa"]},
+    {"q": "Яка найвища гора у світі?", "a": ["еверест", "everest", "джомолунгма"]},
+    {"q": "Скільки континентів на Землі?", "a": ["7", "сім"]},
+
+    # IT та програмування
+    {"q": "Який порт за замовчуванням для HTTPS?", "a": ["443"]},
+    {"q": "Скільки байт в кілобайті?", "a": ["1024"]},
+    {"q": "Скільки бітів у байті?", "a": ["8"]},
+    {"q": "Яка мова програмування починається на 'Py'?", "a": ["python", "пайтон"]},
+    {"q": "Що означає HTTP?", "a": ["hypertext transfer protocol"]},
+    {"q": "Що таке 'git pull'?", "a": ["fetch + merge", "завантаження", "pull"]},
+    {"q": "Який порт для HTTP?", "a": ["80"]},
+    {"q": "Який порт для SSH?", "a": ["22"]},
+    {"q": "Що означає CSS?", "a": ["cascading style sheets"]},
+    {"q": "Що означає HTML?", "a": ["hypertext markup language"]},
+    {"q": "Що означає API?", "a": ["application programming interface"]},
+    {"q": "Що означає SQL?", "a": ["structured query language"]},
+    {"q": "Який тип даних: true/false?", "a": ["boolean", "bool", "булевий"]},
+    {"q": "Що повертає len('hello')?", "a": ["5"]},
+    {"q": "Яка компанія створила Python?", "a": ["guido", "гвідо", "van rossum"]},
+    {"q": "Що означає OOP?", "a": ["object oriented programming"]},
+    {"q": "Який результат: 10 % 3?", "a": ["1"]},
+    {"q": "Який результат: 10 // 3?", "a": ["3"]},
+    {"q": "Що означає JSON?", "a": ["javascript object notation"]},
+    {"q": "Скільки значень у boolean?", "a": ["2", "два"]},
+    {"q": "Який символ коментаря в Python?", "a": ["#", "решітка"]},
+    {"q": "Що означає RAM?", "a": ["random access memory"]},
+    {"q": "Що означає CPU?", "a": ["central processing unit"]},
+
+    # Загальні знання
+    {"q": "Скільки планет в Сонячній системі?", "a": ["8"]},
+    {"q": "Який рік був перед 2000?", "a": ["1999"]},
+    {"q": "Скільки кольорів у веселці?", "a": ["7"]},
+    {"q": "Скільки хвилин у годині?", "a": ["60"]},
+    {"q": "Яка хімічна формула води?", "a": ["h2o", "н2о"]},
+    {"q": "Скільки сторін у трикутника?", "a": ["3"]},
+    {"q": "Скільки секунд у хвилині?", "a": ["60"]},
+    {"q": "Який день тижня йде після середи?", "a": ["четвер"]},
+    {"q": "Скільки нулів у мільйоні?", "a": ["6"]},
+    {"q": "Скільки місяців у році?", "a": ["12"]},
+    {"q": "Скільки днів у тижні?", "a": ["7"]},
+    {"q": "Скільки годин у добі?", "a": ["24"]},
+    {"q": "Яка хімічна формула кухонної солі?", "a": ["nacl"]},
+    {"q": "Скільки сторін у квадрата?", "a": ["4"]},
+    {"q": "Скільки градусів у прямому куті?", "a": ["90"]},
+    {"q": "Скільки градусів у колі?", "a": ["360"]},
+    {"q": "Яке число Пі (перші 3 цифри)?", "a": ["3.14", "314"]},
+    {"q": "Скільки сантиметрів у метрі?", "a": ["100"]},
+    {"q": "Скільки грам у кілограмі?", "a": ["1000"]},
+    {"q": "Скільки років у столітті?", "a": ["100"]},
+
+    # Культура та історія
+    {"q": "Хто написав 'Кобзар'?", "a": ["шевченко", "тарас шевченко"]},
+    {"q": "Хто CEO Apple?", "a": ["тім кук", "tim cook", "кук", "cook"]},
+    {"q": "Хто CEO Tesla?", "a": ["ілон маск", "elon musk", "маск", "musk"]},
+    {"q": "Хто створив Facebook?", "a": ["цукерберг", "zuckerberg", "марк"]},
+    {"q": "Хто написав 'Гаррі Поттер'?", "a": ["роулінг", "rowling", "дж.к. роулінг"]},
+    {"q": "В якому році почалась Друга світова війна?", "a": ["1939"]},
+    {"q": "В якому році закінчилась Друга світова війна?", "a": ["1945"]},
+    {"q": "Хто намалював 'Мону Лізу'?", "a": ["да вінчі", "da vinci", "леонардо"]},
+    {"q": "Яка валюта в США?", "a": ["долар", "dollar", "usd"]},
+    {"q": "Яка валюта в Європі (ЄС)?", "a": ["євро", "euro", "eur"]},
+    {"q": "Яка валюта в Японії?", "a": ["єна", "yen", "йєна"]},
+    {"q": "Яка валюта в Україні?", "a": ["гривня", "uah", "грн"]},
+    {"q": "В якому році Україна стала незалежною?", "a": ["1991"]},
+    {"q": "Хто CEO Microsoft?", "a": ["наделла", "nadella", "сатья"]},
+    {"q": "Хто засновник Amazon?", "a": ["безос", "bezos", "джефф"]},
+
+    # Авто (для вашого чату!)
+    {"q": "Яка країна виробляє Volvo?", "a": ["швеція", "sweden"]},
+    {"q": "Яка країна виробляє Porsche?", "a": ["німеччина", "germany"]},
+    {"q": "Яка країна виробляє Toyota?", "a": ["японія", "japan"]},
+    {"q": "Що означає GTI у Volkswagen?", "a": ["grand touring injection", "grand tourer injection"]},
+    {"q": "Яка електрична модель Porsche?", "a": ["taycan", "тайкан"]},
+    {"q": "Що означає BMW?", "a": ["bayerische motoren werke"]},
+    {"q": "Яка компанія виробляє iPhone?", "a": ["apple", "епл"]},
+    {"q": "Який рік заснування Apple?", "a": ["1976"]},
+    {"q": "Який рік заснування Microsoft?", "a": ["1975"]},
+    {"q": "Який рік заснування Google?", "a": ["1998"]},
+]
 
 
 # === ROASTS AND COMPLIMENTS ===
@@ -255,22 +377,122 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Give daily bonus coins"""
+    """Give daily bonus coins or riddle for extra coins"""
+    global bonus_claims, riddle_state
+
     user = update.effective_user
     user_id = str(user.id)
     user_name = user.first_name or user.username or "Анонім"
+    today = datetime.now().strftime("%Y-%m-%d")
 
-    # Simple daily bonus (in production would check last claim time)
-    bonus = 50
-    update_balance(user_id, bonus, user_name)
-    new_balance = get_balance(user_id)
+    # Check if user has active riddle
+    if user_id in riddle_state:
+        riddle = riddle_state[user_id]
+        await update.message.reply_text(
+            f"🧩 *У тебе вже є загадка!*\n\n"
+            f"❓ {riddle['q']}\n\n"
+            f"Відповідай в чат, і якщо правильно — отримаєш 50 🪙",
+            parse_mode="Markdown"
+        )
+        return
 
-    await update.message.reply_text(
-        f"🎁 *Щоденний бонус!*\n\n"
-        f"+{bonus} 🪙\n"
-        f"Баланс: {new_balance} 🪙",
-        parse_mode="Markdown"
-    )
+    # Check if already claimed today
+    last_claim = bonus_claims.get(user_id, "")
+
+    if last_claim != today:
+        # First bonus of the day — free 50 coins
+        bonus = 50
+        update_balance(user_id, bonus, user_name)
+        new_balance = get_balance(user_id)
+
+        bonus_claims[user_id] = today
+        save_json(BONUS_FILE, bonus_claims)
+
+        await update.message.reply_text(
+            f"🎁 *Щоденний бонус!*\n\n"
+            f"+{bonus} 🪙\n"
+            f"Баланс: {new_balance} 🪙\n\n"
+            f"_Хочеш ще? Напиши /bonus знову для загадки!_",
+            parse_mode="Markdown"
+        )
+    else:
+        # Already claimed — give riddle
+        riddle = random.choice(RIDDLES)
+        riddle_state[user_id] = riddle
+        save_json(RIDDLE_STATE_FILE, riddle_state)
+
+        await update.message.reply_text(
+            f"🧩 *Загадка на 50 🪙*\n\n"
+            f"❓ {riddle['q']}\n\n"
+            f"_Напиши відповідь в чат!_",
+            parse_mode="Markdown"
+        )
+
+
+async def check_riddle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check if message is a riddle answer"""
+    global riddle_state
+
+    user = update.effective_user
+    user_id = str(user.id)
+
+    if user_id not in riddle_state:
+        return False
+
+    text = update.message.text.lower().strip()
+    riddle = riddle_state[user_id]
+
+    # Check answer
+    correct = any(ans.lower() in text or text in ans.lower() for ans in riddle['a'])
+
+    if correct:
+        # Correct answer!
+        bonus = 50
+        user_name = user.first_name or user.username or "Анонім"
+        update_balance(user_id, bonus, user_name)
+        new_balance = get_balance(user_id)
+
+        del riddle_state[user_id]
+        save_json(RIDDLE_STATE_FILE, riddle_state)
+
+        await update.message.reply_text(
+            f"✅ *Правильно!*\n\n"
+            f"+{bonus} 🪙\n"
+            f"Баланс: {new_balance} 🪙",
+            parse_mode="Markdown"
+        )
+        return True
+
+    return False
+
+
+async def midnight_bonus(context: ContextTypes.DEFAULT_TYPE):
+    """Give +100 coins to all players at midnight"""
+    global balances
+
+    if not balances:
+        return
+
+    bonus = 100
+
+    for user_id in balances:
+        balances[user_id]['coins'] += bonus
+
+    save_json(BALANCE_FILE, balances)
+    logger.info(f"Midnight bonus: +{bonus} coins to {len(balances)} users")
+
+    # Notify active chats
+    for chat_id in active_chats:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🌙 *Опівнічний бонус!*\n\n"
+                     f"Всі гравці отримали +{bonus} 🪙\n"
+                     f"Солодких снів! 💤",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send midnight bonus to {chat_id}: {e}")
 
 # Savage work detection messages
 WORK_REPLIES = [
@@ -475,6 +697,10 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Track active chats for daily report
     active_chats.add(chat_id)
 
+    # Check if this is a riddle answer first
+    if await check_riddle_answer(update, context):
+        return  # Was a riddle answer, don't process further
+
     # Skip if user is muted
     if user_id in muted_users:
         return
@@ -603,6 +829,14 @@ def main():
         name="daily_car_report"
     )
     logger.info("Daily report scheduled for 23:00 Kyiv time")
+
+    # Schedule midnight bonus at 00:00 Kyiv time (22:00 UTC)
+    job_queue.run_daily(
+        midnight_bonus,
+        time=time(hour=22, minute=0, second=0),  # 00:00 Kyiv (UTC+2)
+        name="midnight_bonus"
+    )
+    logger.info("Midnight bonus scheduled for 00:00 Kyiv time")
 
     logger.info("Bot starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

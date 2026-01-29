@@ -1,9 +1,293 @@
 """
 Roasts and Compliments Database
-100 roasts + 100 compliments
+100 roasts + 100 compliments + personalized for chat members
 """
 
 import random
+
+# Personalized roasts for specific people
+PERSONAL_ROASTS = {
+    "kondzhariia_data": [
+        "{name} — iOS developer який пише на Android і соромиться цього кожен день",
+        "{name} пише 'Насір лох' 19 разів на день — це вже не жарт, це терапія",
+        "{name} мріє про Taycan, а їздить на метро",
+        "{name} думає що в нього найкращий стиль — дзеркало не погоджується",
+        "{name} — Apple сектант який змушений писати на Android, karma is a bitch",
+        "{name} їсть хінкалі так часто, що грузини вже знають його по імені",
+        "{name} каже 'йомайо' і думає що це робить його унікальним",
+        "{name} ставить ')) ' після кожного речення — емоційна залежність від дужок))",
+        "{name} хоче стартап але єдине що стартує — це його complaints",
+        "{name} — iOS dev на Android, це як веган в McDonalds",
+        "{name} ввів санкції за роботу в чаті, але сам згадує Маріт кожні 5 хвилин",
+        "{name} такий стильний, що навіть його код має fashion sense... на жаль поганий",
+        "{name} мріє про Porsche Taycan поки замовляє Bolt",
+        "{name} — 7940 повідомлень, і жодне не про запуск стартапу",
+        "{name} носить Apple Watch і пише під Android — identity crisis",
+        "{name} без машини серед Volvo gang — як бідний родич на весіллі",
+        "{name} їсть хінкалі частіше ніж комітить код",
+        "{name} — найстильніший безробітний iOS dev на Android",
+        "{name} каже що стильний, але досі без Taycan — style не купиш",
+        "{name} мріє про електричний Porsche, а реальність — електричний самокат",
+        "{name} — Apple fanboy який зрадив ecosystem за гроші",
+        "{name} пише на Android і називає це 'розширенням горизонтів'",
+        "{name} хінкалі + відсутність машини = грузинське таксі",
+        "{name} думає що стиль компенсує відсутність Taycan. Ні.",
+        "{name} — iOS dev який перейшов на темну сторону і робить вигляд що норм",
+        "{name} має стиль, але не має машини — priorities",
+        "{name} створив групу 'Іліта' не маючи авто — irony",
+        "{name} їсть хінкалі поки інші їздять на Volvo",
+        "{name} стартап буде називатись 'Чому я досі на Android'",
+        "{name} — proof що Apple секта не допомагає купити Taycan",
+    ],
+    "dmytro": [
+        "{name} створив бота щоб ловити робочі повідомлення, а сам згадує Keyo 44 рази",
+        "{name} їздить на Golf GTI і думає що це спорткар",
+        "{name} — єдиний в чаті без Apple, і цим пишається (насправді ні)",
+        "{name} каже 'а не їбаного кійо' з любов'ю, яку приховує",
+        "{name} — Backend Engineering Manager, який трекає тиск частіше ніж деплої",
+        "{name} має Golf GTI серед Volvo власників — outsider energy",
+        "{name} хоче стартап, але поки стартує тільки Jenkins",
+        "{name} питає 'як здоровля?' частіше ніж 'як код?'",
+        "{name} — 6498 повідомлень, з яких 102 про роботу яку ненавидить",
+        "{name} трекає тиск, калорії, і чужі робочі повідомлення — контрол фрік",
+        "{name} каже 'харош!' як бумер на корпоративі",
+        "{name} на Golf GTI серед Volvo — як Android серед Apple",
+        "{name} здає аналізи частіше ніж релізи",
+        "{name} — єдина людина в чаті яка може сказати 'затискаємо яйця в лещата' в робочому контексті",
+        "{name} мріє про стартап, поки що має тільки start і ніякого up",
+        "{name} Golf GTI — бо Volvo для тих хто здався",
+        "{name} — Android user в Apple секті, єретик",
+        "{name} трекає тиск бо від Keyo він тільки росте",
+        "{name} на GTI думає що він в Need for Speed, а насправді в Need for Therapy",
+        "{name} єдиний без Apple — або бідний, або принциповий. Або обидва.",
+        "{name} написав бота для роботи, бо з людьми не виходить",
+        "{name} Golf GTI — машина для тих хто хоче Porsche але має совість",
+        "{name} каже 'харош' бо словниковий запас закінчився",
+        "{name} — Backend Manager який frontend свого життя запустити не може",
+        "{name} стартап буде називатись 'Ще один трекер здоров'я'",
+        "{name} їздить на GTI і думає що шведи заздрять. Ні.",
+        "{name} — ML engineer який не може predict власне майбутнє",
+        "{name} трекає все крім своїх life choices",
+        "{name} Golf GTI — technically a Porsche... ні, насправді ні",
+        "{name} без Apple — останній солдат програної війни",
+    ],
+    "дмитро": [
+        "{name} на Golf GTI думає що він в Fast & Furious",
+        "{name} — Android user в Apple секті, brave man",
+        "{name} GTI замість Volvo — rebel without a cause",
+        "{name} єдиний без яблука — digital vegan",
+        "{name} створив бота щоб ловити робочі повідомлення, а сам згадує Keyo 44 рази",
+        "{name} їздить на Golf GTI і думає що це спорткар",
+        "{name} Golf GTI — бо Volvo для тих хто здався",
+        "{name} — ML engineer який не може predict власне майбутнє",
+    ],
+    "facethestrange": [
+        "{name} грає на гітарі краще ніж пише код — low bar але все ж",
+        "{name} — Volvo фанат який знає кожну модель краще ніж свій код",
+        "{name} має Volvo яка заряджається бензином — гібрид як і його настрій",
+        "{name} каже 'пиздець' 10 разів — і кожен раз це правда про Keyo",
+        "{name} — Apple сектант з Volvo, stereotype check",
+        "{name} хоче стартап, але поки що тільки стартує Volvo",
+        "{name} грає на гітарі Wonderwall на кожній тусі — класика",
+        "{name} — 'у нас рейзи тільки вниз' — найчесніший опис роботи в IT",
+        "{name} знається на Volvo краще ніж Volvo знається на собі",
+        "{name} пише про СТО частіше ніж про код — 104 згадки!",
+        "{name} каже 'загалом, люди - кретини' і це найточніший code review",
+        "{name} грає на гітарі для душі, пише код для грошей",
+        "{name} — Volvo + Apple + гітара = hipster bingo",
+        "{name} мріє про стартап між акордами",
+        "{name} має 3053 повідомлення — quality over quantity, як Volvo",
+        "{name} грає Wonderwall і думає що це оригінально",
+        "{name} — Volvo driver який думає що це personality",
+        "{name} на гітарі краще ніж на code review — не комплімент",
+        "{name} Apple + Volvo + гітара — white guy starter pack",
+        "{name} каже 'пиздець' бо інших слів Volvo не навчив",
+        "{name} стартап буде називатись 'Ще одна нотатка для гітари'",
+        "{name} — найбезпечніший хлопець в чаті, як його Volvo",
+        "{name} грає на гітарі на тусах куди його не кликали",
+        "{name} знає все про Volvo і нічого про social cues",
+        "{name} — musician який працює в IT, classic tragedy",
+        "{name} Volvo + гітара = Starbucks employee energy",
+        "{name} каже 'у нас рейзи вниз' граючи на гітарі — dramatic",
+        "{name} — proof що Volvo drivers мають занадто багато вільного часу",
+        "{name} грає на гітарі бо код не звучить",
+        "{name} Volvo hybrid — не може вирішити навіть яке паливо",
+    ],
+    "dany_ro": [
+        "{name} знає все про всіх — чат-детектив або сталкер?",
+        "{name} — Volvo фанат який матюкається частіше ніж перемикає передачі",
+        "{name} — 410 матюків за 4 місяці, Volvo б не схвалив",
+        "{name} знає все про всіх, але не знає коли зупинитись з матюками",
+        "{name} — Apple сектант з Volvo і 490 матюками, personality disorder",
+        "{name} з похмілля їсть пів меню ресторану — Volvo driver lifestyle",
+        "{name} каже 'бо ілір єблан' — і це найточніший performance review",
+        "{name} має генератор, Volvo і всю інформацію про всіх — prepared for apocalypse",
+        "{name} в страховій частіше ніж в офісі — Volvo ownership experience",
+        "{name} пише 'ахахаха' з різною кількістю 'ха' залежно від рівня болю",
+        "{name} — 7159 повідомлень, з яких 490 матюки. Encyclopedia of chaos.",
+        "{name} каже 'сука' 14 разів як привітання — Volvo elegance",
+        "{name} знає все про всіх і використовує цю владу для зла",
+        "{name} хоче стартап, але стартує тільки двигун Volvo",
+        "{name} — Apple + Volvo + всі секрети чату = dangerous combination",
+        "{name} знає де ти був вчора краще ніж ти сам",
+        "{name} — human database з матюками",
+        "{name} збирає інформацію як Volvo збирає нагороди за безпеку",
+        "{name} матюкається так елегантно, як Volvo їздить — тобто повільно",
+        "{name} знає все про всіх, навіть те що ти хотів би забути",
+        "{name} — NSA агент під прикриттям Volvo driver",
+        "{name} має Volvo і trust issues — standard combo",
+        "{name} п'є матчу, обсирається, і все одно знає твої секрети",
+        "{name} — якби Google був людиною з матюками",
+        "{name} стартап буде називатись 'Все що я знаю про вас'",
+        "{name} знає твій PIN код, просто ще не сказав",
+        "{name} — Volvo driver з базою даних на всіх друзів",
+        "{name} 490 матюків — це тільки ті що в чаті",
+        "{name} знає все про всіх крім того як не матюкатись",
+        "{name} — Big Brother їздить на Volvo",
+    ],
+}
+
+# Personalized compliments
+PERSONAL_COMPLIMENTS = {
+    "kondzhariia_data": [
+        "{name} — iOS developer який освоїв Android, versatile king",
+        "{name} має найкращий стиль в чаті — і він це знає",
+        "{name} мріє про Taycan — має смак в авто",
+        "{name} їсть хінкалі як справжній поціновувач — food culture",
+        "{name} — 7940 повідомлень чистої енергії, душа компанії",
+        "{name} пише на Android не втрачаючи Apple душі — адаптивність",
+        "{name} стильний від коду до одягу",
+        "{name} знає що Taycan — це мрія варта мрії",
+        "{name} ввів санкції за роботу — work-life balance hero",
+        "{name} — iOS dev який не боїться нових челенджів (Android)",
+        "{name} має смак в їжі (хінкалі), в авто (Taycan), в стилі (все)",
+        "{name} хоче стартап — підприємницький дух",
+        "{name} ставить '))' і це додає теплоти))",
+        "{name} — Apple ecosystem з Android гнучкістю",
+        "{name} найстильніший iOS dev на Android — unique combo",
+        "{name} без машини але зі стилем — priorities right",
+        "{name} мріє про Taycan — мрій по-крупному або не мрій",
+        "{name} cross-platform developer і cross-platform stylish",
+        "{name} їсть хінкалі з такою пристрастю — dedication",
+        "{name} — найактивніший в чаті, лідер по натурі",
+        "{name} стиль > машина, і це правильно",
+        "{name} — iOS dev з Android досвідом = найцінніший на ринку",
+        "{name} хінкалі lover — людина яка знає що хоче",
+        "{name} Taycan мрія — electric taste",
+        "{name} створив групу і тримає її разом — leadership",
+        "{name} — proof що стиль не залежить від машини",
+        "{name} пише на Android з iOS душею — best of both worlds",
+        "{name} 7940 повідомлень позитиву — rare energy",
+        "{name} буде мати Taycan — manifestation works",
+        "{name} — найстильніший хінкалі enjoyer",
+    ],
+    "dmytro": [
+        "{name} їздить на Golf GTI — driver's car для справжніх",
+        "{name} створив цього бота — працює краще ніж Keyo SDK",
+        "{name} — Backend Engineering Manager з Golf GTI, має смак",
+        "{name} трекає здоров'я — відповідальний підхід до себе",
+        "{name} Golf GTI серед Volvo — individuality matters",
+        "{name} — 6498 повідомлень мудрості та сарказму",
+        "{name} питає 'як здоровля?' бо реально турбується",
+        "{name} на GTI — hot hatch enthusiast, respect",
+        "{name} хоче стартап і має skills щоб це зробити",
+        "{name} їздить на чомусь з GTI в назві — правильний вибір",
+        "{name} — єдиний не в Apple секті, independent thinker",
+        "{name} Golf GTI — proof що німці теж вміють",
+        "{name} менеджить 8+ інженерів і ще встигає мріяти про стартап",
+        "{name} їсть яловичий стейк — man of taste",
+        "{name} — GTI owner і ML engineer, versatile",
+        "{name} GTI — вибір тих хто розуміє driving pleasure",
+        "{name} не Apple — власна думка в світі овець",
+        "{name} трекає здоров'я бо планує жити довго і добре",
+        "{name} — ML model для success в розробці",
+        "{name} Golf GTI — passion project на колесах",
+        "{name} бот працює краще ніж 90% стартапів",
+        "{name} — Backend lead з frontend energy",
+        "{name} GTI серед Volvo — як рок серед попси",
+        "{name} independent thinker з independent car choice",
+        "{name} стартап буде successful — skills є",
+        "{name} — proof що можна бути healthy і в IT",
+        "{name} GTI + ML = speed в коді і на дорозі",
+        "{name} 8+ engineers під керівництвом — leadership proven",
+        "{name} Golf GTI — taste without pretense",
+        "{name} — найздоровіший програміст в чаті",
+    ],
+    "дмитро": [
+        "{name} — Golf GTI gang, hot hatch respect",
+        "{name} — tech lead з водійськими скілами",
+        "{name} GTI driver = driver's driver",
+        "{name} independent і в tech і в cars",
+        "{name} їздить на Golf GTI — driver's car для справжніх",
+        "{name} створив цього бота — працює краще ніж Keyo SDK",
+        "{name} — Backend Engineering Manager з Golf GTI, має смак",
+        "{name} Golf GTI — proof що німці теж вміють",
+    ],
+    "facethestrange": [
+        "{name} грає на гітарі — creative soul",
+        "{name} — Volvo owner з музичним талантом",
+        "{name} знається на авто і грає на гітарі — renaissance man",
+        "{name} каже правду про рейзи — чесність це сила",
+        "{name} має Volvo — safety first, як і в коді",
+        "{name} грає на гітарі краще ніж більшість грає що завгодно",
+        "{name} — Apple + Volvo + гітара = good taste trifecta",
+        "{name} мріє про стартап і має креативність для цього",
+        "{name} — 3053 quality повідомлення, як Volvo quality",
+        "{name} саркастичний в міру — це талант",
+        "{name} знає Volvo як ніхто — walking encyclopedia",
+        "{name} грає на гітарі для душі — work-life balance king",
+        "{name} — голос розуму в технічних дискусіях",
+        "{name} Volvo + гітара = Scandinavian soul",
+        "{name} хоче стартап — з його skills це реально",
+        "{name} грає на гітарі — creative outlet в технічному світі",
+        "{name} Volvo expertise — реальна цінність для друзів",
+        "{name} музикант + developer = rare combo",
+        "{name} саркастичний але справедливий",
+        "{name} — чесний про IT як ніхто",
+        "{name} гітара + код = both hemispheres working",
+        "{name} Volvo driver з artistic soul",
+        "{name} quality > quantity — в повідомленнях і в житті",
+        "{name} грає на гітарі — stress relief правильний",
+        "{name} — найкреативніший Volvo driver",
+        "{name} знає авто і музику — conversation never boring",
+        "{name} стартап з музичним twist — why not",
+        "{name} — Volvo safety + guitar creativity = balance",
+        "{name} грає на гітарі і це реально круто",
+        "{name} — proof що IT люди можуть бути creative",
+    ],
+    "dany_ro": [
+        "{name} знає все про всіх — social intelligence 100",
+        "{name} — Volvo owner з енциклопедичними знаннями",
+        "{name} — 7159 повідомлень pure energy",
+        "{name} знає все про всіх і використовує це для добра (іноді)",
+        "{name} має Volvo — safety conscious king",
+        "{name} матюкається з душею — authentic af",
+        "{name} — Apple + Volvo = taste combo",
+        "{name} знає все про генератори — практичні знання для України",
+        "{name} хоче стартап — з його networking skills це можливо",
+        "{name} каже що думає — no filter honesty",
+        "{name} — інформаційний хаб чату",
+        "{name} чесний про похмілля — real one",
+        "{name} знає всіх і все — valuable asset",
+        "{name} — Volvo driver з найкращою інформаційною мережею",
+        "{name} якщо й буде стартап — він знатиме про це першим",
+        "{name} знає все — human search engine",
+        "{name} networking level = legendary",
+        "{name} — найінформованіша людина в кімнаті",
+        "{name} Volvo + knowledge = power combo",
+        "{name} знає що відбувається раніше за всіх",
+        "{name} — social butterfly з Volvo",
+        "{name} матюкається але завжди в тему",
+        "{name} знає секрети — і тримає їх коли треба",
+        "{name} — найкращий source of information",
+        "{name} стартап буде мати найкращий market research",
+        "{name} Volvo driver який знає всі shortcuts",
+        "{name} — human CRM система",
+        "{name} знає людей краще ніж LinkedIn",
+        "{name} 7159 повідомлень networking",
+        "{name} — proof що knowledge is power",
+    ],
+}
 
 ROASTS = [
     # Класика
@@ -17,7 +301,7 @@ ROASTS = [
     "{name} — доказ що аборти мають бути легальними",
     "сперматозоїд {name} переміг мільйони інших і це найкраще що він зробив у житті",
     "{name} настільки нікому не потрібен, що навіть його GPS каже 'куди завгодно, тільки не додому'",
-    
+
     # Зовнішність
     "{name} виглядає як дитина алкоголіків, яку виховували вовки з депресією",
     "обличчя {name} — аргумент проти селфі",
@@ -29,7 +313,7 @@ ROASTS = [
     "tinder {name} використовує його фото для бану ботів",
     "якби {name} був спецією, він був би борошном",
     "{name} виглядає як NPC з бюджетом 2 долари",
-    
+
     # Айтішне
     "{name} думає що API — це якась хвороба",
     "код {name} настільки поганий, що Stack Overflow забанив його IP",
@@ -41,7 +325,7 @@ ROASTS = [
     "CI/CD {name}: Constantly Introducing / Constantly Destroying",
     "{name} каже 'це не баг, це фіча' на кожному code review",
     "{name} думає що Docker — це порода собак",
-    
+
     # Соціальне
     "{name} настільки самотній, що розмовляє з ChatGPT про почуття",
     "друзі {name}? Error 404: Not Found",
@@ -53,7 +337,7 @@ ROASTS = [
     "{name} — людина яку забувають одразу після знайомства",
     "навіть його уявні друзі грають з кимось іншим",
     "{name} настільки нецікавий, що Alexa прикидається що не чує",
-    
+
     # Меми
     "{name} — це як Internet Explorer: всі терплять, ніхто не любить",
     "{name} — головний герой фільму 'Один Вдома' якби це була реальність",
@@ -65,7 +349,7 @@ ROASTS = [
     "{name} — причина чому WiFi завжди повільний",
     "якби {name} був мемом, його б не репостили",
     "{name} — людина яка ставить крапку в кінці повідомлення",
-    
+
     # Жорсткі
     "{name} — ходяча реклама презервативів",
     "генофонд людства програв коли {name} народився",
@@ -77,7 +361,7 @@ ROASTS = [
     "якби {name} був овочем, він був би капустою. Нікому не потрібною.",
     "{name} — помилка природи яку ніхто не хоче виправляти",
     "при народженні {name} лікар запитав 'а де гарантія?'",
-    
+
     # Про роботу
     "{name} такий продуктивний, що встигає нічого не робити весь день",
     "резюме {name} — творчий фікшн",
@@ -89,7 +373,7 @@ ROASTS = [
     "{name} — король 'я ще в процесі' та 'майже готово'",
     "{name} працює 9 to 5, але продуктивні тільки 9 хвилин",
     "корпоративний імейл {name} — 50 відтінків пасивної агресії",
-    
+
     # Геймерське
     "{name} грає в Fortnite і думає що він кіберспортсмен",
     "K/D ratio {name} — 0.1. В реальному житті теж.",
@@ -101,7 +385,7 @@ ROASTS = [
     "{name} той тип що лаває команду але має 0 кілів",
     "{name} грає за Китай в Plague Inc і програє",
     "навіть tutorial boss жаліє {name}",
-    
+
     # Про стосунки
     "{name} — причина чому Tinder додав кнопку 'блок'",
     "ex {name} досі святкує день розставання",
@@ -113,7 +397,7 @@ ROASTS = [
     "Bumble забанив {name} за 'depressing bio'",
     "{name} — friend zone champion 10 років поспіль",
     "навіть подушка {name} повертається холодною стороною сама",
-    
+
     # Рандом
     "{name} — якби людина була понеділком",
     "{name} пахне як бабусина шафа, але без ностальгії",
@@ -139,7 +423,7 @@ COMPLIMENTS = [
     "світ не заслуговує {name}, але радий що він є",
     "{name} — причина чому хтось сьогодні посміхнувся",
     "{name} випромінює впевненість без зарозумілості",
-    
+
     # Про характер
     "{name} — людина з якою хочеться пити каву і говорити про життя",
     "надійність {name} — на рівні швейцарських годинників",
@@ -151,7 +435,7 @@ COMPLIMENTS = [
     "в компанії {name} час летить непомітно",
     "{name} — людина яка дає другий шанс і не шкодує",
     "чесність {name} — освіжаюча рідкість",
-    
+
     # Про роботу
     "код {name} — poetry in motion",
     "{name} — senior не по title, а по mindset",
@@ -163,7 +447,7 @@ COMPLIMENTS = [
     "{name} — причина чому проєкт не впав",
     "Stack Overflow має вчитись у {name}",
     "{name} рефакторить з любов'ю, не зі злістю",
-    
+
     # Зовнішність
     "{name} виглядає як головний герой фільму про успіх",
     "стиль {name} — еталон без намагання",
@@ -175,7 +459,7 @@ COMPLIMENTS = [
     "навіть в понеділок {name} виглядає на мільйон",
     "{name} має vibe успішної людини",
     "Instagram {name} не потребує фільтрів",
-    
+
     # Гумор
     "{name} настільки крутий, що Chuck Norris просить поради",
     "Thanos хотів знищити половину всесвіту, але залишив би {name}",
@@ -187,7 +471,7 @@ COMPLIMENTS = [
     "якби life було грою, {name} грав би на legendary",
     "{name} — main character energy без cringe",
     "Netflix зняв би про {name} документалку 'Як бути awesome'",
-    
+
     # Про інтелект
     "{name} думає на 5 кроків вперед поки інші гуглять",
     "мозок {name} працює як SSD, не як floppy disk",
@@ -199,7 +483,7 @@ COMPLIMENTS = [
     "аргументи {name} — як шахи: продумані на 10 ходів",
     "{name} має rare talent визнавати помилки і вчитись",
     "дискусія з {name} — завжди win-win",
-    
+
     # Про creativity
     "{name} має ідеї які Apple хотіли б вкрасти",
     "креативність {name} не має меж, тільки horizons",
@@ -211,7 +495,7 @@ COMPLIMENTS = [
     "brainstorm з {name} — це як Netflix для мозку",
     "{name} — proof що AI ще далеко до людської creativity",
     "imagination {name} — renewable energy source",
-    
+
     # Wholesome
     "{name} — тип людей заради яких варто жити",
     "дружба з {name} — одна з найкращих інвестицій",
@@ -223,7 +507,7 @@ COMPLIMENTS = [
     "{name} — людина яку хочеться у своєму corner",
     "universe зробив щось правильно коли створив {name}",
     "{name} — definition of 'good vibes only'",
-    
+
     # Motivational
     "{name} надихає без мотиваційних постерів",
     "успіх {name} — результат роботи, не luck",
@@ -239,10 +523,28 @@ COMPLIMENTS = [
 
 
 def get_random_roast(name: str) -> str:
-    """Get random roast for a person"""
+    """Get random roast for a person - personalized if known"""
+    name_lower = name.lower()
+
+    # Check for personalized roasts
+    for key in PERSONAL_ROASTS:
+        if key in name_lower:
+            # 50% chance for personalized roast
+            if random.random() < 0.5:
+                return random.choice(PERSONAL_ROASTS[key]).format(name=name)
+
     return random.choice(ROASTS).format(name=name)
 
 
 def get_random_compliment(name: str) -> str:
-    """Get random compliment for a person"""
+    """Get random compliment for a person - personalized if known"""
+    name_lower = name.lower()
+
+    # Check for personalized compliments
+    for key in PERSONAL_COMPLIMENTS:
+        if key in name_lower:
+            # 50% chance for personalized compliment
+            if random.random() < 0.5:
+                return random.choice(PERSONAL_COMPLIMENTS[key]).format(name=name)
+
     return random.choice(COMPLIMENTS).format(name=name)
