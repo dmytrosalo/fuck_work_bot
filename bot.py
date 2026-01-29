@@ -4,6 +4,7 @@ For deployment on Fly.io
 """
 
 import os
+import re
 import json
 import random
 import logging
@@ -640,8 +641,18 @@ async def check_riddle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = update.message.text.lower().strip()
     riddle = riddle_state[user_id]
 
-    # Check answer
-    correct = any(ans.lower() in text or text in ans.lower() for ans in riddle['a'])
+    # Check answer using regex word boundaries to avoid partial matches
+    # e.g. "1" should NOT match "11" or "12"
+    # e.g. "cat" should NOT match "caterpillar"
+    # But "11" SHOULD match "I think it is 11"
+    correct = False
+    for ans in riddle['a']:
+        ans_clean = ans.lower().strip()
+        # Create regex pattern: \b(escaped_answer)\b
+        pattern = r"\b" + re.escape(ans_clean) + r"\b"
+        if re.search(pattern, text):
+            correct = True
+            break
 
     if correct:
         # Correct answer!
