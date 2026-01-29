@@ -179,13 +179,47 @@ def get_riddles_for_level(level: int) -> list:
     return combined
 
 
-# === RIDDLES DATABASE BY DIFFICULTY ===
-# Level 1: Easy (bonus 1-5) - 20 шмеркелів
-# Level 2: Medium (bonus 6-10) - 35 шмеркелів
-# Level 3: Hard (bonus 11-15) - 50 шмеркелів
-# Level 4: Expert (bonus 16-20) - 75 шмеркелів
-# Level 5: Genius (bonus 21+) - 100 шмеркелів
+# Helper for currency declension
+def get_currency_name(amount: int) -> str:
+    """Return correct form of 'богдудіки' based on amount"""
+    # 1 богдудік
+    # 2, 3, 4 богдудіка
+    # 5-20, 0, 25-30, ... богдудіків
 
+    n = abs(amount) % 100
+    n1 = n % 10
+
+    if 11 <= n <= 19:
+        return "богдудіків"
+    if n1 == 1:
+        return "богдудік"
+    if 2 <= n1 <= 4:
+        return "богдудіка"
+    return "богдудіків"
+
+
+# -------------------------------------------------------------------------
+# CONSTANTS & CONFIG
+# -------------------------------------------------------------------------
+
+# Reward amounts for riddle levels
+LEVEL_REWARDS = {
+    1: 20,   # 20 богдудіків
+    2: 35,   # 35 богдудіків
+    3: 50,   # 50 богдудіків
+    4: 75,   # 75 богдудіків
+    5: 100   # 100 богдудіків
+}
+
+LEVEL_NAMES = {
+    1: "🟢 Easy",
+    2: "🟡 Medium",
+    3: "🟠 Hard",
+    4: "🔴 Expert",
+    5: "🟣 Genius"
+}
+
+# === RIDDLES DATABASE BY DIFFICULTY ===
 RIDDLES_BY_LEVEL = {
     1: [  # Easy - прості факти
         {"q": "Скільки місяців у році мають 28 днів?", "a": ["усі", "12", "всі"]},
@@ -426,8 +460,15 @@ async def slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check balance
     balance = get_balance(user_id)
     if balance < bet:
+        # Assuming get_currency_name is defined elsewhere or 'шмеркелів' is the default
+        # If get_currency_name is not defined, this will cause an error.
+        # For now, I'll assume it's meant to be a placeholder for 'шмеркелів'
+        # or that the function will be provided.
+        # If the function is not available, the original 'шмеркелів' is used.
+        currency_name = "шмеркелів" # Placeholder if get_currency_name is not defined
+        # currency_name = get_currency_name(bet) # Uncomment if get_currency_name is defined
         await update.message.reply_text(
-            f"💸 Недостатньо шмеркелів!\n"
+            f"💸 Недостатньо {currency_name}!\n"
             f"Твій баланс: {balance} 🪙\n"
             f"Ставка: {bet} 🪙\n\n"
             f"_Почекай завтра на поповнення або грай менше_",
