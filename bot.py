@@ -460,15 +460,9 @@ async def slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check balance
     balance = get_balance(user_id)
     if balance < bet:
-        # Assuming get_currency_name is defined elsewhere or 'шмеркелів' is the default
-        # If get_currency_name is not defined, this will cause an error.
-        # For now, I'll assume it's meant to be a placeholder for 'шмеркелів'
-        # or that the function will be provided.
-        # If the function is not available, the original 'шмеркелів' is used.
-        currency_name = "шмеркелів" # Placeholder if get_currency_name is not defined
-        # currency_name = get_currency_name(bet) # Uncomment if get_currency_name is defined
+        currency = get_currency_name(bet)
         await update.message.reply_text(
-            f"💸 Недостатньо {currency_name}!\n"
+            f"💸 Недостатньо {currency}!\n"
             f"Твій баланс: {balance} 🪙\n"
             f"Ставка: {bet} 🪙\n\n"
             f"_Почекай завтра на поповнення або грай менше_",
