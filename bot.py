@@ -586,18 +586,21 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_bonus_data = bonus_claims.get(user_id, {"date": "", "count": 0})
 
     if user_bonus_data.get("date") != today:
-        # First bonus of the day — free 50 шмеркелів
+        # First bonus of the day
         bonus = 50
         update_balance(user_id, bonus, user.first_name or "Unknown") # Store unescaped name in DB
         new_balance = get_balance(user_id)
+
+        currency_bonus = get_currency_name(bonus)
+        currency_total = get_currency_name(new_balance)
 
         bonus_claims[user_id] = {"date": today, "count": 1}
         save_json(BONUS_FILE, bonus_claims)
 
         await update.message.reply_text(
             f"🎁 *Щоденний бонус!*\n\n"
-            f"+{bonus} 🪙\n"
-            f"Баланс: {new_balance} 🪙\n\n"
+            f"+{bonus} {currency_bonus}\n"
+            f"Баланс: {new_balance} {currency_total}\n\n"
             f"_Хочеш ще? Напиши /bonus для загадки!_",
             parse_mode="Markdown"
         )
@@ -616,7 +619,7 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"🛑 *Ліміт вичерпано!*\n\n"
                 f"Ти пройшов усі 5 рівнів на сьогодні.\n"
-                f"Приходь завтра за новими шмеркелями!",
+                f"Приходь завтра за новими богдудіками!",
                 parse_mode="Markdown"
             )
             return
@@ -650,6 +653,7 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reward = LEVEL_REWARDS.get(level, 50)
         level_name = LEVEL_NAMES.get(level, f"Level {level}")
+        currency = get_currency_name(reward)
 
         q_text = escape_markdown(riddle['q'])
 
@@ -657,7 +661,7 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🧩 *Загадка #{count} (Рівень {level})*\n\n"
             f"Рівень: {level_name}\n"
             f"❓ {q_text}\n"
-            f"💰 Нагорода: {reward} шмеркелів\n\n"
+            f"💰 Нагорода: {reward} {currency}\n\n"
             f"_Напиши відповідь в чат!_",
             parse_mode="Markdown"
         )
