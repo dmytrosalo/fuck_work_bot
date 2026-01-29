@@ -506,13 +506,24 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+def escape_markdown(text: str) -> str:
+    """Escape characters for Markdown V2"""
+    # Note: Telegram Markdown (V1) supports *bold*, _italic_, [link](url), `code`, ```pre```
+    # But usually it's safer to just replace * and _ if we don't intend formatting.
+    # However, user wants nice formatting.
+    # The error "can't find end of the entity" suggests mismatched * or _.
+    # We should escape * and _ in content that is NOT meant to be formatted.
+    escape_chars = r"_*[]()~`>#+-=|{}.!"
+    return "".join(f"\\{char}" if char in escape_chars else char for char in str(text))
+
+
 async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Give daily bonus coins or riddle for extra coins"""
     global bonus_claims, riddle_state
 
     user = update.effective_user
     user_id = str(user.id)
-    user_name = user.first_name or user.username or "Анонім"
+    user_name = escape_markdown(user.first_name or user.username or "Анонім")
     today = datetime.now().strftime("%Y-%m-%d")
 
     # Check if user has active riddle
@@ -522,10 +533,13 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reward = LEVEL_REWARDS.get(level, 50)
         level_name = LEVEL_NAMES.get(level, "🟢 Easy")
 
+        # Escape riddle text just in case
+        q_text = escape_markdown(riddle['q'])
+
         await update.message.reply_text(
             f"🧩 *У тебе вже є загадка!*\n\n"
             f"Рівень: {level_name}\n"
-            f"❓ {riddle['q']}\n"
+            f"❓ {q_text}\n"
             f"💰 Нагорода: {reward} 🪙\n\n"
             f"Відповідай в чат!",
             parse_mode="Markdown"
@@ -538,7 +552,7 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_bonus_data.get("date") != today:
         # First bonus of the day — free 50 шмеркелів
         bonus = 50
-        update_balance(user_id, bonus, user_name)
+        update_balance(user_id, bonus, user.first_name or "Unknown") # Store unescaped name in DB
         new_balance = get_balance(user_id)
 
         bonus_claims[user_id] = {"date": today, "count": 1}
@@ -575,9 +589,24 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not riddles_list:
             riddle = {"q": "Питання закінчились :(", "a": ["pass"]}
         else:
-            # Use sequential selection to avoid duplicates and ensure all 5 are seen
-            riddle_index = (count - 1) % len(riddles_list)
-            riddle = riddles_list[riddle_index]
+            # Use separate RNG seeded by date to get a consistent daily set
+            # This ensures we pick different 5 riddles each day if the pool is large enough
+            date_seed = int(datetime.now().strftime("%Y%m%d")) + level
+            rng = random.Random(date_seed)
+
+            # Shuffle a copy of the list
+            daily_riddles = riddles_list.copy()
+            rng.shuffle(daily_riddles)
+
+            # Use simple modulo to cycle through the 5 daily selected riddles
+            # (count - 1) % 5 gives 0, 1, 2, 3, 4
+            riddle_index = (count - 1) % 5
+
+            # Ensure we don't go out of bounds if list is small
+            if riddle_index >= len(daily_riddles):
+                riddle_index = riddle_index % len(daily_riddles)
+
+            riddle = daily_riddles[riddle_index]
 
         riddle_with_meta = {**riddle, "level": level}
         riddle_state[user_id] = riddle_with_meta
@@ -586,10 +615,12 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reward = LEVEL_REWARDS.get(level, 50)
         level_name = LEVEL_NAMES.get(level, f"Level {level}")
 
+        q_text = escape_markdown(riddle['q'])
+
         await update.message.reply_text(
             f"🧩 *Загадка #{count} (Рівень {level})*\n\n"
             f"Рівень: {level_name}\n"
-            f"❓ {riddle['q']}\n"
+            f"❓ {q_text}\n"
             f"💰 Нагорода: {reward} шмеркелів\n\n"
             f"_Напиши відповідь в чат!_",
             parse_mode="Markdown"
