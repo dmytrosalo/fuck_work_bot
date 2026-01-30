@@ -510,7 +510,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"💰 *Баланс {user_name}*\n\n"
-        f"🪙 {bal} шмеркелів\n\n"
+        f"🪙 {bal} богдудіків\n\n"
         f"_/slots <ставка> - грати (за замовч. {DEFAULT_BET})_",
         parse_mode="Markdown"
     )
@@ -739,7 +739,7 @@ async def check_riddle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             f"✅ *Правильно!* {level_name}\n\n"
             f"+{bonus} 🪙\n"
-            f"Баланс: {new_balance} шмеркелів{next_msg}",
+            f"Баланс: {new_balance} богдудіків{next_msg}",
             parse_mode="Markdown"
         )
         return True
@@ -1216,12 +1216,11 @@ def main():
 
         # Schedule startup idea every 6 hours
         # First run after 10 seconds to verified it works
-        job_queue.run_repeating(
-            startup_idea_job,
-            interval=timedelta(hours=6),
-            first=10,
-            name="startup_idea"
-        )
+            # context=active_chats
+            # name='startup_idea'
+        # )
+        # app.job_queue.run_once(startup_idea_job, 10) # Run after 10 sec to test
+        pass
         logger.info("Startup ideas scheduled every 6 hours")
     else:
         logger.warning("GEMINI_API_KEY not set, riddle refresh and startup ideas disabled")
