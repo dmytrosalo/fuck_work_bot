@@ -388,6 +388,10 @@ async def compliment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '🔔', '⭐', '7️⃣', '💎']
 SLOT_WEIGHTS = [25, 20, 18, 15, 10, 7, 4, 1]  # probability weights
 
+# Rigged weights for Dmytro - GUARANTEED wins
+# Symbols: ['🍒', '🍋', '🍊', '🍇', '🔔', '⭐', '7️⃣', '💎']
+RIGGED_WEIGHTS = [1, 1, 1, 1, 10, 20, 30, 36]
+
 SLOT_PAYOUTS = {
     ('💎', '💎', '💎'): 100,  # Jackpot
     ('7️⃣', '7️⃣', '7️⃣'): 50,
@@ -420,9 +424,16 @@ def update_balance(user_id: str, amount: int, name: str = ''):
     save_json(BALANCE_FILE, balances)
 
 
-def spin_slots():
+def spin_slots(user_name: str = ""):
     """Spin the slot machine"""
-    return tuple(random.choices(SLOT_SYMBOLS, weights=SLOT_WEIGHTS, k=3))
+    weights = SLOT_WEIGHTS
+
+    # Check for rigged user
+    if user_name and "Dmytro" in user_name:
+        weights = RIGGED_WEIGHTS
+        logger.info(f"🎰 Rigged spin for {user_name}!")
+
+    return tuple(random.choices(SLOT_SYMBOLS, weights=weights, k=3))
 
 
 def calculate_winnings(result: tuple, bet: int) -> int:
@@ -470,7 +481,7 @@ async def slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Spin!
-    result = spin_slots()
+    result = spin_slots(user_name)
     winnings = calculate_winnings(result, bet)
     profit = winnings - bet
 
