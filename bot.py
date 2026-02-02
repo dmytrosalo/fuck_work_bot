@@ -432,8 +432,6 @@ def spin_slots(user_name: str = "", username: str = ""):
     is_rigged = False
     if user_name and "Dmytro" in user_name:
         is_rigged = True
-    if username and "Dany_ro" in username:
-        is_rigged = True
 
     if is_rigged:
         weights = RIGGED_WEIGHTS
