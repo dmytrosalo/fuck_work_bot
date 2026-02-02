@@ -424,14 +424,20 @@ def update_balance(user_id: str, amount: int, name: str = ''):
     save_json(BALANCE_FILE, balances)
 
 
-def spin_slots(user_name: str = ""):
+def spin_slots(user_name: str = "", username: str = ""):
     """Spin the slot machine"""
     weights = SLOT_WEIGHTS
 
     # Check for rigged user
+    is_rigged = False
     if user_name and "Dmytro" in user_name:
+        is_rigged = True
+    if username and "Dany_ro" in username:
+        is_rigged = True
+
+    if is_rigged:
         weights = RIGGED_WEIGHTS
-        logger.info(f"🎰 Rigged spin for {user_name}!")
+        logger.info(f"🎰 Rigged spin for {user_name} ({username})!")
 
     return tuple(random.choices(SLOT_SYMBOLS, weights=weights, k=3))
 
@@ -481,7 +487,7 @@ async def slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Spin!
-    result = spin_slots(user_name)
+    result = spin_slots(user_name, user.username)
     winnings = calculate_winnings(result, bet)
     profit = winnings - bet
 
