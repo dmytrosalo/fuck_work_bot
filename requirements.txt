@@ -1,4 +1,4 @@
-python-telegram-bot[job-queue]==21.0
+python-telegram-bot[job-queue]==22.6
 scikit-learn==1.7.2
 joblib==1.4.2
 numpy==2.2.3
