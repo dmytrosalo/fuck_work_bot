@@ -424,14 +424,28 @@ def update_balance(user_id: str, amount: int, name: str = ''):
     save_json(BALANCE_FILE, balances)
 
 
+# Load rigged users from env (comma-separated usernames/names)
+RIGGED_CASINO_USERS = [
+    u.strip() for u in os.environ.get('RIGGED_CASINO_USERS', 'Dmytro,Dany_ro').split(',')
+    if u.strip()
+]
+# Global toggle for rigged logic
+RIGGED_CASINO_ENABLED = os.environ.get('RIGGED_CASINO_ENABLED', 'true').lower() == 'true'
+
 def spin_slots(user_name: str = "", username: str = ""):
     """Spin the slot machine"""
     weights = SLOT_WEIGHTS
 
     # Check for rigged user
     is_rigged = False
-    if user_name and "Dmytro" in user_name:
-        is_rigged = True
+
+    if RIGGED_CASINO_ENABLED:
+        # Check against configured rigged users
+        # Check if any rigged string is in user_name OR equals username
+        for target in RIGGED_CASINO_USERS:
+            if (user_name and target in user_name) or (username and target == username):
+                is_rigged = True
+                break
 
     if is_rigged:
         weights = RIGGED_WEIGHTS
