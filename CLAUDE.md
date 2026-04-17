@@ -18,6 +18,7 @@ go-bot/
 │       ├── roasts.go            — username mapping for personalized content
 │       ├── quotes.go            — /quote, /addquote, /roast, /compliment
 │       ├── cards.go             — /pack, /collection, /battle
+│       ├── cardimage.go         — card image rendering (Twemoji CDN + Go image)
 │       ├── slots.go             — /slots, /balance, /daily, /top
 │       ├── pokemon.go           — /pokemon via PokeAPI
 │       ├── horoscope.go         — /horoscope via Gemini Flash
@@ -41,7 +42,7 @@ go-bot/
 - 232 roasts (30 generic + 202 personal per member)
 - 382 compliments (96 generic + 286 personal)
 - 1628 quotes from chat history
-- 301 trading cards (5 rarities, 11 legendaries)
+- 301 trading cards (5 rarities, 11 legendaries, rendered as images with Twemoji)
 
 ## Economy
 

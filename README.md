@@ -6,7 +6,7 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 
 - **Work Classifier** — TF-IDF + LogReg distilled from a fine-tuned sentence transformer. 80% confidence threshold with keyword boost for colleague names.
 - **Personalized Roasts & Compliments** — stored in SQLite, targeted per chat member
-- **Trading Cards** — 301 cards (Keyo/chat + Ukrainian memes/culture), 5 rarities, pack opening, collection, battles
+- **Trading Cards** — 301 cards with rendered images (Twemoji), 5 rarities, pack opening as album, collection, battles
 - **Economy** — богдудіки currency, slots casino, daily bonus, leaderboard
 - **Pokemon** — daily Pokemon with official artwork via PokeAPI
 - **Horoscope** — Gemini-powered dev horoscope, 1/day
@@ -19,6 +19,7 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 - **Go** — single binary, no CGO, ~22MB RAM
 - **SQLite** (modernc.org/sqlite) — pure Go
 - **Fly.io** — free tier (256MB, Frankfurt)
+- **Twemoji CDN** — emoji images for card rendering
 - **Telegram Bot API** (gopkg.in/telebot.v3)
 - **Gemini Flash** — horoscope generation
 - **PokeAPI** — Pokemon data + images
