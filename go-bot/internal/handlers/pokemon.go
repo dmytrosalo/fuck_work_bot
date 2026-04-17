@@ -73,7 +73,7 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		url = fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%d", id)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		log.Printf("[pokemon] API error: %v", err)
@@ -85,11 +85,13 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		return c.Reply("❌ Покемон не знайдений")
 	}
 	if resp.StatusCode != 200 {
+		log.Printf("[pokemon] API status: %d", resp.StatusCode)
 		return c.Reply("❌ Помилка API")
 	}
 
 	var pokemon pokemonAPI
 	if err := json.NewDecoder(resp.Body).Decode(&pokemon); err != nil {
+		log.Printf("[pokemon] Parse error: %v", err)
 		return c.Reply("❌ Помилка парсингу")
 	}
 
@@ -157,10 +159,14 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 			File:    tele.FromURL(spriteURL),
 			Caption: sb.String(),
 		}
-		return c.Send(photo, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		err := c.Send(photo, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		if err != nil {
+			log.Printf("[pokemon] Photo send error: %v, falling back to text", err)
+			return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		}
+		return nil
 	}
 
-	// Fallback to text
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
