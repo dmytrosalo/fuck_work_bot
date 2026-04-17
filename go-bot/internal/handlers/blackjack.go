@@ -164,10 +164,10 @@ func (b *Bot) handleBlackjack(c tele.Context) error {
 	btnStand := markup.Data("✋ Stand", "bj_stand", userID)
 	markup.Inline(markup.Row(btnHit, btnStand))
 
-	msg := fmt.Sprintf("🃏 *Blackjack* (ставка: %d 🪙)\n\nТвої: %s = *%d*\nДилер: %s 🂠\n\nHit або Stand?",
+	msg := fmt.Sprintf("🃏 Blackjack (ставка: %d 🪙)\n\nТвої: %s = %d\nДилер: %s 🂠\n\nHit або Stand?",
 		bet, handString(game.PlayerCards), playerVal, game.DealerCards[0].String())
 
-	return c.Send(msg, markup, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return c.Send(msg, markup)
 }
 
 func (b *Bot) handleBJHit(c tele.Context) error {
@@ -193,9 +193,8 @@ func (b *Bot) handleBJHit(c tele.Context) error {
 		bjMu.Unlock()
 
 		bal := b.db.GetBalance(userID, "")
-		c.Edit(fmt.Sprintf("🃏 *Blackjack*\n\nТвої: %s = *%d* 💥 BUST!\nДилер: %s\n\n❌ Програв -%d 🪙 (баланс: %d)",
-			handString(game.PlayerCards), playerVal, handString(game.DealerCards), game.Bet, bal),
-			&tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		c.Edit(fmt.Sprintf("🃏 Blackjack\n\nТвої: %s = %d 💥 BUST!\nДилер: %s\n\n❌ Програв -%d 🪙 (баланс: %d)",
+			handString(game.PlayerCards), playerVal, handString(game.DealerCards), game.Bet, bal))
 		return c.Respond(&tele.CallbackResponse{Text: "💥 Bust!"})
 	}
 
@@ -211,9 +210,9 @@ func (b *Bot) handleBJHit(c tele.Context) error {
 	btnStand := markup.Data("✋ Stand", "bj_stand", userID)
 	markup.Inline(markup.Row(btnHit, btnStand))
 
-	c.Edit(fmt.Sprintf("🃏 *Blackjack* (ставка: %d 🪙)\n\nТвої: %s = *%d*\nДилер: %s 🂠\n\nHit або Stand?",
+	c.Edit(fmt.Sprintf("🃏 Blackjack (ставка: %d 🪙)\n\nТвої: %s = %d\nДилер: %s 🂠\n\nHit або Stand?",
 		game.Bet, handString(game.PlayerCards), playerVal, game.DealerCards[0].String()),
-		markup, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		markup)
 
 	return c.Respond()
 }
@@ -268,11 +267,11 @@ func (b *Bot) bjStand(c tele.Context, game *bjGame) error {
 	}
 	bal := b.db.GetBalance(game.UserID, "")
 
-	msg := fmt.Sprintf("🃏 *Blackjack — Результат*\n\nТвої: %s = *%d*\nДилер: %s = *%d*\n\n%s\nБаланс: %d 🪙",
+	msg := fmt.Sprintf("🃏 Blackjack — Результат\n\nТвої: %s = %d\nДилер: %s = %d\n\n%s\nБаланс: %d 🪙",
 		handString(game.PlayerCards), playerVal,
 		handString(game.DealerCards), dealerVal,
 		result, bal)
 
-	c.Edit(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	c.Edit(msg)
 	return c.Respond()
 }
