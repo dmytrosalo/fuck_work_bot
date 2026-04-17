@@ -50,6 +50,9 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/dog", b.handleDog)
 	bot.Handle("/cat", b.handleCat)
 	bot.Handle("/quiz", b.handleQuiz)
+	bot.Handle("/duel", b.handleDuel)
+	bot.Handle("/accept", b.handleAccept)
+	bot.Handle(&tele.Btn{Unique: "duel_pick"}, b.handleDuelPick)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -73,7 +76,8 @@ func (b *Bot) handleStart(c tele.Context) error {
 🃏 *Картки (301 шт):*
 /pack — пак (20 🪙, макс 10/день)
 /collection — колекція
-/battle — батл (±10 🪙 + картка)
+/battle — швидкий батл (±10 🪙 + картка)
+/duel — дуель з вибором карток (±15 🪙)
 
 🎰 *Економіка:*
 /slots — слоти (1-100 🪙, макс 20/день)
