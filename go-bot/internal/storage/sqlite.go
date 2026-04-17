@@ -254,9 +254,9 @@ func (d *DB) AddCard(id int, name string, rarity int, category, emoji, descripti
 		id, name, rarity, category, emoji, description, atk, def, specialName, special)
 }
 
-func (d *DB) GetRandomCard(rarity int) (id int, name, emoji, description, specialName string, special int) {
-	d.db.QueryRow(`SELECT id, name, emoji, description, special_name, special FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1`, rarity).
-		Scan(&id, &name, &emoji, &description, &specialName, &special)
+func (d *DB) GetRandomCard(rarity int) (id int, name, emoji, description string, atk, def int, specialName string, special int) {
+	d.db.QueryRow(`SELECT id, name, emoji, description, atk, def, special_name, special FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1`, rarity).
+		Scan(&id, &name, &emoji, &description, &atk, &def, &specialName, &special)
 	return
 }
 

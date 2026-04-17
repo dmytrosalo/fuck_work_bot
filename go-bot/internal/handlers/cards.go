@@ -65,31 +65,27 @@ func (b *Bot) handlePack(c tele.Context) error {
 	b.db.IncrementPackOpens(userID, today)
 
 	// Roll 3 cards: 2 random + 1 guaranteed uncommon+
-	var cards []struct {
+	type packCard struct {
 		ID          int
 		Name        string
 		Rarity      int
 		Emoji       string
 		Description string
+		ATK         int
+		DEF         int
 		SpecialName string
 		Special     int
 	}
 
+	var cards []packCard
+
 	rarities := []int{rollRarity(), rollRarity(), rollGuaranteedRarity()}
 	for _, rarity := range rarities {
-		id, name, emoji, desc, specialName, special := b.db.GetRandomCard(rarity)
+		id, name, emoji, desc, atk, def, specialName, special := b.db.GetRandomCard(rarity)
 		if id == 0 {
 			continue
 		}
-		cards = append(cards, struct {
-			ID          int
-			Name        string
-			Rarity      int
-			Emoji       string
-			Description string
-			SpecialName string
-			Special     int
-		}{id, name, rarity, emoji, desc, specialName, special})
+		cards = append(cards, packCard{id, name, rarity, emoji, desc, atk, def, specialName, special})
 
 		// Add to collection
 		b.db.AddToCollection(userID, id)
@@ -108,7 +104,7 @@ func (b *Bot) handlePack(c tele.Context) error {
 		sb.WriteString(fmt.Sprintf("%s %s\n", stars, rarityNames[card.Rarity]))
 		sb.WriteString(fmt.Sprintf("%s *%s*\n", card.Emoji, card.Name))
 		sb.WriteString(fmt.Sprintf("_%s_\n", card.Description))
-		sb.WriteString(fmt.Sprintf("%s: %d\n\n", card.SpecialName, card.Special))
+		sb.WriteString(fmt.Sprintf("⚔️ %d  🛡 %d  %s: %d\n\n", card.ATK, card.DEF, card.SpecialName, card.Special))
 	}
 
 	// Show collection progress
