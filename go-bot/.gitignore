@@ -1,0 +1,5 @@
+venv/
+model_tmp/
+model/model.onnx
+model/tokenizer.json
+__pycache__/
