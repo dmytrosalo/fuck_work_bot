@@ -61,6 +61,10 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/gacha", b.handleGacha)
 	bot.Handle("/auction", b.handleAuction)
 	bot.Handle("/bid", b.handleBid)
+	bot.Handle("/guess", b.handleGuess)
+	bot.Handle("/rob", b.handleRob)
+	bot.Handle("/wordle", b.handleWordle)
+	bot.Handle("/card", b.handleCardInfo)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -87,12 +91,14 @@ func (b *Bot) handleStart(c tele.Context) error {
 /battle — швидкий батл (±10 🪙)
 /duel — дуель з вибором (±15 🪙)
 /steal — вкрасти картку (30%)
+/rob — пограбувати монети (40%)
 /auction — аукціон картки
 /sacrifice — 3 картки → 1 вищої
 /gacha — преміум пак (100 🪙)
 /burn — спалити за монети
 /gift — подарувати картку
-/showcase — показати найкращу
+/showcase — найкраща картка
+/card — подивитись картку
 
 🎰 *Економіка:*
 /slots — слоти (1-100 🪙, макс 20/день)
@@ -106,6 +112,8 @@ func (b *Bot) handleStart(c tele.Context) error {
 /8ball — магічна куля 🎱
 /cat 🐱 /dog 🐕
 /quiz — вікторина (+10-25 🪙) 🧠
+/guess — вгадай число (мультиплеєр) 🎯
+/wordle — українське wordle 📝
 
 ⚙️ /mute /unmute — трекінг
 📖 /help — правила`
@@ -151,13 +159,19 @@ func (b *Bot) handleHelp(c tele.Context) error {
 • /showcase — показати найкрутішу картку
 
 🎮 *Розваги*
-• /pokemon — твій покемон сьогодні (1/день)
-• /horoscope — дев-гороскоп (1/день, Gemini)
-• /quiz — вікторина (+10-25 🪙, макс 10/день)
+• /pokemon — покемон сьогодні (1/день)
+• /horoscope — дев-гороскоп (1/день)
+• /quiz — вікторина (+10-25 🪙, 10/день)
+• /guess — вгадай число 1-100 (мультиплеєр, +30 🪙)
+• /wordle — українське wordle (1/день, +10-50 🪙)
 • /8ball — магічна куля
 • /cat /dog — тваринки
 • /roast /compliment — підколка/комплімент
 • /quote /addquote — цитати з чату
+
+🦹 *PvP*
+• /rob @user — 40% вкрасти 10-50% монет, 60% втратити 20 (1/год)
+• /steal @user — 30% вкрасти картку, 70% втратити 20 🪙 (1/день)
 
 🤖 *Класифікатор*
 • Кожне повідомлення аналізується
@@ -253,8 +267,14 @@ func (b *Bot) handleText(c tele.Context) error {
 
 	b.db.TrackChat(chatID)
 
-	// Check quiz answer first
+	// Check active game answers
 	if b.checkQuizAnswer(c) {
+		return nil
+	}
+	if b.checkGuessAnswer(c) {
+		return nil
+	}
+	if b.checkWordleAnswer(c) {
 		return nil
 	}
 

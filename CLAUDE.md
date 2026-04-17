@@ -52,6 +52,15 @@ go-bot/
 - `/pack`: 20 coins, max 10/day
 - `/battle`: winner +10 coins + steals loser's card
 - `/roast @user`: 5 coins (self-roast free)
+- `/rob @user`: 40% steal 10-50% coins, 60% lose 20 (1/hour)
+- `/steal @user`: 30% steal card, 70% lose 20 coins (1/day)
+- `/gacha`: premium pack guaranteed rare+ (100 coins)
+- `/sacrifice`: 3 cards → 1 higher rarity
+- `/burn`: destroy card for coins (5-100 by rarity)
+- `/auction`/`/bid`: card auction system (60 sec)
+- `/quiz`: trivia +10-25 coins (10/day)
+- `/guess`: multiplayer number guess +30 coins
+- `/wordle`: Ukrainian wordle (1/day, +10-50 coins)
 - `/work` `/notwork`: +10 coins per feedback label
 
 ## Seed System

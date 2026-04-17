@@ -29,29 +29,45 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 
 | Command | Description | Cost |
 |---------|-------------|------|
-| `/start` | Welcome message | — |
+| **Classifier** | | |
+| `/start` | Welcome + commands | — |
+| `/help` | Rules and mechanics | — |
 | `/check <text>` | Classify a message | — |
-| `/stats` | Work message statistics | — |
-| `/roast` | Roast (self free, others 5 🪙) | 5 🪙 |
-| `/help` | Rules and game mechanics | — |
-| `/compliment` | Compliment (self, reply, or @user) | — |
-| `/quote` | Random quote from chat history | — |
-| `/addquote` | Save a quote (reply to message) | — |
-| `/pokemon` | Your daily Pokemon with image | — |
-| `/horoscope` | Dev horoscope (1/day) | — |
-| `/8ball <question>` | Magic 8 ball | — |
-| `/cat` | Random cat photo | — |
-| `/dog` | Random dog photo | — |
-| `/daily` | Daily bonus | +50 🪙 |
-| `/slots <bet>` | Slot machine (max 20/day) | 1-100 🪙 |
+| `/stats` | Work message stats | — |
+| `/work` / `/notwork` | Label message (reply) | +10 🪙 |
+| `/mute` / `/unmute` | Toggle tracking | — |
+| **Cards (301)** | | |
 | `/pack` | Open card pack (max 10/day) | 20 🪙 |
-| `/collection` | Your card collection | — |
-| `/battle` | Battle cards (reply to someone) | ±10 🪙 + card |
-| `/balance` | Check your coins | — |
-| `/top` | Richest players leaderboard | — |
-| `/work` | Label message as work (reply) | +10 🪙 |
-| `/notwork` | Label message as not work (reply) | +10 🪙 |
-| `/mute` / `/unmute` | Toggle work tracking | — |
+| `/gacha` | Premium pack (rare+ guaranteed) | 100 🪙 |
+| `/collection` | Your cards by rarity | — |
+| `/card <name>` | View card with image | — |
+| `/showcase` | Flex your rarest card | — |
+| `/battle` | Quick random card fight | ±10 🪙 + card |
+| `/duel @user` | Pick your card to fight | ±15 🪙 + card |
+| `/steal @user` | 30% steal card (1/day) | risk 20 🪙 |
+| `/sacrifice <rarity>` | 3 cards → 1 higher rarity | 3 cards |
+| `/burn <name>` | Destroy card for coins | 5-100 🪙 |
+| `/gift @user <name>` | Give card to someone | card |
+| `/auction <name>` | Auction card (60 sec) | — |
+| `/bid <amount>` | Bid on auction | 🪙 |
+| **Economy** | | |
+| `/slots <bet>` | Slot machine (max 20/day) | 1-100 🪙 |
+| `/daily` | Daily bonus | +50 🪙 |
+| `/balance` | Check coins | — |
+| `/top` | Leaderboard | — |
+| `/rob @user` | 40% steal coins (1/hour) | risk 20 🪙 |
+| **Games** | | |
+| `/quiz` | Trivia questions (10/day) | +10-25 🪙 |
+| `/guess` | Guess number 1-100 (multiplayer) | +30 🪙 |
+| `/wordle` | Ukrainian wordle (1/day) | +10-50 🪙 |
+| **Fun** | | |
+| `/pokemon` | Daily Pokemon with image | — |
+| `/horoscope` | Dev horoscope (Gemini, 1/day) | — |
+| `/8ball <question>` | Magic 8 ball | — |
+| `/cat` / `/dog` | Random pet photo | — |
+| `/roast` | Roast (5 🪙 for others) | 5 🪙 |
+| `/compliment` | Compliment | — |
+| `/quote` / `/addquote` | Chat quotes | — |
 
 ## Deploy
 

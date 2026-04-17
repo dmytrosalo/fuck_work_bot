@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -295,6 +296,43 @@ func rollGachaRarity() int {
 	default:
 		return 5
 	}
+}
+
+// --- Card Info ---
+
+func (b *Bot) handleCardInfo(c tele.Context) error {
+	query := strings.TrimSpace(c.Message().Payload)
+	if query == "" {
+		return c.Reply("Формат: /card назва картки")
+	}
+
+	card := b.db.FindCardByName(query)
+	if card.ID == 0 {
+		return c.Reply(fmt.Sprintf("❌ Картка '%s' не знайдена", query))
+	}
+
+	power := card.ATK + card.DEF + card.Special
+	cardData := CardData{
+		Name: card.Name, Rarity: card.Rarity, Emoji: card.Emoji,
+		Description: "", ATK: card.ATK, DEF: card.DEF,
+		SpecialName: card.SpecialName, Special: card.Special,
+	}
+
+	// Try render image
+	imgBytes, err := renderCard(cardData)
+	if err == nil {
+		photo := &tele.Photo{
+			File:    tele.FromReader(bytes.NewReader(imgBytes)),
+			Caption: fmt.Sprintf("%s %s — PWR: %d", card.Emoji, card.Name, power),
+		}
+		return c.Send(photo)
+	}
+
+	// Fallback text
+	return c.Reply(fmt.Sprintf("%s %s\n%s %s\n⚔️%d 🛡%d %s: %d\nPWR: %d",
+		rarityStars[card.Rarity], rarityNames[card.Rarity],
+		card.Emoji, card.Name,
+		card.ATK, card.DEF, card.SpecialName, card.Special, power))
 }
 
 // --- Auction ---
