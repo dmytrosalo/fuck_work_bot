@@ -1,67 +1,74 @@
 # Project: fuck-work-bot
 
-Telegram bot that detects work-related messages in a friend group chat and roasts people for talking about work.
+Telegram bot for a Ukrainian dev friend group. Work classifier + entertainment features.
 
 ## Architecture
 
-Go bot deployed on Fly.io (free tier, 256MB RAM, Frankfurt).
+Go bot on Fly.io (free tier, 256MB RAM, Frankfurt). Auto-deploys via GitHub Actions on push to main.
 
 ```
 go-bot/
-├── cmd/bot/main.go              — entry point, scheduler
+├── cmd/bot/main.go              — entry point, scheduler, seed logic
+├── cmd/seed/main.go             — standalone seed tool
 ├── internal/
-│   ├── classifier/classifier.go — TF-IDF + LogReg classifier (pure Go, no CGO)
-│   ├── storage/sqlite.go        — SQLite persistence (pure Go, modernc.org/sqlite)
+│   ├── classifier/classifier.go — TF-IDF + LogReg classifier (pure Go)
+│   ├── storage/sqlite.go        — SQLite: stats, cards, balances, collection, feedback
 │   └── handlers/
-│       ├── handlers.go          — Telegram command & message handlers
-│       └── roasts.go            — roasts & compliments database
+│       ├── handlers.go          — core commands (/check, /stats, /mute, /work)
+│       ├── roasts.go            — username mapping for personalized content
+│       ├── quotes.go            — /quote, /addquote, /roast, /compliment
+│       ├── cards.go             — /pack, /collection, /battle
+│       ├── slots.go             — /slots, /balance, /daily, /top
+│       ├── pokemon.go           — /pokemon via PokeAPI
+│       ├── horoscope.go         — /horoscope via Gemini Flash
+│       ├── eightball.go         — /8ball
+│       └── fun_apis.go          — /cat (cataas.com), /dog (dog.ceo)
 ├── model/tfidf_model.json       — distilled TF-IDF model (1.4MB)
-├── scripts/                     — Python scripts for model training (not deployed)
+├── seed_data.json               — roasts, compliments, quotes, cards (seeded into DB)
+├── scripts/                     — Python scripts for model training
 └── Dockerfile
 ```
 
 ## Classifier
 
 - TF-IDF (15K vocab, trigrams) + Logistic Regression + keyword boost
-- Distilled from a fine-tuned `paraphrase-multilingual-MiniLM-L12-v2` embedding model
-- Trained on 43K messages labeled by the fine-tuned teacher model
+- Distilled from fine-tuned `paraphrase-multilingual-MiniLM-L12-v2`
 - Threshold: 80% confidence to trigger roast
-- Keyword boost: colleague names (Руді, Маріт, Делна, etc.) and dev terms add to logit
+- Keyword boost: colleague names and dev terms add to logit
 
-## Key Commands
+## Content (stored in SQLite, seeded from seed_data.json)
 
-- `/check <text>` — manual classification
-- `/stats` — per-user message stats
-- `/roast` / `/compliment` — targeted roasts/compliments (reply or @username)
-- `/work` / `/notwork` — reply to message to label for future retraining
-- `/mute` / `/unmute` — toggle tracking
+- 232 roasts (30 generic + 202 personal per member)
+- 382 compliments (96 generic + 286 personal)
+- 1628 quotes from chat history
+- 301 trading cards (5 rarities, 11 legendaries)
+
+## Economy
+
+- Currency: богдудіки (starting balance 100)
+- `/daily`: +50/day
+- `/slots`: bet 1-100, max 20 spins/day, rigged mode via env
+- `/pack`: 20 coins, max 10/day
+- `/battle`: winner +10 coins + steals loser's card
+- `/work` `/notwork`: +10 coins per feedback label
+
+## Seed System
+
+Version-based: bot computes hash of seed_data.json size on startup. If changed, re-seeds cards/quotes/roasts. Collections preserved.
 
 ## Building
 
 ```bash
-# No CGO needed
 CGO_ENABLED=0 go build -o bot ./cmd/bot/
-
-# Run locally
 TELEGRAM_BOT_TOKEN=xxx MODEL_PATH=./model/tfidf_model.json DATA_DIR=./testdata ./bot
-```
-
-## Retraining the classifier
-
-1. Export feedback: `sqlite3 /data/bot.db "SELECT text,label FROM feedback" > feedback.csv`
-2. Run `go-bot/scripts/finetune_model.py` to fine-tune the embedding model
-3. Run distillation to regenerate `tfidf_model.json`
-
-## Deployment
-
-```bash
-fly deploy -a fuck-work-bot
-fly status -a fuck-work-bot
-fly logs -a fuck-work-bot
 ```
 
 ## Environment Variables
 
 - `TELEGRAM_BOT_TOKEN` — required
-- `MODEL_PATH` — path to tfidf_model.json (default: `./model/tfidf_model.json`)
-- `DATA_DIR` — SQLite DB directory (default: `/data`)
+- `MODEL_PATH` — TF-IDF model (default: `./model/tfidf_model.json`)
+- `DATA_DIR` — SQLite DB dir (default: `/data`)
+- `SEED_PATH` — seed data (default: `./seed_data.json`)
+- `GEMINI_API_KEY` — for /horoscope
+- `RIGGED_CASINO_USERS` — comma-separated names for rigged slots
+- `RIGGED_CASINO_ENABLED` — toggle (default: `true`)
