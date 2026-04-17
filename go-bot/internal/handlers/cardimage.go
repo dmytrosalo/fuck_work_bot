@@ -7,8 +7,11 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"net/http"
 	"os"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
@@ -19,23 +22,34 @@ var (
 	cardFontPath = "./model/Roboto-Bold.ttf"
 )
 
-var rarityColors = map[int]color.RGBA{
-	1: {80, 80, 80, 255},     // Common — dark gray
-	2: {30, 120, 70, 255},    // Uncommon — green
-	3: {30, 80, 180, 255},    // Rare — blue
-	4: {130, 40, 180, 255},   // Epic — purple
-	5: {200, 160, 30, 255},   // Legendary — gold
+var rarityAccent = map[int]color.RGBA{
+	1: {120, 120, 130, 255},  // Common — gray
+	2: {50, 180, 100, 255},   // Uncommon — green
+	3: {60, 120, 220, 255},   // Rare — blue
+	4: {170, 70, 220, 255},   // Epic — purple
+	5: {240, 190, 40, 255},   // Legendary — gold
 }
 
-var rarityBgColors = map[int]color.RGBA{
-	1: {40, 40, 45, 255},
-	2: {25, 40, 35, 255},
-	3: {25, 30, 50, 255},
-	4: {40, 25, 50, 255},
-	5: {50, 42, 20, 255},
+var rarityBg = map[int]color.RGBA{
+	1: {35, 35, 40, 255},
+	2: {25, 38, 32, 255},
+	3: {25, 30, 45, 255},
+	4: {38, 25, 45, 255},
+	5: {45, 38, 22, 255},
 }
 
-func loadFont() error {
+type CardData struct {
+	Name        string
+	Rarity      int
+	Emoji       string
+	Description string
+	ATK         int
+	DEF         int
+	SpecialName string
+	Special     int
+}
+
+func loadCardFont() error {
 	if cardFont != nil {
 		return nil
 	}
@@ -55,36 +69,61 @@ func loadFont() error {
 	return nil
 }
 
-type CardData struct {
-	Name        string
-	Rarity      int
-	Emoji       string
-	Description string
-	ATK         int
-	DEF         int
-	SpecialName string
-	Special     int
+// emojiToCodepoint converts emoji string to hex codepoint for Twemoji URL
+func emojiToCodepoint(emoji string) string {
+	var codepoints []string
+	for i := 0; i < len(emoji); {
+		r, size := utf8.DecodeRuneInString(emoji[i:])
+		if r != 0xFE0F { // skip variation selector
+			codepoints = append(codepoints, fmt.Sprintf("%x", r))
+		}
+		i += size
+	}
+	return strings.Join(codepoints, "-")
 }
 
-func renderCardImage(card CardData) ([]byte, error) {
-	if err := loadFont(); err != nil {
+// fetchEmojiPNG downloads emoji as PNG from Twemoji CDN
+func fetchEmojiPNG(emoji string) (image.Image, error) {
+	code := emojiToCodepoint(emoji)
+	url := fmt.Sprintf("https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/%s.png", code)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("emoji not found: %s", code)
+	}
+
+	return png.Decode(resp.Body)
+}
+
+func renderCard(card CardData) ([]byte, error) {
+	if err := loadCardFont(); err != nil {
 		return nil, err
 	}
 
-	width, height := 400, 520
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	w, h := 360, 480
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
 
-	// Background
-	bg := rarityBgColors[card.Rarity]
+	bg := rarityBg[card.Rarity]
+	accent := rarityAccent[card.Rarity]
+
+	// Fill background
 	draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 
-	// Rarity accent bar at top
-	accent := rarityColors[card.Rarity]
-	draw.Draw(img, image.Rect(0, 0, width, 8), &image.Uniform{accent}, image.Point{}, draw.Src)
+	// Top accent bar
+	draw.Draw(img, image.Rect(0, 0, w, 6), &image.Uniform{accent}, image.Point{}, draw.Src)
 
 	// Border
-	borderColor := rarityColors[card.Rarity]
-	drawBorder(img, borderColor, 3)
+	drawCardBorder(img, accent, 2)
+
+	// Inner card area with slightly lighter bg
+	innerBg := color.RGBA{bg.R + 10, bg.G + 10, bg.B + 10, 255}
+	draw.Draw(img, image.Rect(15, 50, w-15, h-90), &image.Uniform{innerBg}, image.Point{}, draw.Src)
 
 	c := freetype.NewContext()
 	c.SetDPI(72)
@@ -92,67 +131,72 @@ func renderCardImage(card CardData) ([]byte, error) {
 	c.SetClip(img.Bounds())
 	c.SetDst(img)
 
-	// Rarity stars + name
-	stars := rarityStars[card.Rarity]
-	rarityLabel := rarityNames[card.Rarity]
-
-	// Stars line
-	c.SetFontSize(16)
+	// Rarity label
+	c.SetFontSize(14)
 	c.SetSrc(image.NewUniform(accent))
-	drawText(c, 20, 35, fmt.Sprintf("%s %s", stars, rarityLabel))
+	stars := rarityStars[card.Rarity]
+	label := rarityNames[card.Rarity]
+	drawCardText(c, 15, 30, fmt.Sprintf("%s %s", stars, label))
 
-	// Emoji large
-	c.SetFontSize(80)
-	c.SetSrc(image.NewUniform(color.White))
-	emojiWidth := len(card.Emoji) * 20 // rough estimate
-	drawText(c, (width-emojiWidth)/2, 160, card.Emoji)
+	// PWR top right
+	power := card.ATK + card.DEF + card.Special
+	c.SetFontSize(13)
+	c.SetSrc(image.NewUniform(color.RGBA{160, 160, 160, 255}))
+	drawCardText(c, w-80, 30, fmt.Sprintf("PWR %d", power))
 
-	// Card name
-	c.SetFontSize(24)
-	c.SetSrc(image.NewUniform(color.White))
-	nameLines := wrapText(card.Name, 20)
-	y := 220
-	for _, line := range nameLines {
-		textW := len(line) * 12
-		drawText(c, (width-textW)/2, y, line)
-		y += 30
+	// Emoji in center (fetched from CDN)
+	emojiImg, err := fetchEmojiPNG(card.Emoji)
+	if err == nil {
+		// Scale emoji to ~80x80 and center it
+		emojiSize := 72
+		ex := (w - emojiSize) / 2
+		ey := 75
+		draw.Draw(img, image.Rect(ex, ey, ex+emojiSize, ey+emojiSize), emojiImg, image.Point{}, draw.Over)
 	}
 
-	// Divider line
-	dividerColor := color.RGBA{accent.R, accent.G, accent.B, 100}
-	draw.Draw(img, image.Rect(30, y+5, width-30, y+7), &image.Uniform{dividerColor}, image.Point{}, draw.Src)
+	// Card name centered
+	c.SetFontSize(22)
+	c.SetSrc(image.NewUniform(color.White))
+	nameLines := wrapCardText(card.Name, 18)
+	ny := 185
+	for _, line := range nameLines {
+		textW := len(line) * 11
+		drawCardText(c, (w-textW)/2, ny, line)
+		ny += 28
+	}
+
+	// Divider
+	draw.Draw(img, image.Rect(30, ny+5, w-30, ny+6), &image.Uniform{accent}, image.Point{}, draw.Src)
 
 	// Description
-	c.SetFontSize(13)
-	c.SetSrc(image.NewUniform(color.RGBA{180, 180, 180, 255}))
-	descLines := wrapText(card.Description, 35)
-	y += 25
+	c.SetFontSize(12)
+	c.SetSrc(image.NewUniform(color.RGBA{170, 170, 175, 255}))
+	descLines := wrapCardText(card.Description, 30)
+	dy := ny + 25
 	for _, line := range descLines {
-		drawText(c, 25, y, line)
-		y += 18
+		drawCardText(c, 25, dy, line)
+		dy += 17
 	}
 
 	// Stats bar at bottom
-	statsY := height - 80
+	statsY := h - 75
+	draw.Draw(img, image.Rect(10, statsY, w-10, h-10), &image.Uniform{color.RGBA{25, 25, 30, 255}}, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(10, statsY, w-10, statsY+2), &image.Uniform{accent}, image.Point{}, draw.Src)
 
-	// Stats background
-	draw.Draw(img, image.Rect(15, statsY-10, width-15, height-15), &image.Uniform{color.RGBA{30, 30, 35, 255}}, image.Point{}, draw.Src)
+	c.SetFontSize(16)
 
-	c.SetFontSize(18)
-	c.SetSrc(image.NewUniform(color.RGBA{255, 100, 100, 255}))
-	drawText(c, 30, statsY+15, fmt.Sprintf("⚔️ %d", card.ATK))
+	// ATK
+	c.SetSrc(image.NewUniform(color.RGBA{255, 90, 90, 255}))
+	drawCardText(c, 25, statsY+28, fmt.Sprintf("ATK %d", card.ATK))
 
-	c.SetSrc(image.NewUniform(color.RGBA{100, 150, 255, 255}))
-	drawText(c, 140, statsY+15, fmt.Sprintf("🛡 %d", card.DEF))
+	// DEF
+	c.SetSrc(image.NewUniform(color.RGBA{90, 140, 255, 255}))
+	drawCardText(c, 140, statsY+28, fmt.Sprintf("DEF %d", card.DEF))
 
-	c.SetSrc(image.NewUniform(accent))
-	drawText(c, 30, statsY+45, fmt.Sprintf("%s: %d", card.SpecialName, card.Special))
-
-	// Total power bottom right
-	total := card.ATK + card.DEF + card.Special
+	// Special
 	c.SetFontSize(14)
-	c.SetSrc(image.NewUniform(color.RGBA{150, 150, 150, 255}))
-	drawText(c, width-100, statsY+45, fmt.Sprintf("PWR: %d", total))
+	c.SetSrc(image.NewUniform(accent))
+	drawCardText(c, 25, statsY+55, fmt.Sprintf("%s: %d", card.SpecialName, card.Special))
 
 	// Encode
 	var buf bytes.Buffer
@@ -162,30 +206,28 @@ func renderCardImage(card CardData) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func drawText(c *freetype.Context, x, y int, text string) {
-	pt := freetype.Pt(x, y)
-	c.DrawString(text, pt)
+func drawCardText(c *freetype.Context, x, y int, text string) {
+	c.DrawString(text, freetype.Pt(x, y))
 }
 
-func drawBorder(img *image.RGBA, col color.RGBA, thickness int) {
+func drawCardBorder(img *image.RGBA, col color.RGBA, t int) {
 	b := img.Bounds()
-	for t := 0; t < thickness; t++ {
+	for i := 0; i < t; i++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
-			img.Set(x, b.Min.Y+t, col)
-			img.Set(x, b.Max.Y-1-t, col)
+			img.Set(x, b.Min.Y+i, col)
+			img.Set(x, b.Max.Y-1-i, col)
 		}
 		for y := b.Min.Y; y < b.Max.Y; y++ {
-			img.Set(b.Min.X+t, y, col)
-			img.Set(b.Max.X-1-t, y, col)
+			img.Set(b.Min.X+i, y, col)
+			img.Set(b.Max.X-1-i, y, col)
 		}
 	}
 }
 
-func wrapText(text string, maxChars int) []string {
+func wrapCardText(text string, maxChars int) []string {
 	words := strings.Fields(text)
 	var lines []string
 	current := ""
-
 	for _, word := range words {
 		if current == "" {
 			current = word
@@ -200,38 +242,4 @@ func wrapText(text string, maxChars int) []string {
 		lines = append(lines, current)
 	}
 	return lines
-}
-
-// renderPackImage renders 3 cards side by side
-func renderPackImage(cards []CardData) ([]byte, error) {
-	if len(cards) == 0 {
-		return nil, fmt.Errorf("no cards")
-	}
-
-	cardWidth, cardHeight := 400, 520
-	padding := 10
-	totalWidth := len(cards)*cardWidth + (len(cards)-1)*padding
-	img := image.NewRGBA(image.Rect(0, 0, totalWidth, cardHeight))
-
-	// Dark background
-	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{20, 20, 25, 255}}, image.Point{}, draw.Src)
-
-	for i, card := range cards {
-		cardBytes, err := renderCardImage(card)
-		if err != nil {
-			continue
-		}
-		cardImg, err := png.Decode(bytes.NewReader(cardBytes))
-		if err != nil {
-			continue
-		}
-		x := i * (cardWidth + padding)
-		draw.Draw(img, image.Rect(x, 0, x+cardWidth, cardHeight), cardImg, image.Point{}, draw.Over)
-	}
-
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
