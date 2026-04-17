@@ -81,7 +81,7 @@ var (
 )
 
 var wordleRewards = map[int]int{
-	1: 50, 2: 40, 3: 30, 4: 20, 5: 15, 6: 10,
+	1: 30, 2: 25, 3: 20, 4: 15, 5: 10, 6: 5,
 }
 
 const maxWordlePerDay = 3

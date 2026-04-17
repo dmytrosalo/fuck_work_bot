@@ -28,9 +28,9 @@ var slotPayouts = map[string]int{
 
 const (
 	maxSpinsPerDay = 20
-	maxBet         = 100
+	maxBet         = 500
 	defaultBet     = 10
-	dailyBonus     = 50
+	dailyBonus     = 75
 )
 
 func weightedChoice(symbols []string, weights []int) string {

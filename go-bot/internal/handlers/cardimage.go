@@ -28,6 +28,7 @@ var rarityAccent = map[int]color.RGBA{
 	3: {60, 120, 220, 255},   // Rare — blue
 	4: {170, 70, 220, 255},   // Epic — purple
 	5: {240, 190, 40, 255},   // Legendary — gold
+	6: {255, 50, 50, 255},    // Ultra Legendary — red
 }
 
 var rarityBg = map[int]color.RGBA{
@@ -36,6 +37,7 @@ var rarityBg = map[int]color.RGBA{
 	3: {25, 30, 45, 255},
 	4: {38, 25, 45, 255},
 	5: {45, 38, 22, 255},
+	6: {50, 15, 15, 255},
 }
 
 type CardData struct {

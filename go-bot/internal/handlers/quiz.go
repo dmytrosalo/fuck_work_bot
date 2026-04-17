@@ -25,9 +25,9 @@ type triviaResponse struct {
 }
 
 var difficultyReward = map[string]int{
-	"easy":   10,
-	"medium": 15,
-	"hard":   25,
+	"easy":   5,
+	"medium": 10,
+	"hard":   15,
 }
 
 var difficultyEmoji = map[string]string{

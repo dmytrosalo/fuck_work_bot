@@ -13,7 +13,7 @@ import (
 
 const (
 	maxPacksPerDay = 10
-	packCost       = 20
+	packCost       = 40
 	battleReward   = 10
 )
 
@@ -23,6 +23,7 @@ var rarityStars = map[int]string{
 	3: "⭐⭐⭐",
 	4: "⭐⭐⭐⭐",
 	5: "⭐⭐⭐⭐⭐",
+	6: "💎💎💎💎💎💎",
 }
 
 var rarityNames = map[int]string{
@@ -31,23 +32,26 @@ var rarityNames = map[int]string{
 	3: "Rare",
 	4: "Epic",
 	5: "Legendary",
+	6: "ULTRA LEGENDARY MAX PRO",
 }
 
 // rollRarity returns a rarity based on weighted random.
-// 1: 40%, 2: 25%, 3: 25%, 4: 7%, 5: 3%
+// 1: 35%, 2: 30%, 3: 20%, 4: 10%, 5: 4%, 6: 1%
 func rollRarity() int {
 	r := rand.Intn(100)
 	switch {
-	case r < 40:
+	case r < 35:
 		return 1
 	case r < 65:
 		return 2
-	case r < 90:
+	case r < 85:
 		return 3
-	case r < 97:
+	case r < 95:
 		return 4
-	default:
+	case r < 99:
 		return 5
+	default:
+		return 6
 	}
 }
 

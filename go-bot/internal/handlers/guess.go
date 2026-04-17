@@ -105,6 +105,21 @@ func (b *Bot) closeGuess(bot *tele.Bot, chatID int64) {
 		return
 	}
 
+	if len(game.Players) < 2 {
+		// Only 1 player — check if they guessed exactly
+		for uid, guess := range game.Players {
+			name := game.Names[uid]
+			if guess == game.Number {
+				reward := 100
+				b.db.UpdateBalance(uid, name, reward)
+				bot.Send(chat, fmt.Sprintf("🎯 Число було: %d\n\n%s вгадав точно! +%d 🪙 🎉", game.Number, name, reward))
+			} else {
+				bot.Send(chat, fmt.Sprintf("🎯 Число було: %d\n\n%s: %d — не вгадав. Грати можна тільки вдвох+!", game.Number, name, guess))
+			}
+		}
+		return
+	}
+
 	// Find closest
 	var winnerID, winnerName string
 	minDiff := 101
@@ -121,8 +136,10 @@ func (b *Bot) closeGuess(bot *tele.Bot, chatID int64) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🎯 Число було: *%d*\n\n", game.Number))
+	sb.WriteString(fmt.Sprintf("🎯 Число було: %d\n\n", game.Number))
 
+	// Check for exact guess bonus
+	exactBonus := false
 	for uid, guess := range game.Players {
 		diff := guess - game.Number
 		if diff < 0 {
@@ -132,12 +149,22 @@ func (b *Bot) closeGuess(bot *tele.Bot, chatID int64) {
 		if uid == winnerID {
 			marker = " 🏆"
 		}
+		if diff == 0 {
+			marker += " 🎯 ТОЧНО!"
+			exactBonus = true
+		}
 		sb.WriteString(fmt.Sprintf("%s: %d (різниця: %d)%s\n", game.Names[uid], guess, diff, marker))
 	}
 
 	reward := 30
+	if exactBonus && winnerID != "" {
+		reward = 100
+	}
 	b.db.UpdateBalance(winnerID, winnerName, reward)
-	sb.WriteString(fmt.Sprintf("\n🏆 *%s* виграє +%d 🪙!", winnerName, reward))
+	sb.WriteString(fmt.Sprintf("\n🏆 %s виграє +%d 🪙!", winnerName, reward))
+	if exactBonus {
+		sb.WriteString(" (бонус за точне вгадування!)")
+	}
 
 	bot.Send(chat, sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }

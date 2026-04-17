@@ -117,11 +117,12 @@ func (b *Bot) handleGift(c tele.Context) error {
 // --- Burn ---
 
 var burnRewards = map[int]int{
-	1: 5,   // Common
-	2: 10,  // Uncommon
-	3: 25,  // Rare
-	4: 50,  // Epic
-	5: 100, // Legendary
+	1: 5,    // Common
+	2: 10,   // Uncommon
+	3: 25,   // Rare
+	4: 50,   // Epic
+	5: 100,  // Legendary
+	6: 500,  // Ultra Legendary
 }
 
 func (b *Bot) handleBurn(c tele.Context) error {
@@ -153,11 +154,18 @@ func (b *Bot) handleBurn(c tele.Context) error {
 
 // --- Sacrifice ---
 
+var sacrificeCost = map[int]int{
+	1: 7, // 7 common → 1 uncommon
+	2: 7, // 7 uncommon → 1 rare
+	3: 7, // 7 rare → 1 epic
+	4: 7, // 7 epic → 1 legendary
+}
+
 var sacrificeUpgrade = map[int]int{
-	1: 2, // 3 common → 1 uncommon
-	2: 3, // 3 uncommon → 1 rare
-	3: 4, // 3 rare → 1 epic
-	4: 5, // 3 epic → 1 legendary
+	1: 2,
+	2: 3,
+	3: 4,
+	4: 5,
 }
 
 func (b *Bot) handleSacrifice(c tele.Context) error {
@@ -179,19 +187,21 @@ func (b *Bot) handleSacrifice(c tele.Context) error {
 	}
 
 	targetRarity, ok := sacrificeUpgrade[rarity]
-	if !ok {
-		return c.Reply("❌ Legendary картки не можна апгрейдити!")
+	if !ok || rarity >= 5 {
+		return c.Reply("❌ Legendary та Ultra Legendary не можна апгрейдити!")
 	}
+
+	cost := sacrificeCost[rarity]
 
 	// Get cards of this rarity from collection
 	cards := b.db.GetCollectionByRarity(userID, rarity)
-	if len(cards) < 3 {
-		return c.Reply(fmt.Sprintf("❌ Потрібно 3 %s картки, у тебе %d", rarityNames[rarity], len(cards)))
+	if len(cards) < cost {
+		return c.Reply(fmt.Sprintf("❌ Потрібно %d %s карток, у тебе %d", cost, rarityNames[rarity], len(cards)))
 	}
 
-	// Remove 3 cards
-	removed := b.db.RemoveCardsByRarity(userID, rarity, 3)
-	if removed < 3 {
+	// Remove cards
+	removed := b.db.RemoveCardsByRarity(userID, rarity, cost)
+	if removed < cost {
 		return c.Reply("❌ Не вдалося забрати картки")
 	}
 
@@ -202,8 +212,8 @@ func (b *Bot) handleSacrifice(c tele.Context) error {
 	}
 	b.db.AddToCollection(userID, newCard.ID)
 
-	return c.Reply(fmt.Sprintf("✨ Жертвоприношення!\n3x %s → 1x %s\n\nОтримано: %s %s %s",
-		rarityNames[rarity], rarityNames[targetRarity],
+	return c.Reply(fmt.Sprintf("✨ Жертвоприношення!\n%dx %s → 1x %s\n\nОтримано: %s %s %s",
+		cost, rarityNames[rarity], rarityNames[targetRarity],
 		rarityStars[targetRarity], newCard.Emoji, newCard.Name))
 }
 
@@ -246,7 +256,7 @@ func (b *Bot) handleGacha(c tele.Context) error {
 		userName = c.Sender().Username
 	}
 
-	cost := 100
+	cost := 300
 	balance := b.db.GetBalance(userID, userName)
 	if balance < cost {
 		return c.Reply(fmt.Sprintf("💸 Преміум пак коштує %d 🪙, у тебе %d", cost, balance))
@@ -254,9 +264,9 @@ func (b *Bot) handleGacha(c tele.Context) error {
 
 	b.db.UpdateBalance(userID, userName, -cost)
 
-	// 3 cards: guaranteed rare+
+	// 1 card: guaranteed epic+
 	var cards []CardData
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 1; i++ {
 		rarity := rollGachaRarity()
 		fc := b.db.GetRandomCard(rarity)
 		if fc.ID == 0 {
@@ -285,17 +295,17 @@ func (b *Bot) handleGacha(c tele.Context) error {
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
-// rollGachaRarity: guaranteed rare+
-// 50% rare, 30% epic, 20% legendary
+// rollGachaRarity: guaranteed epic+
+// 60% epic, 30% legendary, 10% ultra
 func rollGachaRarity() int {
 	r := rand.Intn(100)
 	switch {
-	case r < 50:
-		return 3
-	case r < 80:
+	case r < 60:
 		return 4
-	default:
+	case r < 90:
 		return 5
+	default:
+		return 6
 	}
 }
 

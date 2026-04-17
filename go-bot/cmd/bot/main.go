@@ -57,6 +57,17 @@ func main() {
 		}
 	}
 
+	// One-time bonus for Dany_ro for testing
+	bonusKey := "bonus_danyro_1000"
+	if db.GetMeta(bonusKey) == "" {
+		// Find Danya by name
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 1000)
+			db.SetMeta(bonusKey, "done")
+			log.Printf("Gave Danya (ID:%s) 1000 coins bonus for testing", danyaID)
+		}
+	}
+
 	// Init classifier
 	clf, err := classifier.New(modelPath)
 	if err != nil {
