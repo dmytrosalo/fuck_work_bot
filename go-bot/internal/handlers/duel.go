@@ -101,6 +101,9 @@ func (b *Bot) handleDuel(c tele.Context) error {
 }
 
 func (b *Bot) handleAccept(c tele.Context) error {
+	// Try war first
+	b.handleWarAccept(c)
+
 	userID := fmt.Sprintf("%d", c.Sender().ID)
 	chatID := c.Chat().ID
 
@@ -111,12 +114,12 @@ func (b *Bot) handleAccept(c tele.Context) error {
 			delete(activeDuels, chatID)
 		}
 		duelMu.Unlock()
-		return c.Reply("❌ Немає активної дуелі або час вийшов")
+		return nil // silent — war might have handled it
 	}
 
 	if userID != duel.OpponentID {
 		duelMu.Unlock()
-		return c.Reply(fmt.Sprintf("⚔️ Ця дуель для %s!", duel.OpponentName))
+		return nil
 	}
 	duelMu.Unlock()
 
