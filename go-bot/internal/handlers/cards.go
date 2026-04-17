@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -102,30 +101,27 @@ func (b *Bot) handlePack(c tele.Context) error {
 		return c.Reply("📦 Карток поки немає. Зверніться до адміна.")
 	}
 
-	// Try to render image
 	unique, total := b.db.GetCollectionStats(userID)
 	newBalance := b.db.GetBalance(userID, "")
-	caption := fmt.Sprintf("📦 Пак відкрито!\n🃏 Колекція: %d/%d | 🪙 %d", unique, total, newBalance)
 
-	imgBytes, err := renderPackImage(cards)
-	if err == nil {
-		photo := &tele.Photo{
-			File:    tele.FromReader(bytes.NewReader(imgBytes)),
-			Caption: caption,
-		}
-		return c.Send(photo)
-	}
-
-	// Fallback to text
 	var sb strings.Builder
-	sb.WriteString("📦 *Відкриваємо пак...*\n\n")
-	for _, card := range cards {
-		sb.WriteString(fmt.Sprintf("%s %s\n", rarityStars[card.Rarity], rarityNames[card.Rarity]))
-		sb.WriteString(fmt.Sprintf("%s *%s*\n", card.Emoji, card.Name))
+	sb.WriteString("📦 *Пак відкрито!*\n")
+	sb.WriteString("━━━━━━━━━━━━━━━━\n\n")
+
+	for i, card := range cards {
+		stars := rarityStars[card.Rarity]
+		sb.WriteString(fmt.Sprintf("%s  *%s*\n", stars, rarityNames[card.Rarity]))
+		sb.WriteString(fmt.Sprintf("%s  *%s*\n", card.Emoji, card.Name))
+		sb.WriteString(fmt.Sprintf("⚔️%d  🛡%d  %s: %d  (PWR: %d)\n", card.ATK, card.DEF, card.SpecialName, card.Special, card.ATK+card.DEF+card.Special))
 		sb.WriteString(fmt.Sprintf("_%s_\n", card.Description))
-		sb.WriteString(fmt.Sprintf("⚔️ %d  🛡 %d  %s: %d\n\n", card.ATK, card.DEF, card.SpecialName, card.Special))
+		if i < len(cards)-1 {
+			sb.WriteString("\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n")
+		}
 	}
-	sb.WriteString(caption)
+
+	sb.WriteString("\n━━━━━━━━━━━━━━━━\n")
+	sb.WriteString(fmt.Sprintf("🃏 %d/%d  |  🪙 %d", unique, total, newBalance))
+
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
