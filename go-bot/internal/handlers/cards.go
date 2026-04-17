@@ -28,7 +28,7 @@ var rarityNames = map[int]string{
 }
 
 // rollRarity returns a rarity based on weighted random.
-// 1: 40%, 2: 25%, 3: 20%, 4: 10%, 5: 5%
+// 1: 40%, 2: 25%, 3: 25%, 4: 7%, 5: 3%
 func rollRarity() int {
 	r := rand.Intn(100)
 	switch {
@@ -36,9 +36,9 @@ func rollRarity() int {
 		return 1
 	case r < 65:
 		return 2
-	case r < 85:
+	case r < 90:
 		return 3
-	case r < 95:
+	case r < 97:
 		return 4
 	default:
 		return 5
