@@ -38,6 +38,8 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/collection", b.handleCollection)
 	bot.Handle("/battle", b.handleBattle)
 	bot.Handle("/pokemon", b.handlePokemon)
+	bot.Handle("/horoscope", b.handleHoroscope)
+	bot.Handle("/8ball", b.handleEightBall)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -58,6 +60,8 @@ func (b *Bot) handleStart(c tele.Context) error {
 /collection — твоя колекція 🃏
 /battle — батл карток ⚔️
 /pokemon — твій покемон 🔴
+/horoscope — дев\\-гороскоп 🔮
+/8ball <питання> — магічна куля 🎱
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе
