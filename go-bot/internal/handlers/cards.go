@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
+
+const maxPacksPerDay = 5
 
 var rarityStars = map[int]string{
 	1: "⭐",
@@ -53,6 +56,13 @@ func rollGuaranteedRarity() int {
 
 func (b *Bot) handlePack(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
+	today := time.Now().Format("2006-01-02")
+
+	opens := b.db.GetPackOpensToday(userID, today)
+	if opens >= maxPacksPerDay {
+		return c.Reply(fmt.Sprintf("📦 Ти вже відкрив %d паків сьогодні. Приходь завтра!", maxPacksPerDay))
+	}
+	b.db.IncrementPackOpens(userID, today)
 
 	// Roll 3 cards: 2 random + 1 guaranteed uncommon+
 	var cards []struct {

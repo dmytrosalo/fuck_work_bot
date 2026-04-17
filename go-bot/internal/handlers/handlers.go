@@ -37,6 +37,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/pack", b.handlePack)
 	bot.Handle("/collection", b.handleCollection)
 	bot.Handle("/battle", b.handleBattle)
+	bot.Handle("/pokemon", b.handlePokemon)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -56,6 +57,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /pack — відкрити пак карток 📦
 /collection — твоя колекція 🃏
 /battle — батл карток ⚔️
+/pokemon — твій покемон 🔴
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе

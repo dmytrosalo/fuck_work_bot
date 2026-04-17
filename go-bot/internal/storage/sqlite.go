@@ -49,6 +49,7 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, name TEXT NOT NULL, rarity INTEGER NOT NULL, category TEXT NOT NULL, emoji TEXT NOT NULL, description TEXT NOT NULL, atk INTEGER, def INTEGER, special_name TEXT, special INTEGER)`,
 		`CREATE TABLE IF NOT EXISTS collection (user_id TEXT NOT NULL, card_id INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, card_id))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS pack_opens (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -327,6 +328,16 @@ func (d *DB) GetMeta(key string) string {
 
 func (d *DB) SetMeta(key, value string) {
 	d.db.Exec(`INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+}
+
+func (d *DB) GetPackOpensToday(userID, date string) int {
+	var count int
+	d.db.QueryRow(`SELECT count FROM pack_opens WHERE user_id = ? AND date = ?`, userID, date).Scan(&count)
+	return count
+}
+
+func (d *DB) IncrementPackOpens(userID, date string) {
+	d.db.Exec(`INSERT INTO pack_opens (user_id, date, count) VALUES (?, ?, 1) ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1`, userID, date)
 }
 
 func (d *DB) ClearCards() {
