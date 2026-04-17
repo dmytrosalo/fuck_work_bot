@@ -60,11 +60,11 @@ var cleanWords = []string{
 	"дракн", "ельфи", "гноми", "тролі", "орків",
 }
 
-// dailyWord returns the word of the day
-func dailyWord() string {
+// userWord returns a unique word per user per game (not shared)
+func userWord(userID string, gameNum int) string {
 	today := time.Now().Format("2006-01-02")
 	h := fnv.New32a()
-	h.Write([]byte(today + "wordle"))
+	h.Write([]byte(today + userID + fmt.Sprintf("%d", gameNum) + "wordle"))
 	idx := int(h.Sum32()) % len(cleanWords)
 	return cleanWords[idx]
 }
@@ -84,23 +84,31 @@ var wordleRewards = map[int]int{
 	1: 50, 2: 40, 3: 30, 4: 20, 5: 15, 6: 10,
 }
 
+const maxWordlePerDay = 3
+
 func (b *Bot) handleWordle(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
 	today := time.Now().Format("2006-01-02")
 
-	// Check if already played today
-	key := "wordle:" + userID + ":" + today
-	if result := b.db.GetMeta(key); result != "" {
-		return c.Reply(fmt.Sprintf("📝 Ти вже грав сьогодні! Результат: %s\nПриходь завтра!", result))
+	// Check how many games played today
+	countKey := "wordle_count:" + userID + ":" + today
+	countStr := b.db.GetMeta(countKey)
+	gamesPlayed := 0
+	if countStr != "" {
+		fmt.Sscanf(countStr, "%d", &gamesPlayed)
+	}
+
+	if gamesPlayed >= maxWordlePerDay {
+		return c.Reply(fmt.Sprintf("📝 Ліміт %d wordle на день. Приходь завтра!", maxWordlePerDay))
 	}
 
 	wordleMu.Lock()
 	if _, ok := activeWordles[userID]; ok {
 		wordleMu.Unlock()
-		return c.Reply("📝 У тебе вже є активна гра! Напиши 5-літерне слово")
+		return c.Reply("📝 У тебе вже є активна гра! Напиши слово")
 	}
 
-	word := dailyWord()
+	word := userWord(userID, gamesPlayed+1)
 	// Clean word (remove non-letter chars)
 	cleaned := ""
 	for _, r := range word {
@@ -207,8 +215,14 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		wordleMu.Unlock()
 
 		today := time.Now().Format("2006-01-02")
-		key := "wordle:" + userID + ":" + today
-		b.db.SetMeta(key, fmt.Sprintf("%d/6", attempt))
+		countKey := "wordle_count:" + userID + ":" + today
+		countStr := b.db.GetMeta(countKey)
+		played := 0
+		if countStr != "" {
+			fmt.Sscanf(countStr, "%d", &played)
+		}
+		b.db.SetMeta(countKey, fmt.Sprintf("%d", played+1))
+		remaining := maxWordlePerDay - played - 1
 
 		reward := wordleRewards[attempt]
 		newBal := b.db.UpdateBalance(userID, userName, reward)
@@ -219,6 +233,9 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 			sb.WriteString(a + "\n")
 		}
 		sb.WriteString(fmt.Sprintf("\n✅ Вгадав за %d/6! +%d 🪙 (баланс: %d)", attempt, reward, newBal))
+		if remaining > 0 {
+			sb.WriteString(fmt.Sprintf("\n\n📝 Залишилось ігор: %d. /wordle", remaining))
+		}
 		c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 		return true
 	}
@@ -230,15 +247,24 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		wordleMu.Unlock()
 
 		today := time.Now().Format("2006-01-02")
-		key := "wordle:" + userID + ":" + today
-		b.db.SetMeta(key, "X/6")
+		countKey := "wordle_count:" + userID + ":" + today
+		countStr2 := b.db.GetMeta(countKey)
+		played2 := 0
+		if countStr2 != "" {
+			fmt.Sscanf(countStr2, "%d", &played2)
+		}
+		b.db.SetMeta(countKey, fmt.Sprintf("%d", played2+1))
+		remaining2 := maxWordlePerDay - played2 - 1
 
 		var sb strings.Builder
 		sb.WriteString("📝 *Wordle*\n\n")
 		for _, a := range game.Attempts {
 			sb.WriteString(a + "\n")
 		}
-		sb.WriteString(fmt.Sprintf("\n❌ Не вгадав! Слово було: *%s*", word))
+		sb.WriteString(fmt.Sprintf("\n❌ Не вгадав! Слово було: %s", word))
+		if remaining2 > 0 {
+			sb.WriteString(fmt.Sprintf("\n\n📝 Залишилось ігор: %d. /wordle", remaining2))
+		}
 		c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 		return true
 	}
