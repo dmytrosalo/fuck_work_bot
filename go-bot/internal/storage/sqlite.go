@@ -233,6 +233,16 @@ func (d *DB) HasContent() bool {
 	return count > 0
 }
 
+func (d *DB) QuoteCount() int {
+	var count int
+	d.db.QueryRow(`SELECT COUNT(*) FROM quotes`).Scan(&count)
+	return count
+}
+
+func (d *DB) ClearQuotes() {
+	d.db.Exec(`DELETE FROM quotes`)
+}
+
 func scanStats(rows *sql.Rows) ([]UserStats, error) {
 	var stats []UserStats
 	for rows.Next() {

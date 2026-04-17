@@ -36,15 +36,22 @@ func main() {
 	defer db.Close()
 	log.Println("Storage initialized")
 
-	// Seed DB if empty
+	// Seed DB if empty or quotes need refresh
+	seedPath := os.Getenv("SEED_PATH")
+	if seedPath == "" {
+		seedPath = "./seed_data.json"
+	}
 	if !db.HasContent() {
-		seedPath := os.Getenv("SEED_PATH")
-		if seedPath == "" {
-			seedPath = "./seed_data.json"
-		}
 		if seedData, err := os.ReadFile(seedPath); err == nil {
 			seedDB(db, seedData)
 			log.Println("Database seeded with initial data")
+		}
+	} else if db.QuoteCount() < 1000 {
+		// Re-seed quotes if we have fewer than expected
+		db.ClearQuotes()
+		if seedData, err := os.ReadFile(seedPath); err == nil {
+			seedQuotesOnly(db, seedData)
+			log.Printf("Quotes re-seeded (%d total)", db.QuoteCount())
 		}
 	}
 
@@ -108,6 +115,21 @@ func seedDB(db *storage.DB, data []byte) {
 		db.AddQuote(q.Author, q.Text)
 	}
 	log.Printf("Seeded %d roasts, %d compliments, %d quotes", len(seed.Roasts), len(seed.Compliments), len(seed.Quotes))
+}
+
+func seedQuotesOnly(db *storage.DB, data []byte) {
+	var seed struct {
+		Quotes []struct {
+			Author string `json:"author"`
+			Text   string `json:"text"`
+		} `json:"quotes"`
+	}
+	if err := json.Unmarshal(data, &seed); err != nil {
+		return
+	}
+	for _, q := range seed.Quotes {
+		db.AddQuote(q.Author, q.Text)
+	}
 }
 
 func scheduleDailyReport(bot *tele.Bot, h *handlers.Bot) {
