@@ -199,6 +199,7 @@ func (b *Bot) handleBJHit(c tele.Context) error {
 	}
 
 	if playerVal == 21 {
+		delete(activeBlackjack, userID)
 		bjMu.Unlock()
 		return b.bjStand(c, game)
 	}

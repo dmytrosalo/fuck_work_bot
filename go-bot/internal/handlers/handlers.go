@@ -66,6 +66,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/wordle", b.handleWordle)
 	bot.Handle("/card", b.handleCardInfo)
 	bot.Handle("/dart", b.handleDart)
+	bot.Handle("/war", b.handleWar)
 	bot.Handle("/blackjack", b.handleBlackjack)
 	bot.Handle("/bj", b.handleBlackjack)
 	bot.Handle(&tele.Btn{Unique: "bj_hit"}, b.handleBJHit)
