@@ -49,6 +49,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/top", b.handleTop)
 	bot.Handle("/dog", b.handleDog)
 	bot.Handle("/cat", b.handleCat)
+	bot.Handle("/quiz", b.handleQuiz)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -85,6 +86,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /horoscope — дев-гороскоп 🔮
 /8ball — магічна куля 🎱
 /cat 🐱 /dog 🐕
+/quiz — вікторина (+10-25 🪙) 🧠
 
 ⚙️ /mute /unmute — трекінг
 📖 /help — правила`
@@ -220,6 +222,11 @@ func (b *Bot) handleText(c tele.Context) error {
 	}
 
 	b.db.TrackChat(chatID)
+
+	// Check quiz answer first
+	if b.checkQuizAnswer(c) {
+		return nil
+	}
 
 	if b.db.IsMuted(userID) {
 		return nil
