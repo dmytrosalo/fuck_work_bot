@@ -99,7 +99,7 @@ func (b *Bot) handleWordle(c tele.Context) error {
 	}
 
 	if gamesPlayed >= maxWordlePerDay {
-		return c.Reply(fmt.Sprintf("📝 Ліміт %d wordle на день. Приходь завтра!", maxWordlePerDay))
+		return c.Reply(fmt.Sprintf("📝 Ліміт %d wordle на день. Скидання через %s", maxWordlePerDay, timeUntilReset()))
 	}
 
 	wordleMu.Lock()

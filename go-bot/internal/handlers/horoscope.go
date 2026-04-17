@@ -41,7 +41,7 @@ func (b *Bot) handleHoroscope(c tele.Context) error {
 	key := "horoscope:" + userID
 	lastDate := b.db.GetMeta(key)
 	if lastDate == today {
-		return c.Reply("🔮 Ти вже отримав гороскоп сьогодні. Зірки кажуть — приходь завтра!")
+		return c.Reply(fmt.Sprintf("🔮 Ти вже отримав гороскоп. Скидання через %s", timeUntilReset()))
 	}
 
 	userName := c.Sender().FirstName

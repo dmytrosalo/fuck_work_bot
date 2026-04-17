@@ -45,7 +45,7 @@ func (b *Bot) handleDart(c tele.Context) error {
 		fmt.Sscanf(countStr, "%d", &dartCount)
 	}
 	if dartCount >= maxDartsPerDay {
-		return c.Reply(fmt.Sprintf("🎯 Ліміт %d дартс на день. Приходь завтра!", maxDartsPerDay))
+		return c.Reply(fmt.Sprintf("🎯 Ліміт %d дартс на день. Скидання через %s", maxDartsPerDay, timeUntilReset()))
 	}
 
 	// Parse opponent and bet

@@ -114,6 +114,8 @@ func (b *Bot) handleStart(c tele.Context) error {
 /daily — бонус +75 🪙
 /balance — баланс
 /top — лідерборд
+/casino_stats — твоя статистика 📊
+/global_stats — загальна статистика
 
 🎮 *Розваги:*
 /pokemon — покемон 🔴

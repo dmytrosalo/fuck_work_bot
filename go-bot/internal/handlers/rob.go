@@ -42,7 +42,7 @@ func (b *Bot) handleRob(c tele.Context) error {
 	today := time.Now().Format("2006-01-02-15")
 	robKey := "rob:" + userID + ":" + today
 	if b.db.GetMeta(robKey) != "" {
-		return c.Reply("🕐 Можна грабувати раз на годину!")
+		return c.Reply(fmt.Sprintf("🕐 Можна грабувати раз на годину! Через %s", timeUntilNextHour()))
 	}
 	b.db.SetMeta(robKey, "done")
 

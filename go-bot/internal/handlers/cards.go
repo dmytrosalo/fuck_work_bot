@@ -74,7 +74,7 @@ func (b *Bot) handlePack(c tele.Context) error {
 
 	opens := b.db.GetPackOpensToday(userID, today)
 	if opens >= maxPacksPerDay {
-		return c.Reply(fmt.Sprintf("📦 Ліміт %d паків на день. Приходь завтра!", maxPacksPerDay))
+		return c.Reply(fmt.Sprintf("📦 Ліміт %d паків на день. Скидання через %s", maxPacksPerDay, timeUntilReset()))
 	}
 
 	balance := b.db.GetBalance(userID, userName)

@@ -49,7 +49,7 @@ func (b *Bot) handleSteal(c tele.Context) error {
 	today := time.Now().Format("2006-01-02")
 	stealKey := "steal:" + userID + ":" + today
 	if b.db.GetMeta(stealKey) != "" {
-		return c.Reply("🕐 Ти вже крав сьогодні. Приходь завтра!")
+		return c.Reply(fmt.Sprintf("🕐 Ти вже крав сьогодні. Скидання через %s", timeUntilReset()))
 	}
 
 	// 30% success, 70% fail

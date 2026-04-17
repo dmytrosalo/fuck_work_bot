@@ -73,7 +73,7 @@ func (b *Bot) handleSlots(c tele.Context) error {
 	// Check daily limit
 	spins := b.db.GetSlotSpinsToday(userID, today)
 	if spins >= maxSpinsPerDay {
-		return c.Reply(fmt.Sprintf("🎰 Ліміт %d спінів на день вичерпано. Приходь завтра!", maxSpinsPerDay))
+		return c.Reply(fmt.Sprintf("🎰 Ліміт %d спінів на день. Скидання через %s", maxSpinsPerDay, timeUntilReset()))
 	}
 
 	// Parse bet
@@ -174,7 +174,7 @@ func (b *Bot) handleDaily(c tele.Context) error {
 	key := "daily:" + userID
 	lastClaim := b.db.GetMeta(key)
 	if lastClaim == today {
-		return c.Reply("🎁 Ти вже забрав бонус сьогодні. Приходь завтра!")
+		return c.Reply(fmt.Sprintf("🎁 Ти вже забрав бонус. Скидання через %s", timeUntilReset()))
 	}
 
 	newBalance := b.db.UpdateBalance(userID, userName, dailyBonus)

@@ -66,7 +66,7 @@ func (b *Bot) handleQuiz(c tele.Context) error {
 		fmt.Sscanf(countStr, "%d", &count)
 	}
 	if count >= maxQuizPerDay {
-		return c.Reply(fmt.Sprintf("🧠 Ліміт %d квізів на день. Приходь завтра!", maxQuizPerDay))
+		return c.Reply(fmt.Sprintf("🧠 Ліміт %d квізів на день. Скидання через %s", maxQuizPerDay, timeUntilReset()))
 	}
 
 	// Check if user already has active quiz

@@ -70,7 +70,14 @@ func main() {
 		if danyaID, found := db.FindUserByName("Danya"); found {
 			db.UpdateBalance(danyaID, "Danya", 1234)
 			db.SetMeta(bonusKey2, "done")
-			log.Printf("Gave Danya +1234 coins")
+		}
+	}
+	bonusKey3 := "bonus_danyro_666"
+	if db.GetMeta(bonusKey3) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 666)
+			db.SetMeta(bonusKey3, "done")
+			log.Printf("Gave Danya +666 coins")
 		}
 	}
 
