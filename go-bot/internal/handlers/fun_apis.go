@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	tele "gopkg.in/telebot.v3"
@@ -42,25 +41,17 @@ func (b *Bot) handleDog(c tele.Context) error {
 	return c.Send(photo)
 }
 
-// /cat or /cat @username — cat meme with user name
+// /cat or /cat @username — random cat photo for user
 func (b *Bot) handleCat(c tele.Context) error {
 	targetName, _ := getTarget(c)
 
-	encoded := url.PathEscape(targetName)
-	imageURL := fmt.Sprintf("https://cataas.com/cat/says/%s?fontSize=40&fontColor=white&type=square", encoded)
+	// Random param to bust Telegram cache
+	imageURL := fmt.Sprintf("https://cataas.com/cat?t=%d", time.Now().UnixNano())
 
 	photo := &tele.Photo{
 		File:    tele.FromURL(imageURL),
-		Caption: fmt.Sprintf("🐱 %s", targetName),
+		Caption: fmt.Sprintf("🐱 %s, це твій кіт", targetName),
 	}
 
-	err := c.Send(photo)
-	if err != nil {
-		photo2 := &tele.Photo{
-			File:    tele.FromURL("https://cataas.com/cat"),
-			Caption: fmt.Sprintf("🐱 %s", targetName),
-		}
-		return c.Send(photo2)
-	}
-	return nil
+	return c.Send(photo)
 }

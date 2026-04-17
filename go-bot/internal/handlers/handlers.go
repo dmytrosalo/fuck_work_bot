@@ -27,6 +27,7 @@ func New(clf *classifier.Classifier, db *storage.DB) *Bot {
 // Register attaches all command and message handlers to the telebot instance.
 func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/start", b.handleStart)
+	bot.Handle("/help", b.handleHelp)
 	bot.Handle("/check", b.handleCheck)
 	bot.Handle("/stats", b.handleStats)
 	bot.Handle("/mute", b.handleMute)
@@ -88,6 +89,53 @@ func (b *Bot) handleStart(c tele.Context) error {
 /dog — песик 🐕
 
 ⚙️ /mute /unmute — вкл/викл трекінг`
+	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdownV2})
+}
+
+func (b *Bot) handleHelp(c tele.Context) error {
+	msg := `📖 *Правила та механіки*
+
+💰 *Економіка \(богдудіки 🪙\)*
+• Старт: 100 🪙
+• /daily: \+50 🪙 на день
+• /work і /notwork: \+10 🪙 за кожну мітку
+• Пак карток: 20 🪙
+
+🎰 *Слоти*
+• Ставка: 1\-100 🪙
+• Макс 20 спінів на день
+• Три однакових \= множник x2\-x50
+• Два однакових \= ставка повернута
+• 💎💎💎 \= ДЖЕКПОТ x50
+
+🃏 *Картки \(301 шт\)*
+⭐ Common \(40%\) — 100 карток
+⭐⭐ Uncommon \(25%\) — 96 карток
+⭐⭐⭐ Rare \(25%\) — 67 карток
+⭐⭐⭐⭐ Epic \(7%\) — 27 карток
+⭐⭐⭐⭐⭐ Legendary \(3%\) — 11 карток
+
+• Пак \= 3 картки \(1 гарантована ⭐⭐\+\)
+• Макс 10 паків на день
+
+⚔️ *Батл*
+• Відповідай на повідомлення /battle
+• Бот витягує випадкову картку з колекції кожного
+• Порівнюється сума ATK \+ DEF \+ Special
+• Переможець: \+10 🪙 і забирає картку програвшого
+
+🔴 *Покемон*
+• /pokemon — твій покемон на сьогодні \(один на день\)
+• /pokemon pikachu — конкретний покемон
+
+🔮 *Гороскоп*
+• Один на день, генерується Gemini AI
+
+🤖 *Класифікатор*
+• Бот аналізує кожне повідомлення
+• Якщо робоче \(80%\+\) — ставить 🤡 і підколює
+• /work і /notwork допомагають тренувати модель`
+
 	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdownV2})
 }
 
