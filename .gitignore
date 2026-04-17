@@ -26,6 +26,9 @@ venv/
 .venv/
 .env
 
+# Chat history
+chat/
+
 # MacOS
 .DS_Store
 
@@ -35,3 +38,7 @@ venv/
 
 # Logs
 *.log
+
+# Go binaries
+go-bot/bot
+go-bot/cmd/bot/bot
