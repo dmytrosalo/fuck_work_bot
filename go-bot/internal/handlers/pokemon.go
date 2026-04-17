@@ -85,7 +85,6 @@ func (b *Bot) fetchAndSendPokemon(c tele.Context, userID, query string, loading 
 
 	bot := c.Bot()
 	chat := c.Chat()
-	opts := &tele.SendOptions{ParseMode: tele.ModeMarkdown}
 
 	sendErr := func(text string) {
 		if loading != nil {
@@ -159,18 +158,18 @@ func (b *Bot) fetchAndSendPokemon(c tele.Context, userID, query string, loading 
 
 	var sb strings.Builder
 	if query == "" {
-		sb.WriteString(fmt.Sprintf("🔴 %s, сьогодні ти — *%s*!\n\n", userName, name))
+		sb.WriteString(fmt.Sprintf("🔴 %s, сьогодні ти — %s!\n\n", userName, name))
 	} else {
-		sb.WriteString(fmt.Sprintf("🔴 *%s*\n\n", name))
+		sb.WriteString(fmt.Sprintf("🔴 %s\n\n", name))
 	}
 	sb.WriteString(fmt.Sprintf("#%03d | %s\n\n", pokemon.ID, strings.Join(types, " / ")))
-	sb.WriteString(fmt.Sprintf("❤️ HP: %d\n", statMap["hp"]))
-	sb.WriteString(fmt.Sprintf("⚔️ ATK: %d  🛡 DEF: %d\n", statMap["attack"], statMap["defense"]))
-	sb.WriteString(fmt.Sprintf("✨ SP.ATK: %d  🔰 SP.DEF: %d\n", statMap["special-attack"], statMap["special-defense"]))
-	sb.WriteString(fmt.Sprintf("💨 SPEED: %d\n", statMap["speed"]))
-	sb.WriteString(fmt.Sprintf("\n📊 Total: *%d*", total))
+	sb.WriteString(fmt.Sprintf("HP: %d\n", statMap["hp"]))
+	sb.WriteString(fmt.Sprintf("ATK: %d  DEF: %d\n", statMap["attack"], statMap["defense"]))
+	sb.WriteString(fmt.Sprintf("SP.ATK: %d  SP.DEF: %d\n", statMap["special-attack"], statMap["special-defense"]))
+	sb.WriteString(fmt.Sprintf("SPEED: %d\n", statMap["speed"]))
+	sb.WriteString(fmt.Sprintf("\nTotal: %d", total))
 	if ability != "" {
-		sb.WriteString(fmt.Sprintf("\n🎯 Ability: %s", ability))
+		sb.WriteString(fmt.Sprintf("\nAbility: %s", ability))
 	}
 
 	spriteURL := pokemon.Sprites.Other.OfficialArtwork.Front
@@ -183,12 +182,13 @@ func (b *Bot) fetchAndSendPokemon(c tele.Context, userID, query string, loading 
 			File:    tele.FromURL(spriteURL),
 			Caption: sb.String(),
 		}
-		_, err := bot.Send(chat, photo, opts)
+		_, err := bot.Send(chat, photo)
 		if err != nil {
-			log.Printf("[pokemon] Photo send error: %v", err)
-			bot.Send(chat, sb.String(), opts)
+			log.Printf("[pokemon] Photo send error (url=%s): %v", spriteURL, err)
+			bot.Send(chat, sb.String())
 		}
 	} else {
-		bot.Send(chat, sb.String(), opts)
+		log.Printf("[pokemon] No sprite URL for %s", pokemon.Name)
+		bot.Send(chat, sb.String())
 	}
 }
