@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -72,9 +73,10 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		url = fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%d", id)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
+		log.Printf("[pokemon] API error: %v", err)
 		return c.Reply("❌ Не вдалося зʼєднатися з PokeAPI")
 	}
 	defer resp.Body.Close()
