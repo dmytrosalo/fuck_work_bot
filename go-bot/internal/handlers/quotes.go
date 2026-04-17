@@ -30,9 +30,24 @@ func (b *Bot) handleAddQuote(c tele.Context) error {
 	return c.Reply(fmt.Sprintf("💬 Цитату від %s збережено!", author))
 }
 
+const roastCost = 5
+
 func (b *Bot) handleRoast(c tele.Context) error {
 	targetName, targetUsername := getTarget(c)
 	target := resolveTarget(targetName, targetUsername)
+
+	// Roasting others costs coins, self-roast is free
+	userID := fmt.Sprintf("%d", c.Sender().ID)
+	userName := c.Sender().FirstName
+	isSelf := targetName == userName || (c.Message().Payload == "" && c.Message().ReplyTo == nil)
+
+	if !isSelf {
+		balance := b.db.GetBalance(userID, userName)
+		if balance < roastCost {
+			return c.Reply(fmt.Sprintf("💸 Роаст коштує %d 🪙, у тебе %d 🪙", roastCost, balance))
+		}
+		b.db.UpdateBalance(userID, userName, -roastCost)
+	}
 
 	roast := b.db.GetRandomRoast(target)
 	if roast == "" {
