@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -127,23 +128,27 @@ func (b *Bot) handlePack(c tele.Context) error {
 	}
 
 	if allRendered && len(album) > 0 {
-		return c.SendAlbum(album)
+		err := c.SendAlbum(album)
+		if err == nil {
+			return nil
+		}
+		log.Printf("[pack] Album send failed: %v, falling back to text", err)
 	}
 
-	// Fallback to text
+	// Fallback to text (no Markdown to avoid formatting issues)
 	var sb strings.Builder
-	sb.WriteString("📦 *Пак відкрито!*\n━━━━━━━━━━━━━━━━\n\n")
+	sb.WriteString("📦 Пак відкрито!\n━━━━━━━━━━━━━━━━\n\n")
 	for i, card := range cards {
-		sb.WriteString(fmt.Sprintf("%s  *%s*\n", rarityStars[card.Rarity], rarityNames[card.Rarity]))
-		sb.WriteString(fmt.Sprintf("%s  *%s*\n", card.Emoji, card.Name))
+		sb.WriteString(fmt.Sprintf("%s %s\n", rarityStars[card.Rarity], rarityNames[card.Rarity]))
+		sb.WriteString(fmt.Sprintf("%s %s\n", card.Emoji, card.Name))
 		sb.WriteString(fmt.Sprintf("⚔️%d  🛡%d  %s: %d\n", card.ATK, card.DEF, card.SpecialName, card.Special))
-		sb.WriteString(fmt.Sprintf("_%s_\n", card.Description))
+		sb.WriteString(fmt.Sprintf("%s\n", card.Description))
 		if i < len(cards)-1 {
 			sb.WriteString("\n")
 		}
 	}
 	sb.WriteString(fmt.Sprintf("\n━━━━━━━━━━━━━━━━\n🃏 %d/%d | 🪙 %d", unique, total, newBalance))
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return c.Send(sb.String())
 }
 
 func (b *Bot) handleBattle(c tele.Context) error {
