@@ -14,7 +14,7 @@ go-bot/
 │   ├── classifier/classifier.go — TF-IDF + LogReg classifier (pure Go)
 │   ├── storage/sqlite.go        — SQLite: stats, cards, balances, collection, feedback
 │   └── handlers/
-│       ├── handlers.go          — core commands (/check, /stats, /mute, /work)
+│       ├── handlers.go          — core commands (/start, /help, /check, /stats, /mute, /work)
 │       ├── roasts.go            — username mapping for personalized content
 │       ├── quotes.go            — /quote, /addquote, /roast, /compliment
 │       ├── cards.go             — /pack, /collection, /battle
@@ -50,6 +50,7 @@ go-bot/
 - `/slots`: bet 1-100, max 20 spins/day, rigged mode via env
 - `/pack`: 20 coins, max 10/day
 - `/battle`: winner +10 coins + steals loser's card
+- `/roast @user`: 5 coins (self-roast free)
 - `/work` `/notwork`: +10 coins per feedback label
 
 ## Seed System

@@ -31,15 +31,15 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 | `/start` | Welcome message | — |
 | `/check <text>` | Classify a message | — |
 | `/stats` | Work message statistics | — |
-| `/roast` | Roast (self, reply, or @user) | — |
+| `/roast` | Roast (self free, others 5 🪙) | 5 🪙 |
+| `/help` | Rules and game mechanics | — |
 | `/compliment` | Compliment (self, reply, or @user) | — |
 | `/quote` | Random quote from chat history | — |
 | `/addquote` | Save a quote (reply to message) | — |
 | `/pokemon` | Your daily Pokemon with image | — |
 | `/horoscope` | Dev horoscope (1/day) | — |
 | `/8ball <question>` | Magic 8 ball | — |
-| `/cat` | Cat meme about you | — |
-| `/cat @user` | Cat meme about someone | — |
+| `/cat` | Random cat photo | — |
 | `/dog` | Random dog photo | — |
 | `/daily` | Daily bonus | +50 🪙 |
 | `/slots <bet>` | Slot machine (max 20/day) | 1-100 🪙 |
