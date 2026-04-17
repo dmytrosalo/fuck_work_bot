@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"fmt"
-	"math/rand"
+	"log"
 	"strconv"
 	"strings"
 
@@ -11,42 +11,7 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-var roasts = []string{
-	"О, хтось знову не може відпустити роботу навіть у чаті",
-	"Так, ми всі вражені твоєю зайнятістю. Ні, насправді ні.",
-	"Чат для відпочинку, а не для твоїх робочих драм",
-	"Ти взагалі вмієш говорити про щось крім роботи?",
-	"Вау, робота. Як оригінально. Всім дуже цікаво.",
-	"Хтось явно не вміє відділяти роботу від життя",
-	"Знову ця корпоративна нудьга в чаті...",
-	"Ми зрозуміли, ти працюєш. Можна далі жити?",
-	"Робота-робота... А особистість у тебе є?",
-	"Чергова робоча тема? Як несподівано від тебе.",
-	"Ти на годиннику чи просто не можеш зупинитись?",
-	"Слухай, є інші теми для розмов. Google допоможе.",
-	"О ні, знову хтось важливий зі своєю важливою роботою",
-	"Так, так, дедлайни, мітинги, ми в захваті. Далі що?",
-	"Може краще в робочий чат? Або в щоденник?",
-	"Друже, це чат, а не твій LinkedIn",
-	"Знову робочі проблеми? Психотерапевт дешевший",
-	"Цікаво, ти й уві сні про роботу говориш?",
-	"Нагадую: тут люди відпочивають від роботи. Ну, крім тебе.",
-	"Ого, ще одне повідомлення про роботу! Який сюрприз!",
-	"Може хоч раз поговоримо про щось людське?",
-	"Твій роботодавець не платить за рекламу в цьому чаті",
-	"Роботоголізм — це діагноз, до речі",
-	"Дивно, що ти ще не створив окремий чат для своїх тікетів",
-	"О, знову ти зі своїми важливими справами. Фанфари!",
-	"Тут є правило: хто пише про роботу — той лох",
-	"Знаєш що крутіше за роботу? Буквально все.",
-	"А ти точно не бот? Бо тільки боти так багато про роботу",
-	"Ми не твої колеги, можеш розслабитись",
-	"Хтось забув вимкнути робочий режим",
-}
-
-func randomRoast() string {
-	return roasts[rand.Intn(len(roasts))]
-}
+// roasts and compliments are in roasts.go
 
 // Bot wraps the classifier and storage for Telegram handlers.
 type Bot struct {
@@ -66,7 +31,11 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/stats", b.handleStats)
 	bot.Handle("/mute", b.handleMute)
 	bot.Handle("/unmute", b.handleUnmute)
-	bot.Handle(tele.OnText, b.handleText)
+	bot.Handle("/roast", b.handleRoast)
+	bot.Handle("/compliment", b.handleCompliment)
+	bot.Handle("/work", b.handleMarkWork)
+	bot.Handle("/notwork", b.handleMarkNotWork)
+bot.Handle(tele.OnText, b.handleText)
 }
 
 func (b *Bot) handleStart(c tele.Context) error {
@@ -74,7 +43,11 @@ func (b *Bot) handleStart(c tele.Context) error {
 
 *Команди:*
 /check <текст> — перевірити текст
-/stats — статистика користувачів
+/stats — статистика
+/roast — підколка 🔥
+/compliment — комплімент 💖
+/work — позначити повідомлення як робоче
+/notwork — позначити як не робоче
 /mute — замутити себе
 /unmute — розмутити себе`
 	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdownV2})
@@ -147,6 +120,54 @@ func (b *Bot) handleUnmute(c tele.Context) error {
 	return c.Reply("Ти розмучений. Бот знову стежить за тобою.")
 }
 
+func (b *Bot) handleRoast(c tele.Context) error {
+	// Target: replied-to user, or args, or self
+	targetName, targetUsername := getTarget(c)
+
+	roast := personalRoast(targetName, targetUsername)
+	if roast == "" {
+		roast = randomRoast()
+	}
+	roast = strings.ReplaceAll(roast, "{name}", targetName)
+
+	return c.Reply(fmt.Sprintf("🔥 %s", roast))
+}
+
+func (b *Bot) handleCompliment(c tele.Context) error {
+	targetName, targetUsername := getTarget(c)
+
+	compliment := personalCompliment(targetName, targetUsername)
+	compliment = strings.ReplaceAll(compliment, "{name}", targetName)
+
+	return c.Reply(fmt.Sprintf("💖 %s", compliment))
+}
+
+func getTarget(c tele.Context) (name, username string) {
+	if c.Message().ReplyTo != nil && c.Message().ReplyTo.Sender != nil {
+		target := c.Message().ReplyTo.Sender
+		name = target.FirstName
+		if name == "" {
+			name = target.Username
+		}
+		username = target.Username
+		return
+	}
+
+	if c.Message().Payload != "" {
+		name = strings.TrimPrefix(c.Message().Payload, "@")
+		username = name
+		return
+	}
+
+	// Self
+	name = c.Sender().FirstName
+	if name == "" {
+		name = c.Sender().Username
+	}
+	username = c.Sender().Username
+	return
+}
+
 func (b *Bot) handleText(c tele.Context) error {
 	text := c.Text()
 	if text == "" {
@@ -172,22 +193,54 @@ func (b *Bot) handleText(c tele.Context) error {
 
 	res, err := b.clf.Classify(text)
 	if err != nil {
+		log.Printf("[%s] classify error: %v", userName, err)
 		return nil
 	}
+
+	log.Printf("[%s] %s (%.0f%%) %q", userName, res.Label, res.Confidence*100, text)
 
 	b.db.UpdateStats(userID, userName, res.IsWork)
 	b.db.UpdateDailyStats(userID, userName, res.IsWork)
 
-	if res.IsWork && res.Confidence >= 0.95 {
+	if res.IsWork && res.Confidence >= 0.80 {
 		_ = c.Bot().React(c.Chat(), c.Message(), tele.ReactionOptions{
 			Reactions: []tele.Reaction{{Type: "emoji", Emoji: "\U0001f921"}},
 		})
-		reply := fmt.Sprintf("%s (%.0f%%)", randomRoast(), res.Confidence*100)
+
+		// Try personal roast first, fall back to generic
+		roast := personalRoast(userName, c.Sender().Username)
+		if roast == "" {
+			roast = randomRoast()
+		}
+		roast = strings.ReplaceAll(roast, "{name}", userName)
+
+		reply := fmt.Sprintf("%s (%.0f%%)", roast, res.Confidence*100)
 		return c.Reply(reply)
 	}
 
 	return nil
 }
+
+func (b *Bot) handleMarkWork(c tele.Context) error {
+	if c.Message().ReplyTo == nil || c.Message().ReplyTo.Text == "" {
+		return c.Reply("Відповідай на повідомлення командою /work щоб позначити його як робочe")
+	}
+	text := c.Message().ReplyTo.Text
+	b.db.SaveFeedback(text, "work")
+	log.Printf("[feedback] /work: %q", text)
+	return c.Reply("✅ Позначено як робота")
+}
+
+func (b *Bot) handleMarkNotWork(c tele.Context) error {
+	if c.Message().ReplyTo == nil || c.Message().ReplyTo.Text == "" {
+		return c.Reply("Відповідай на повідомлення командою /notwork щоб позначити його як не робочe")
+	}
+	text := c.Message().ReplyTo.Text
+	b.db.SaveFeedback(text, "personal")
+	log.Printf("[feedback] /notwork: %q", text)
+	return c.Reply("❌ Позначено як не робота")
+}
+
 
 // DailyReport sends a daily stats report to all active chats and resets daily stats.
 func (b *Bot) DailyReport(bot *tele.Bot) {

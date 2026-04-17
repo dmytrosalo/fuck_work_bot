@@ -1,154 +1,57 @@
-# Work Classifier Bot - Fly.io
+# FuckingWorkTracking Bot
 
-## Files
-
-```
-flyio_bot/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml          # GitHub Actions deploy
-├── bot.py                      # Telegram bot
-├── work_classifier.py          # Classifier
-├── work_classifier_light.joblib # Model (0.53 MB)
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml          # Local run
-├── fly.toml
-├── .env.example
-├── .gitignore
-└── README.md
-```
+Telegram bot that detects work-related messages in a friend group chat and roasts people for talking about work.
 
 ## Features
 
-- **Accuracy:** 99.08%
-- **Model Size:** 0.53 MB
-- **Speed:** <2ms
-- **RAM:** ~50-100 MB
+- **Work Classifier** — TF-IDF + LogReg model distilled from a fine-tuned sentence transformer. Detects work messages with ~95% accuracy including colleague names, project terms, and dev jargon.
+- **Personalized Roasts** — 600+ roasts tailored per chat member (Data, Dmytro, Danya, Bo)
+- **Compliments** — `/compliment` for when you need positivity
+- **Feedback Loop** — `/work` and `/notwork` commands to label messages for model retraining
+- **Stats** — per-user work message tracking with daily reports at 23:00 Kyiv time
+- **SQLite** — persistent storage on Fly.io volume
 
----
+## Stack
 
-## Local Run (Docker)
+- **Go** — single binary, no CGO, ~22MB RAM
+- **SQLite** (modernc.org/sqlite) — pure Go, no external dependencies
+- **Fly.io** — free tier (256MB shared VM, Frankfurt)
+- **Telegram Bot API** (gopkg.in/telebot.v3)
 
-```bash
-# 1. Copy .env
-cp .env.example .env
+## Commands
 
-# 2. Add token to .env
-nano .env
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/check <text>` | Classify a message |
+| `/stats` | User statistics |
+| `/roast` | Roast yourself or reply to someone |
+| `/compliment` | Compliment yourself or reply to someone |
+| `/work` | Reply to a message to mark as work |
+| `/notwork` | Reply to a message to mark as not work |
+| `/mute` | Disable tracking |
+| `/unmute` | Enable tracking |
 
-# 3. Run
-docker-compose up --build
-
-# Or in background
-docker-compose up -d --build
-
-# Logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
-
----
-
-
-## Deploy to Fly.io (First time)
-
-### 1. Install flyctl
+## Deploy
 
 ```bash
-# macOS
-brew install flyctl
-
-# Linux
-curl -L https://fly.io/install.sh | sh
+fly deploy -a fuck-work-bot
 ```
 
-### 2. Login and launch app
+## Local Development
 
 ```bash
-fly auth login
-fly launch --no-deploy
+cd go-bot
+CGO_ENABLED=0 go build -o bot ./cmd/bot/
+TELEGRAM_BOT_TOKEN=xxx MODEL_PATH=./model/tfidf_model.json DATA_DIR=./testdata ./bot
 ```
 
-### 3. Secrets
+## Retraining
 
-```bash
-fly secrets set TELEGRAM_BOT_TOKEN="your_token_here"
-```
+The bot collects feedback via `/work` and `/notwork` commands. To retrain:
 
-### 4. Deploy
-
-```bash
-fly deploy
-```
-
----
-
-## Deploy from GitHub (Automatic)
-
-### 1. Get Fly.io API token
-
-```bash
-fly tokens create deploy -x 999999h
-```
-
-### 2. Add secret to GitHub
-
-GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-
-- Name: `FLY_API_TOKEN`
-- Value: token from previous step
-
-### 3. Add bot secret to Fly.io
-
-```bash
-fly secrets set TELEGRAM_BOT_TOKEN="your_bot_token"
-```
-
-### 4. Push to main
-
-```bash
-git add .
-git commit -m "Deploy"
-git push origin main
-```
-
-Deploy will start automatically!
-
----
-
-## Bot Commands
-
-- `/start` - Welcome message
-- `/check <text>` - Check message
-- `/stats` - Chat statistics
-
----
-
-## Fly.io Commands
-
-```bash
-# Status
-fly status
-
-# Logs
-fly logs
-
-# SSH into container
-fly ssh console
-
-# Restart
-fly apps restart
-
-# Scaling
-fly scale memory 512
-```
-
----
-
-## Fly.io Pricing
-
-- Free tier: 3 shared VMs, 256 MB RAM
-- This bot: ~$0-2/month
+1. Export feedback from SQLite
+2. Run `go-bot/scripts/finetune_model.py`
+3. Distill back to TF-IDF
+4. Replace `go-bot/model/tfidf_model.json`
+5. Redeploy

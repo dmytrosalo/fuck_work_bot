@@ -5,7 +5,6 @@
   "attention_probs_dropout_prob": 0.1,
   "classifier_dropout": null,
   "dtype": "float32",
-  "export_model_type": "transformer",
   "gradient_checkpointing": false,
   "hidden_act": "gelu",
   "hidden_dropout_prob": 0.1,

@@ -29,6 +29,22 @@ venv/
 # Chat history
 chat/
 
+# Old Python bot data (not used by Go bot)
+jokes_db.py
+cars_db.py
+*.joblib
+
+# Model artifacts
+go-bot/model/model.onnx
+go-bot/model/tokenizer.json
+go-bot/model_quantized/
+go-bot/model_finetuned_tmp/
+go-bot/checkpoints/
+
+# Labeling data
+labeling_batch.csv
+labeling_batch.numbers
+
 # MacOS
 .DS_Store
 

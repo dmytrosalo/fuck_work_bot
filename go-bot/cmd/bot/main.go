@@ -1,5 +1,3 @@
-//go:build ORT
-
 package main
 
 import (
@@ -24,12 +22,10 @@ func main() {
 		dataDir = "/data"
 	}
 
-	modelDir := os.Getenv("MODEL_DIR")
-	if modelDir == "" {
-		modelDir = "./model"
+	modelPath := os.Getenv("MODEL_PATH")
+	if modelPath == "" {
+		modelPath = "./model/tfidf_model.json"
 	}
-
-	onnxLibPath := os.Getenv("ONNX_LIB_PATH")
 
 	// Init storage
 	db, err := storage.New(dataDir + "/bot.db")
@@ -40,7 +36,7 @@ func main() {
 	log.Println("Storage initialized")
 
 	// Init classifier
-	clf, err := classifier.New(modelDir, modelDir+"/weights.json", onnxLibPath)
+	clf, err := classifier.New(modelPath)
 	if err != nil {
 		log.Fatalf("Failed to init classifier: %v", err)
 	}

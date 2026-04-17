@@ -42,6 +42,7 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS daily_stats (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, work INTEGER NOT NULL DEFAULT 0, personal INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS muted (user_id TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS chats (chat_id TEXT PRIMARY KEY)`,
+		`CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, label TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -139,6 +140,33 @@ func (d *DB) GetActiveChats() ([]string, error) {
 		chats = append(chats, id)
 	}
 	return chats, rows.Err()
+}
+
+func (d *DB) SaveFeedback(text, label string) {
+	d.db.Exec(`INSERT INTO feedback (text, label) VALUES (?, ?)`, text, label)
+}
+
+type Feedback struct {
+	Text  string
+	Label string
+}
+
+func (d *DB) GetAllFeedback() ([]Feedback, error) {
+	rows, err := d.db.Query(`SELECT text, label FROM feedback`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var fb []Feedback
+	for rows.Next() {
+		var f Feedback
+		if err := rows.Scan(&f.Text, &f.Label); err != nil {
+			return nil, err
+		}
+		fb = append(fb, f)
+	}
+	return fb, rows.Err()
 }
 
 func scanStats(rows *sql.Rows) ([]UserStats, error) {
