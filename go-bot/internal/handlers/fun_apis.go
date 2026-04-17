@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v3"
@@ -44,57 +43,59 @@ func (b *Bot) handleDog(c tele.Context) error {
 	return c.Send(photo)
 }
 
-// /cat — cat meme with optional text overlay
-func (b *Bot) handleCat(c tele.Context) error {
-	text := strings.TrimSpace(c.Message().Payload)
+var catPhrases = []string{
+	"на стендапі",
+	"деплоїть в п'ятницю",
+	"на код рев'ю",
+	"зламав прод",
+	"на мітингу що міг бути емейлом",
+	"дедлайн був вчора",
+	"зробив force push",
+	"в merge conflict",
+	"ще 5 хвилинок і все",
+	"працює з дому",
+	"не спить а думає",
+	"в ще одному спринті",
+	"все зламав",
+	"написав цей код",
+	"каже production is fine",
+	"на мʼюті",
+	"тест не пройшов",
+	"знову рефакторить",
+	"чіпає продакшн",
+	"робить hotfix о 3 ночі",
+	"їсть хінкалі",
+	"грає в слоти",
+	"мріє про Порше",
+	"ігнорує повідомлення",
+	"каже харош!",
+	"шукає баг",
+	"дивиться на Jira",
+	"пише в Slack о суботі",
+	"каже ще трохи і все",
+	"оновлює резюме",
+}
 
-	var imageURL string
-	if text != "" {
-		// Cat with text overlay
-		encoded := url.PathEscape(text)
-		imageURL = fmt.Sprintf("https://cataas.com/cat/says/%s?fontSize=40&fontColor=white&type=square", encoded)
-	} else {
-		// Random cat meme with random funny text
-		funnyTexts := []string{
-			"я на стендапі",
-			"деплой в п'ятницю",
-			"код рев'ю",
-			"баг на проді",
-			"мітинг що міг бути емейлом",
-			"дедлайн вчора",
-			"force push",
-			"merge conflict",
-			"ще 5 хвилинок",
-			"працюю з дому",
-			"я не сплю я думаю",
-			"ще один спринт",
-			"все зламалось",
-			"хто це написав? а це я",
-			"production is fine",
-			"я на мʼюті",
-			"тест не пройшов",
-			"знову рефакторинг",
-			"не чіпай продакшн",
-			"hotfix о 3 ночі",
-		}
-		randomText := funnyTexts[rand.Intn(len(funnyTexts))]
-		encoded := url.PathEscape(randomText)
-		imageURL = fmt.Sprintf("https://cataas.com/cat/says/%s?fontSize=40&fontColor=white&type=square", encoded)
-	}
+// /cat or /cat @username — cat meme with user name + random phrase
+func (b *Bot) handleCat(c tele.Context) error {
+	// Get target name
+	targetName, _ := getTarget(c)
+	phrase := catPhrases[rand.Intn(len(catPhrases))]
+	text := fmt.Sprintf("%s %s", targetName, phrase)
+
+	encoded := url.PathEscape(text)
+	imageURL := fmt.Sprintf("https://cataas.com/cat/says/%s?fontSize=35&fontColor=white&type=square", encoded)
 
 	photo := &tele.Photo{
-		File: tele.FromURL(imageURL),
-	}
-	if text != "" {
-		photo.Caption = fmt.Sprintf("🐱 %s", text)
+		File:    tele.FromURL(imageURL),
+		Caption: fmt.Sprintf("🐱 %s", text),
 	}
 
 	err := c.Send(photo)
 	if err != nil {
-		// Fallback — just send a cat without text
 		photo2 := &tele.Photo{
 			File:    tele.FromURL("https://cataas.com/cat"),
-			Caption: "🐱 Кіт прийшов без тексту, але з настроєм",
+			Caption: fmt.Sprintf("🐱 %s %s", targetName, phrase),
 		}
 		return c.Send(photo2)
 	}
