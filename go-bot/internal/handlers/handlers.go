@@ -65,6 +65,10 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/rob", b.handleRob)
 	bot.Handle("/wordle", b.handleWordle)
 	bot.Handle("/card", b.handleCardInfo)
+	bot.Handle("/blackjack", b.handleBlackjack)
+	bot.Handle("/bj", b.handleBlackjack)
+	bot.Handle(&tele.Btn{Unique: "bj_hit"}, b.handleBJHit)
+	bot.Handle(&tele.Btn{Unique: "bj_stand"}, b.handleBJStand)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -102,6 +106,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 
 🎰 *Економіка:*
 /slots — слоти (1-100 🪙, макс 20/день)
+/blackjack — блекджек (1-100 🪙)
 /daily — бонус +50 🪙
 /balance — баланс
 /top — лідерборд
@@ -130,11 +135,11 @@ func (b *Bot) handleHelp(c tele.Context) error {
 • Пак карток: 20 🪙
 • /roast @user: 5 🪙
 
-🎰 *Слоти*
-• Ставка: 1-100 🪙, макс 20/день
-• Три однакових = множник x2-x50
-• Два однакових = ставка повернута
-• 💎💎💎 = ДЖЕКПОТ x50
+🎰 *Казино*
+• /slots: 1-100 🪙, макс 20/день
+• Три однакових = x2-x50, 💎💎💎 = ДЖЕКПОТ x50
+• /blackjack: 1-100 🪙, Hit/Stand кнопки
+• Blackjack (21 з 2 карт) = x2.5
 
 🃏 *Картки (301 шт)*
 ⭐ Common (40%) — 100 шт

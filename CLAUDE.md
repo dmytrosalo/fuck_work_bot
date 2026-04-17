@@ -49,6 +49,7 @@ go-bot/
 - Currency: богдудіки (starting balance 100)
 - `/daily`: +50/day
 - `/slots`: bet 1-100, max 20 spins/day, rigged mode via env
+- `/blackjack`: bet 1-100, Hit/Stand via inline buttons, BJ pays 2.5x
 - `/pack`: 20 coins, max 10/day
 - `/battle`: winner +10 coins + steals loser's card
 - `/roast @user`: 5 coins (self-roast free)

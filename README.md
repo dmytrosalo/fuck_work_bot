@@ -52,6 +52,7 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 | `/bid <amount>` | Bid on auction | 🪙 |
 | **Economy** | | |
 | `/slots <bet>` | Slot machine (max 20/day) | 1-100 🪙 |
+| `/blackjack <bet>` | Blackjack with Hit/Stand buttons | 1-100 🪙 |
 | `/daily` | Daily bonus | +50 🪙 |
 | `/balance` | Check coins | — |
 | `/top` | Leaderboard | — |
