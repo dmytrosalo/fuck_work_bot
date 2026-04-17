@@ -34,6 +34,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/roast", b.handleRoast)
 	bot.Handle("/compliment", b.handleCompliment)
 	bot.Handle("/quote", b.handleQuote)
+	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
 bot.Handle(tele.OnText, b.handleText)
@@ -48,6 +49,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /roast — підколка 🔥
 /compliment — комплімент 💖
 /quote — цитата з чату 💬
+/addquote — додати цитату \(відповідь\)
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе
@@ -122,54 +124,6 @@ func (b *Bot) handleUnmute(c tele.Context) error {
 	return c.Reply("Ти розмучений. Бот знову стежить за тобою.")
 }
 
-func (b *Bot) handleRoast(c tele.Context) error {
-	// Target: replied-to user, or args, or self
-	targetName, targetUsername := getTarget(c)
-
-	roast := personalRoast(targetName, targetUsername)
-	if roast == "" {
-		roast = randomRoast()
-	}
-	roast = strings.ReplaceAll(roast, "{name}", targetName)
-
-	return c.Reply(fmt.Sprintf("🔥 %s", roast))
-}
-
-func (b *Bot) handleCompliment(c tele.Context) error {
-	targetName, targetUsername := getTarget(c)
-
-	compliment := personalCompliment(targetName, targetUsername)
-	compliment = strings.ReplaceAll(compliment, "{name}", targetName)
-
-	return c.Reply(fmt.Sprintf("💖 %s", compliment))
-}
-
-func getTarget(c tele.Context) (name, username string) {
-	if c.Message().ReplyTo != nil && c.Message().ReplyTo.Sender != nil {
-		target := c.Message().ReplyTo.Sender
-		name = target.FirstName
-		if name == "" {
-			name = target.Username
-		}
-		username = target.Username
-		return
-	}
-
-	if c.Message().Payload != "" {
-		name = strings.TrimPrefix(c.Message().Payload, "@")
-		username = name
-		return
-	}
-
-	// Self
-	name = c.Sender().FirstName
-	if name == "" {
-		name = c.Sender().Username
-	}
-	username = c.Sender().Username
-	return
-}
-
 func (b *Bot) handleText(c tele.Context) error {
 	text := c.Text()
 	if text == "" {
@@ -209,10 +163,10 @@ func (b *Bot) handleText(c tele.Context) error {
 			Reactions: []tele.Reaction{{Type: "emoji", Emoji: "\U0001f921"}},
 		})
 
-		// Try personal roast first, fall back to generic
-		roast := personalRoast(userName, c.Sender().Username)
+		target := resolveTarget(userName, c.Sender().Username)
+		roast := b.db.GetRandomRoast(target)
 		if roast == "" {
-			roast = randomRoast()
+			roast = "Знову про роботу? Серйозно?"
 		}
 		roast = strings.ReplaceAll(roast, "{name}", userName)
 

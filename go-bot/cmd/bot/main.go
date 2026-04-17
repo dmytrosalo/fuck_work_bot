@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"time"
@@ -35,6 +36,18 @@ func main() {
 	defer db.Close()
 	log.Println("Storage initialized")
 
+	// Seed DB if empty
+	if !db.HasContent() {
+		seedPath := os.Getenv("SEED_PATH")
+		if seedPath == "" {
+			seedPath = "./seed_data.json"
+		}
+		if seedData, err := os.ReadFile(seedPath); err == nil {
+			seedDB(db, seedData)
+			log.Println("Database seeded with initial data")
+		}
+	}
+
 	// Init classifier
 	clf, err := classifier.New(modelPath)
 	if err != nil {
@@ -63,6 +76,38 @@ func main() {
 
 	log.Println("Bot starting...")
 	bot.Start()
+}
+
+func seedDB(db *storage.DB, data []byte) {
+	var seed struct {
+		Roasts []struct {
+			Category string `json:"category"`
+			Target   string `json:"target"`
+			Text     string `json:"text"`
+		} `json:"roasts"`
+		Compliments []struct {
+			Target string `json:"target"`
+			Text   string `json:"text"`
+		} `json:"compliments"`
+		Quotes []struct {
+			Author string `json:"author"`
+			Text   string `json:"text"`
+		} `json:"quotes"`
+	}
+	if err := json.Unmarshal(data, &seed); err != nil {
+		log.Printf("Failed to parse seed data: %v", err)
+		return
+	}
+	for _, r := range seed.Roasts {
+		db.AddRoast(r.Category, r.Target, r.Text)
+	}
+	for _, c := range seed.Compliments {
+		db.AddCompliment(c.Target, c.Text)
+	}
+	for _, q := range seed.Quotes {
+		db.AddQuote(q.Author, q.Text)
+	}
+	log.Printf("Seeded %d roasts, %d compliments, %d quotes", len(seed.Roasts), len(seed.Compliments), len(seed.Quotes))
 }
 
 func scheduleDailyReport(bot *tele.Bot, h *handlers.Bot) {

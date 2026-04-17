@@ -2,17 +2,19 @@ package handlers
 
 import "testing"
 
-func TestRandomRoast(t *testing.T) {
-	r1 := randomRoast()
-	if r1 == "" {
-		t.Fatal("expected non-empty roast")
+func TestResolveTarget(t *testing.T) {
+	tests := []struct {
+		name, username, want string
+	}{
+		{"Danya", "Dany_ro", "Danya"},
+		{"Data", "kondzhariia_data", "Data"},
+		{"Bo", "facethestrange", "Bo"},
+		{"Unknown", "random_user", "Unknown"},
 	}
-	// Verify variety
-	seen := make(map[string]bool)
-	for i := 0; i < 50; i++ {
-		seen[randomRoast()] = true
-	}
-	if len(seen) < 3 {
-		t.Fatalf("expected variety, got %d unique", len(seen))
+	for _, tt := range tests {
+		got := resolveTarget(tt.name, tt.username)
+		if got != tt.want {
+			t.Errorf("resolveTarget(%q, %q) = %q, want %q", tt.name, tt.username, got, tt.want)
+		}
 	}
 }

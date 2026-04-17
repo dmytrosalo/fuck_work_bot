@@ -2,115 +2,81 @@ package handlers
 
 import (
 	"fmt"
-	"math/rand"
+	"strings"
 
 	tele "gopkg.in/telebot.v3"
 )
 
-var chatQuotes = []struct {
-	Author string
-	Text   string
-}{
-	// Danya classics
-	{"Danya", "це не фразочки, це я так базарю("},
-	{"Danya", "жартую звичайно (ні)"},
-	{"Danya", "купив несквік і щасливий"},
-	{"Danya", "треба в псіхушку лягать напевно"},
-	{"Danya", "мене ніхто не хвалив з вас ніколи"},
-	{"Danya", "хуй я завтра буду працювати, так і знайте!"},
-	{"Danya", "я буду писать просто 'твій план хуйня, Богдан, ми з Маріт все переробили'"},
-	{"Danya", "Це Боглан любить так робить, емоушенал демедж. А я бусінка"},
-	{"Danya", "от тому тобі і нема шо платить"},
-	{"Danya", "вони якщо побачать твою кувалду то не звільнять, а підвищать!"},
-	{"Danya", "та то жпт говна дав, поваги нема"},
-	{"Danya", "яка різниця в яких ти тапках, якщо ти натискає педальку ренж ровер свр"},
-	{"Danya", "віддам машину цю і буду ходити пішки нахуй"},
-	{"Danya", "Блять який я злий ето піздєц"},
-	{"Danya", "Я такий злючій і буду ще гірше!"},
-	{"Danya", "Це чорна смуга закінчилась чи просто почався пунктир???"},
-	{"Danya", "От будеш гатитись в туза добре і станеш колись директором"},
-	{"Danya", "фільтруєм базар в нас криса"},
-	{"Danya", "Не лялякай зайвого, один прийом і тобі габела!!!"},
-	{"Danya", "набридло, там темно було"},
-	{"Danya", "поверніт блекберрі!!!"},
-	{"Danya", "боже я бачу єбло ала"},
-	{"Danya", "я не думав шо я колись скажу це"},
-	{"Danya", "які потім взірвуться нахуй!!!!"},
-	{"Danya", "Надрукую і перекручу Богдану"},
-	{"Danya", "Дата приізжай сюди, буду тебе за такі бабки сам стригти!"},
-	{"Danya", "Обсираєм Бодю на созвоні жоска"},
-	{"Danya", "я набрав розстрочек на 60к"},
-	{"Danya", "Нагадаю, тобі порізали зп на 20, то може якось блять полегше будеш????"},
-	{"Danya", "Узкачі були жіночі з секонда, і я в них вижив на донбасі"},
-
-	// Data Kondzhariia classics
-	{"Data", "ол гуд гайз"},
-	{"Data", "Бо краще мене не злити"},
-	{"Data", "один тільки його голос мене бісить"},
-	{"Data", "Просто не довіряють тобі)"},
-	{"Data", "Нехай нюхають бебру"},
-	{"Data", "Мої ноги дорожче ваших бричек!"},
-	{"Data", "Бажання вирубити його підкрадалось з кожною хвилиною)"},
-	{"Data", "ой, там достатньо насірів)"},
-	{"Data", "Якщо б в мене був лям баксів, я б зняв штани на дзвінку та показав їм пісюн!"},
-	{"Data", "забий, коли ми провалимось з нрф, то руді від нас відмовиться"},
-	{"Data", "Як же ці китайці бісять"},
-	{"Data", "я знову захотів собі порше"},
-	{"Data", "кредит? розстрочка? нє?!)"},
-	{"Data", "Що ви там? Я сьогодні Дата-спорт, Дата-падл!"},
-	{"Data", "Це щось на піксельном"},
-	{"Data", "Apple - топ! Що не так?)"},
-	{"Data", "повернувся, щоб похвалитись"},
-	{"Data", "Замовив я одяг. Ось що прийшло)))"},
-	{"Data", "Я помітив. Ти був грубий сьогодні"},
-	{"Data", "На диво це Дмитро почав"},
-
-	// Dmytro classics
-	{"Dmytro", "Працює. На відміну від тебе"},
-	{"Dmytro", "шоб була хоч якась радість в житті"},
-	{"Dmytro", "це було грубо, вибачаюсь, я трохи злий"},
-	{"Dmytro", "борусія бідна через їбане кійо"},
-	{"Dmytro", "ми так і не набрались духу з кійо звільнитись"},
-	{"Dmytro", "от ти і попалився)"},
-	{"Dmytro", "шо вам бот вже зробив?"},
-	{"Dmytro", "не знаю як це коментувати"},
-	{"Dmytro", "Це якийсь вид самопожертви це покарання"},
-	{"Dmytro", "Вкрав у нас майже хвилину життя"},
-	{"Dmytro", "Тут люди знають що таке ворк лайс беленс"},
-	{"Dmytro", "І потім купиш Даті тайкана"},
-	{"Dmytro", "Після цього демо всім зп підвищать?"},
-	{"Dmytro", "не можна це гворити!"},
-	{"Dmytro", "Це він на мене молиться чи як? В Індії корова може зайти в будинок і насрати"},
-	{"Dmytro", "Делна зараз буде лити шо хочеш"},
-	{"Dmytro", "пісюни замість кнопок"},
-	{"Dmytro", "думаю баксів 300-400 вже спустив"},
-	{"Dmytro", "Я до вас з перевіркою"},
-	{"Dmytro", "показати шо нам не цікаво"},
-
-	// Bo classics
-	{"Bo", "загалом, люди — кретини"},
-	{"Bo", "ми всі помремо. Сьогодні я нудотик"},
-	{"Bo", "я тут ледве не здох від того що поперхнувся слиною"},
-	{"Bo", "Не ведусь на провокації!"},
-	{"Bo", "Та у мене срака горить, вибачте"},
-	{"Bo", "Він архітектор душ, ти не розумієш"},
-	{"Bo", "Мені подобається Ґрінч, попрошу не ображати"},
-	{"Bo", "Тільки шмароБогданом не обзивайте, будь ласка"},
-	{"Bo", "Ці їбанати хуй кладуть, а тепер звинувачення про внершіп"},
-	{"Bo", "Я проїбав його додати"},
-	{"Bo", "Після пояснень відповідь: я контролюю залізо, а пз — ні"},
-	{"Bo", "Сука, вдома з 7 нема електро, молюсь щоб батарея дожила"},
-	{"Bo", "Я підтримую твій бойовий дух!"},
-	{"Bo", "Думав позитиву накинеш"},
-	{"Bo", "Віді обісрались. Я їм так на мазді за сервіс шатав"},
-	{"Bo", "Мене тупо нудить від цього гівна"},
-	{"Bo", "Як можна було девів на таке кидати, хоча б по/ліда"},
-	{"Bo", "Все лжно ті кончі нуль реакції, нуль підготовки"},
-	{"Bo", "Я коли це побачив, охуїв, сів і не вихуїв"},
-	{"Bo", "Високий, красивий, статний"},
+func (b *Bot) handleQuote(c tele.Context) error {
+	author, text := b.db.GetRandomQuote()
+	if text == "" {
+		return c.Reply("Цитат поки немає")
+	}
+	return c.Reply(fmt.Sprintf("💬 \"%s\"\n\n— %s", text, author))
 }
 
-func (b *Bot) handleQuote(c tele.Context) error {
-	q := chatQuotes[rand.Intn(len(chatQuotes))]
-	return c.Reply(fmt.Sprintf("💬 \"%s\"\n\n— %s", q.Text, q.Author))
+func (b *Bot) handleAddQuote(c tele.Context) error {
+	if c.Message().ReplyTo == nil || c.Message().ReplyTo.Text == "" {
+		return c.Reply("Відповідай на повідомлення командою /addquote")
+	}
+
+	text := c.Message().ReplyTo.Text
+	author := c.Message().ReplyTo.Sender.FirstName
+	if author == "" {
+		author = c.Message().ReplyTo.Sender.Username
+	}
+
+	b.db.AddQuote(author, text)
+	return c.Reply(fmt.Sprintf("💬 Цитату від %s збережено!", author))
+}
+
+func (b *Bot) handleRoast(c tele.Context) error {
+	targetName, targetUsername := getTarget(c)
+	target := resolveTarget(targetName, targetUsername)
+
+	roast := b.db.GetRandomRoast(target)
+	if roast == "" {
+		roast = "Навіть роастів на тебе не вистачило"
+	}
+	roast = strings.ReplaceAll(roast, "{name}", targetName)
+
+	return c.Reply(fmt.Sprintf("🔥 %s", roast))
+}
+
+func (b *Bot) handleCompliment(c tele.Context) error {
+	targetName, targetUsername := getTarget(c)
+	target := resolveTarget(targetName, targetUsername)
+
+	compliment := b.db.GetRandomCompliment(target)
+	if compliment == "" {
+		compliment = "Ти топ, не слухай нікого"
+	}
+	compliment = strings.ReplaceAll(compliment, "{name}", targetName)
+
+	return c.Reply(fmt.Sprintf("💖 %s", compliment))
+}
+
+func getTarget(c tele.Context) (name, username string) {
+	if c.Message().ReplyTo != nil && c.Message().ReplyTo.Sender != nil {
+		target := c.Message().ReplyTo.Sender
+		name = target.FirstName
+		if name == "" {
+			name = target.Username
+		}
+		username = target.Username
+		return
+	}
+
+	if c.Message().Payload != "" {
+		name = strings.TrimPrefix(c.Message().Payload, "@")
+		username = name
+		return
+	}
+
+	name = c.Sender().FirstName
+	if name == "" {
+		name = c.Sender().Username
+	}
+	username = c.Sender().Username
+	return
 }

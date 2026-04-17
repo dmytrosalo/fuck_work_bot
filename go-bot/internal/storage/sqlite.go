@@ -43,6 +43,9 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS muted (user_id TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS chats (chat_id TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, label TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE IF NOT EXISTS roasts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', text TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS compliments (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT NOT NULL DEFAULT '', text TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS quotes (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT NOT NULL, text TEXT NOT NULL)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -167,6 +170,67 @@ func (d *DB) GetAllFeedback() ([]Feedback, error) {
 		fb = append(fb, f)
 	}
 	return fb, rows.Err()
+}
+
+// --- Roasts ---
+
+func (d *DB) GetRandomRoast(target string) string {
+	var text string
+	// Try personal roast first
+	if target != "" {
+		err := d.db.QueryRow(`SELECT text FROM roasts WHERE target = ? ORDER BY RANDOM() LIMIT 1`, target).Scan(&text)
+		if err == nil {
+			return text
+		}
+	}
+	// Fall back to generic work roast
+	d.db.QueryRow(`SELECT text FROM roasts WHERE category = 'work' AND target = '' ORDER BY RANDOM() LIMIT 1`).Scan(&text)
+	return text
+}
+
+func (d *DB) GetRandomPersonalRoast(target string) string {
+	var text string
+	d.db.QueryRow(`SELECT text FROM roasts WHERE target = ? ORDER BY RANDOM() LIMIT 1`, target).Scan(&text)
+	return text
+}
+
+func (d *DB) AddRoast(category, target, text string) {
+	d.db.Exec(`INSERT INTO roasts (category, target, text) VALUES (?, ?, ?)`, category, target, text)
+}
+
+// --- Compliments ---
+
+func (d *DB) GetRandomCompliment(target string) string {
+	var text string
+	if target != "" {
+		err := d.db.QueryRow(`SELECT text FROM compliments WHERE target = ? ORDER BY RANDOM() LIMIT 1`, target).Scan(&text)
+		if err == nil {
+			return text
+		}
+	}
+	d.db.QueryRow(`SELECT text FROM compliments WHERE target = '' ORDER BY RANDOM() LIMIT 1`).Scan(&text)
+	return text
+}
+
+func (d *DB) AddCompliment(target, text string) {
+	d.db.Exec(`INSERT INTO compliments (target, text) VALUES (?, ?)`, target, text)
+}
+
+// --- Quotes ---
+
+func (d *DB) GetRandomQuote() (author, text string) {
+	d.db.QueryRow(`SELECT author, text FROM quotes ORDER BY RANDOM() LIMIT 1`).Scan(&author, &text)
+	return
+}
+
+func (d *DB) AddQuote(author, text string) {
+	d.db.Exec(`INSERT INTO quotes (author, text) VALUES (?, ?)`, author, text)
+}
+
+func (d *DB) HasContent() bool {
+	var count int
+	d.db.QueryRow(`SELECT COUNT(*) FROM roasts`).Scan(&count)
+	return count > 0
 }
 
 func scanStats(rows *sql.Rows) ([]UserStats, error) {

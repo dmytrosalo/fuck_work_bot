@@ -45,6 +45,12 @@ go-bot/checkpoints/
 labeling_batch.csv
 labeling_batch.numbers
 
+# Build artifacts
+go-bot/seed_tool
+go-bot/seed_linux
+go-bot/bot
+go-bot/cmd/seed/extract.go
+
 # MacOS
 .DS_Store
 
