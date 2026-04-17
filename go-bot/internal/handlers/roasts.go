@@ -678,9 +678,25 @@ func randomRoast() string {
 	return workRoasts[rand.Intn(len(workRoasts))]
 }
 
+// usernameToName maps Telegram usernames to the name keys used in roast/compliment maps.
+var usernameToName = map[string]string{
+	"kondzhariia_data": "Data",
+	"kondzhariia":      "Data",
+	"Dany_ro":          "Danya",
+	"facethestrange":   "Bo",
+}
+
+func resolveKeys(name, username string) []string {
+	keys := []string{name}
+	if mapped, ok := usernameToName[username]; ok {
+		keys = append([]string{mapped}, keys...)
+	}
+	keys = append(keys, username)
+	return keys
+}
+
 func personalRoast(name, username string) string {
-	// Try by first name, then username
-	for _, key := range []string{name, username} {
+	for _, key := range resolveKeys(name, username) {
 		if roasts, ok := personalRoasts[key]; ok && len(roasts) > 0 {
 			return roasts[rand.Intn(len(roasts))]
 		}
@@ -689,7 +705,7 @@ func personalRoast(name, username string) string {
 }
 
 func personalCompliment(name, username string) string {
-	for _, key := range []string{name, username} {
+	for _, key := range resolveKeys(name, username) {
 		if compliments, ok := personalCompliments[key]; ok && len(compliments) > 0 {
 			return compliments[rand.Intn(len(compliments))]
 		}
