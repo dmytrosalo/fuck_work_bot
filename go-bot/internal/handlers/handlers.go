@@ -93,7 +93,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /addquote — зберегти цитату
 
 🃏 *Картки (301 шт):*
-/pack — пак (40 🪙, макс 10/день)
+/pack — пак (40 🪙, макс 7/день)
 /collection — колекція
 /battle — швидкий батл (±10 🪙)
 /duel — дуель з вибором (±15 🪙)
@@ -153,7 +153,7 @@ func (b *Bot) handleHelp(c tele.Context) error {
 ⭐⭐⭐⭐ Epic (10%) — 47 шт
 ⭐⭐⭐⭐⭐ Legendary (4%) — 17 шт
 💎 ULTRA LEGENDARY MAX PRO (1%) — 3 шт
-• Пак = 3 картки, макс 10/день
+• Пак = 3 картки, макс 7/день
 • Sacrifice: 7 карток → 1 вищої (Ultra не крафтиться)
 
 ⚔️ *Бої*
@@ -187,7 +187,7 @@ func (b *Bot) handleHelp(c tele.Context) error {
 • /quote /addquote — цитати з чату
 
 ⚔️ *PvP*
-• /dart @user <ставка> — дартс, ціль 50 (+50 за точне)
+• /dart @user <ставка> — дартс 5 раундів, обидва ставлять, банк переможцю (5/день)
 • /war @user — війна карток, 3 раунди (±20 🪙 + картка)
 • /rob @user — 40% вкрасти 10-50% монет, 60% штраф → жертві (1/год)
 • /steal @user — 30% вкрасти картку, 70% штраф → жертві (1/день)

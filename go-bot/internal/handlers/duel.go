@@ -101,8 +101,9 @@ func (b *Bot) handleDuel(c tele.Context) error {
 }
 
 func (b *Bot) handleAccept(c tele.Context) error {
-	// Try war first
+	// Try war and dart first
 	b.handleWarAccept(c)
+	b.handleDartAccept(c)
 
 	userID := fmt.Sprintf("%d", c.Sender().ID)
 	chatID := c.Chat().ID

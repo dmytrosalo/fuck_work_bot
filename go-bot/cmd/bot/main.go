@@ -57,14 +57,20 @@ func main() {
 		}
 	}
 
-	// One-time bonus for Dany_ro for testing
-	bonusKey := "bonus_danyro_1000"
-	if db.GetMeta(bonusKey) == "" {
-		// Find Danya by name
+	// One-time bonuses
+	bonusKey1 := "bonus_danyro_1000"
+	if db.GetMeta(bonusKey1) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
 			db.UpdateBalance(danyaID, "Danya", 1000)
-			db.SetMeta(bonusKey, "done")
-			log.Printf("Gave Danya (ID:%s) 1000 coins bonus for testing", danyaID)
+			db.SetMeta(bonusKey1, "done")
+		}
+	}
+	bonusKey2 := "bonus_danyro_1234"
+	if db.GetMeta(bonusKey2) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 1234)
+			db.SetMeta(bonusKey2, "done")
+			log.Printf("Gave Danya +1234 coins")
 		}
 	}
 

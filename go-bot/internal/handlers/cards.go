@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	maxPacksPerDay = 10
+	maxPacksPerDay = 7
 	packCost       = 40
 	battleReward   = 10
 )
