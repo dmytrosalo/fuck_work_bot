@@ -287,16 +287,13 @@ func (b *Bot) resolveWar(bot *tele.Bot, war *warState) {
 	sb.WriteString(fmt.Sprintf("━━━━━━━━━━━━━━━━\n%s %d — %d %s\n\n", war.Player1Name, wins1, wins2, war.Player2Name))
 
 	if wins1 > wins2 {
-		b.db.TransferCoins(war.Player2ID, war.Player1ID, warReward)
-		// Winner steals random card from loser's 3
 		loserCard := war.Cards2[war.Order2[rand.Intn(3)]]
 		b.db.TransferCard(war.Player2ID, war.Player1ID, loserCard.ID)
-		sb.WriteString(fmt.Sprintf("🏆 %s перемагає!\n+%d 🪙 і забирає %s %s", war.Player1Name, warReward, loserCard.Emoji, loserCard.Name))
+		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!", war.Player1Name, loserCard.Emoji, loserCard.Name))
 	} else if wins2 > wins1 {
-		b.db.TransferCoins(war.Player1ID, war.Player2ID, warReward)
 		loserCard := war.Cards1[war.Order1[rand.Intn(3)]]
 		b.db.TransferCard(war.Player1ID, war.Player2ID, loserCard.ID)
-		sb.WriteString(fmt.Sprintf("🏆 %s перемагає!\n+%d 🪙 і забирає %s %s", war.Player2Name, warReward, loserCard.Emoji, loserCard.Name))
+		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!", war.Player2Name, loserCard.Emoji, loserCard.Name))
 	} else {
 		sb.WriteString("🤝 Нічия! Ніхто не втрачає")
 	}

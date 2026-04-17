@@ -14,7 +14,6 @@ import (
 const (
 	maxPacksPerDay = 7
 	packCost       = 40
-	battleReward   = 10
 )
 
 var rarityStars = map[int]string{
@@ -153,93 +152,6 @@ func (b *Bot) handlePack(c tele.Context) error {
 	}
 	sb.WriteString(fmt.Sprintf("\n━━━━━━━━━━━━━━━━\n🃏 %d/%d | 🪙 %d", unique, total, newBalance))
 	return c.Send(sb.String())
-}
-
-func (b *Bot) handleBattle(c tele.Context) error {
-	// Get opponent
-	var opponentName string
-	var opponentID string
-
-	if c.Message().ReplyTo != nil && c.Message().ReplyTo.Sender != nil {
-		opponent := c.Message().ReplyTo.Sender
-		opponentID = fmt.Sprintf("%d", opponent.ID)
-		opponentName = opponent.FirstName
-		if opponentName == "" {
-			opponentName = opponent.Username
-		}
-	} else if c.Message().Payload != "" {
-		opponentName = strings.TrimPrefix(c.Message().Payload, "@")
-		// Try resolving username to name first
-		resolved := resolveTarget(opponentName, opponentName)
-		// Search by resolved name, then original
-		if id, found := b.db.FindUserByName(resolved); found {
-			opponentID = id
-			opponentName = resolved
-		} else if id, found := b.db.FindUserByName(opponentName); found {
-			opponentID = id
-		} else {
-			return c.Reply(fmt.Sprintf("❌ Гравець %s не знайдений. Нехай спочатку напише /daily", opponentName))
-		}
-	} else {
-		return c.Reply("Відповідай на повідомлення або напиши /battle @username")
-	}
-
-	userID := fmt.Sprintf("%d", c.Sender().ID)
-	userName := c.Sender().FirstName
-	if userName == "" {
-		userName = c.Sender().Username
-	}
-
-	// Don't battle yourself
-	if userID == opponentID {
-		return c.Reply("Не можна битися з самим собою. Хоча спробуй 🤔")
-	}
-
-	// Draw random card from each player's collection
-	myCard := b.db.GetRandomCollectionCard(userID)
-	theirCard := b.db.GetRandomCollectionCard(opponentID)
-
-	if myCard.ID == 0 {
-		return c.Reply("У тебе немає карток! Напиши /pack")
-	}
-	if theirCard.ID == 0 {
-		return c.Reply(fmt.Sprintf("У %s немає карток!", opponentName))
-	}
-
-	myPower := myCard.ATK + myCard.DEF + myCard.Special
-	theirPower := theirCard.ATK + theirCard.DEF + theirCard.Special
-
-	var sb strings.Builder
-	sb.WriteString("⚔️ *БАТЛ!*\n\n")
-
-	// My card
-	sb.WriteString(fmt.Sprintf("🔵 *%s*\n", userName))
-	sb.WriteString(fmt.Sprintf("%s %s %s\n", rarityStars[myCard.Rarity], myCard.Emoji, myCard.Name))
-	sb.WriteString(fmt.Sprintf("ATK: %d  DEF: %d  %s: %d\n", myCard.ATK, myCard.DEF, myCard.SpecialName, myCard.Special))
-	sb.WriteString(fmt.Sprintf("💪 Сила: *%d*\n\n", myPower))
-
-	sb.WriteString("vs\n\n")
-
-	// Their card
-	sb.WriteString(fmt.Sprintf("🔴 *%s*\n", opponentName))
-	sb.WriteString(fmt.Sprintf("%s %s %s\n", rarityStars[theirCard.Rarity], theirCard.Emoji, theirCard.Name))
-	sb.WriteString(fmt.Sprintf("ATK: %d  DEF: %d  %s: %d\n", theirCard.ATK, theirCard.DEF, theirCard.SpecialName, theirCard.Special))
-	sb.WriteString(fmt.Sprintf("💪 Сила: *%d*\n\n", theirPower))
-
-	// Result
-	if myPower > theirPower {
-		b.db.TransferCoins(opponentID, userID, battleReward)
-		b.db.TransferCard(opponentID, userID, theirCard.ID)
-		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!\n+%d 🪙 і забирає %s %s!", userName, battleReward, theirCard.Emoji, theirCard.Name))
-	} else if theirPower > myPower {
-		b.db.TransferCoins(userID, opponentID, battleReward)
-		b.db.TransferCard(userID, opponentID, myCard.ID)
-		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!\n%s втрачає %d 🪙 і %s %s", opponentName, userName, battleReward, myCard.Emoji, myCard.Name))
-	} else {
-		sb.WriteString("🤝 *Нічия!* Ніхто нічого не втрачає")
-	}
-
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
 func (b *Bot) handleCollection(c tele.Context) error {

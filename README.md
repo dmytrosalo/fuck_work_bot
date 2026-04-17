@@ -42,8 +42,8 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 | `/collection` | Your cards by rarity | — |
 | `/card <name>` | View card with image | — |
 | `/showcase` | Flex your rarest card | — |
-| `/battle` | Quick random card fight | ±10 🪙 + card |
-| `/duel @user` | Pick your card to fight | ±15 🪙 + card |
+| `/war @user` | War: 3 rounds, choose order | card |
+| `/duel @user` | Pick your card to fight | card |
 | `/steal @user` | 30% steal card (1/day) | risk 20 🪙 |
 | `/sacrifice <rarity>` | 3 cards → 1 higher rarity | 3 cards |
 | `/burn <name>` | Destroy card for coins | 5-100 🪙 |
@@ -57,6 +57,7 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 | `/balance` | Check coins | — |
 | `/top` | Leaderboard | — |
 | `/rob @user` | 40% steal coins (1/hour) | risk 20 🪙 |
+| `/dart @user <bet>` | Darts: 5 rounds, pot system (5/day) | custom bet |
 | **Games** | | |
 | `/quiz` | Trivia questions (10/day) | +10-25 🪙 |
 | `/guess` | Guess number 1-100 (multiplayer) | +30 🪙 |

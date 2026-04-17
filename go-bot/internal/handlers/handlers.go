@@ -37,7 +37,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/quote", b.handleQuote)
 	bot.Handle("/pack", b.handlePack)
 	bot.Handle("/collection", b.handleCollection)
-	bot.Handle("/battle", b.handleBattle)
+	// /battle removed — use /duel or /war instead
 	bot.Handle("/pokemon", b.handlePokemon)
 	bot.Handle("/horoscope", b.handleHoroscope)
 	bot.Handle("/8ball", b.handleEightBall)
@@ -95,8 +95,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 🃏 *Картки (301 шт):*
 /pack — пак (40 🪙, макс 7/день)
 /collection — колекція
-/battle — швидкий батл (±10 🪙)
-/duel — дуель з вибором (±15 🪙)
+/duel — дуель з вибором картки
 /steal — вкрасти картку (30%)
 /rob — пограбувати монети (40%)
 /auction — аукціон картки
@@ -157,8 +156,8 @@ func (b *Bot) handleHelp(c tele.Context) error {
 • Sacrifice: 7 карток → 1 вищої (Ultra не крафтиться)
 
 ⚔️ *Бої*
-• /battle — швидкий (випадкова картка, ±10 🪙)
-• /duel @user → /accept — обирай картку з 3 (±15 🪙)
+• /duel @user → /accept — обирай картку з 3
+• /war @user → /accept — 3 раунди, обирай порядок
 • Переможець забирає картку програвшого
 
 🦹 *Картки — дії*

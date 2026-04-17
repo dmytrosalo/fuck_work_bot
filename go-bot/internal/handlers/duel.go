@@ -244,15 +244,13 @@ func (b *Bot) resolveDuel(bot *tele.Bot, duel *duelState) {
 	sb.WriteString(fmt.Sprintf("💪 PWR: %d\n\n", power2))
 
 	if power1 > power2 {
-		b.db.TransferCoins(duel.OpponentID, duel.ChallengerID, duelReward)
 		b.db.TransferCard(duel.OpponentID, duel.ChallengerID, p2.ID)
-		sb.WriteString(fmt.Sprintf("🏆 %s перемагає!\n+%d 🪙 і забирає %s %s!",
-			duel.ChallengerName, duelReward, p2.Emoji, p2.Name))
+		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!",
+			duel.ChallengerName, p2.Emoji, p2.Name))
 	} else if power2 > power1 {
-		b.db.TransferCoins(duel.ChallengerID, duel.OpponentID, duelReward)
 		b.db.TransferCard(duel.ChallengerID, duel.OpponentID, p1.ID)
-		sb.WriteString(fmt.Sprintf("🏆 %s перемагає!\n+%d 🪙 і забирає %s %s!",
-			duel.OpponentName, duelReward, p1.Emoji, p1.Name))
+		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!",
+			duel.OpponentName, p1.Emoji, p1.Name))
 	} else {
 		sb.WriteString("🤝 Нічия! Обидві картки залишаються")
 	}
