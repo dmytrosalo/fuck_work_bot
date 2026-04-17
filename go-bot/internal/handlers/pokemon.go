@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -60,9 +59,20 @@ func dailyPokemonID(userID string) int {
 
 func (b *Bot) handlePokemon(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
-
-	// If user specified a name, fetch that
 	query := strings.ToLower(strings.TrimSpace(c.Message().Payload))
+
+	// Send loading message
+	loading, _ := c.Bot().Send(c.Chat(), "🔴 Шукаємо покемона...")
+
+	// Fetch async — but we need the result, so just run inline with loading message shown
+	go func() {
+		b.fetchAndSendPokemon(c, userID, query, loading)
+	}()
+
+	return nil
+}
+
+func (b *Bot) fetchAndSendPokemon(c tele.Context, userID, query string, loading *tele.Message) {
 
 	var url string
 	if query != "" {
@@ -73,26 +83,46 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		url = fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%d", id)
 	}
 
+	bot := c.Bot()
+	chat := c.Chat()
+	opts := &tele.SendOptions{ParseMode: tele.ModeMarkdown}
+
+	sendErr := func(text string) {
+		if loading != nil {
+			bot.Delete(loading)
+		}
+		bot.Send(chat, text)
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		log.Printf("[pokemon] API error: %v", err)
-		return c.Reply("❌ Не вдалося зʼєднатися з PokeAPI")
+		sendErr("❌ Не вдалося зʼєднатися з PokeAPI")
+		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
-		return c.Reply("❌ Покемон не знайдений")
+		sendErr("❌ Покемон не знайдений")
+		return
 	}
 	if resp.StatusCode != 200 {
 		log.Printf("[pokemon] API status: %d", resp.StatusCode)
-		return c.Reply("❌ Помилка API")
+		sendErr("❌ Помилка API")
+		return
 	}
 
 	var pokemon pokemonAPI
 	if err := json.NewDecoder(resp.Body).Decode(&pokemon); err != nil {
 		log.Printf("[pokemon] Parse error: %v", err)
-		return c.Reply("❌ Помилка парсингу")
+		sendErr("❌ Помилка парсингу")
+		return
+	}
+
+	// Delete loading message
+	if loading != nil {
+		bot.Delete(loading)
 	}
 
 	// Build types
@@ -105,25 +135,21 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		types = append(types, fmt.Sprintf("%s %s", emoji, t.Type.Name))
 	}
 
-	// Stats
 	statMap := make(map[string]int)
 	for _, s := range pokemon.Stats {
 		statMap[s.Stat.Name] = s.BaseStat
 	}
 
-	// Total stats
 	total := 0
 	for _, s := range pokemon.Stats {
 		total += s.BaseStat
 	}
 
-	// Ability
 	ability := ""
 	if len(pokemon.Abilities) > 0 {
 		ability = pokemon.Abilities[0].Ability.Name
 	}
 
-	// Name capitalized
 	name := strings.ToUpper(pokemon.Name[:1]) + pokemon.Name[1:]
 
 	userName := c.Sender().FirstName
@@ -131,7 +157,6 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		userName = c.Sender().Username
 	}
 
-	// Caption
 	var sb strings.Builder
 	if query == "" {
 		sb.WriteString(fmt.Sprintf("🔴 %s, сьогодні ти — *%s*!\n\n", userName, name))
@@ -148,7 +173,6 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 		sb.WriteString(fmt.Sprintf("\n🎯 Ability: %s", ability))
 	}
 
-	// Try to send with image
 	spriteURL := pokemon.Sprites.Other.OfficialArtwork.Front
 	if spriteURL == "" {
 		spriteURL = pokemon.Sprites.Front
@@ -159,21 +183,12 @@ func (b *Bot) handlePokemon(c tele.Context) error {
 			File:    tele.FromURL(spriteURL),
 			Caption: sb.String(),
 		}
-		err := c.Send(photo, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		_, err := bot.Send(chat, photo, opts)
 		if err != nil {
-			log.Printf("[pokemon] Photo send error: %v, falling back to text", err)
-			return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+			log.Printf("[pokemon] Photo send error: %v", err)
+			bot.Send(chat, sb.String(), opts)
 		}
-		return nil
+	} else {
+		bot.Send(chat, sb.String(), opts)
 	}
-
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
-}
-
-// handleRandomPokemon returns a truly random Pokemon (not daily).
-func (b *Bot) handleRandomPokemon(c tele.Context) error {
-	id := rand.Intn(1010) + 1
-	c.Message().Payload = fmt.Sprintf("%d", id)
-	// Temporarily override to force random
-	return b.handlePokemon(c)
 }
