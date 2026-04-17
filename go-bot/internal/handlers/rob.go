@@ -61,6 +61,8 @@ func (b *Bot) handleRob(c tele.Context) error {
 		}
 
 		b.db.TransferCoins(targetID, userID, stolen)
+		b.db.LogTransaction(userID, userName, "rob", stolen)
+		b.db.LogTransaction(targetID, targetName, "robbed", -stolen)
 		newBal := b.db.GetBalance(userID, "")
 		return c.Reply(fmt.Sprintf("💰 Пограбував %s на %d 🪙 (%d%%)!\nБаланс: %d 🪙", targetName, stolen, pct, newBal))
 	}
@@ -69,6 +71,8 @@ func (b *Bot) handleRob(c tele.Context) error {
 	penalty := 20
 	b.db.UpdateBalance(userID, userName, -penalty)
 	b.db.UpdateBalance(targetID, targetName, penalty)
+	b.db.LogTransaction(userID, userName, "rob_fail", -penalty)
+	b.db.LogTransaction(targetID, targetName, "rob_comp", penalty)
 	bal := b.db.GetBalance(userID, "")
 	return c.Reply(fmt.Sprintf("🚔 Спіймали при спробі пограбувати %s!\n-%d 🪙 (баланс: %d)\n%s отримує +%d 🪙 як компенсацію", targetName, penalty, bal, targetName, penalty))
 }

@@ -265,6 +265,9 @@ func (b *Bot) bjStand(c tele.Context, game *bjGame) error {
 
 	if winnings > 0 {
 		b.db.UpdateBalance(game.UserID, game.UserName, winnings)
+		b.db.LogTransaction(game.UserID, game.UserName, "blackjack", winnings-game.Bet)
+	} else {
+		b.db.LogTransaction(game.UserID, game.UserName, "blackjack", -game.Bet)
 	}
 	bal := b.db.GetBalance(game.UserID, "")
 

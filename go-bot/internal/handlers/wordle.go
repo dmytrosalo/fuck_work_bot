@@ -226,6 +226,7 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 
 		reward := wordleRewards[attempt]
 		newBal := b.db.UpdateBalance(userID, userName, reward)
+		b.db.LogTransaction(userID, userName, "wordle", reward)
 
 		var sb strings.Builder
 		sb.WriteString("📝 *Wordle*\n\n")

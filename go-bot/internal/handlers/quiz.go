@@ -169,6 +169,7 @@ func (b *Bot) checkQuizAnswer(c tele.Context) bool {
 
 	if text == q.Correct {
 		newBalance := b.db.UpdateBalance(userID, userName, q.Reward)
+		b.db.LogTransaction(userID, userName, "quiz", q.Reward)
 		c.Reply(fmt.Sprintf("✅ Правильно! +%d 🪙 (баланс: %d)", q.Reward, newBalance))
 	} else {
 		c.Reply(fmt.Sprintf("❌ Неправильно! Правильна відповідь: %s", q.Correct))

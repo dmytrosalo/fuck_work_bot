@@ -83,6 +83,7 @@ func (b *Bot) handlePack(c tele.Context) error {
 	}
 
 	b.db.UpdateBalance(userID, userName, -packCost)
+	b.db.LogTransaction(userID, userName, "pack", -packCost)
 	b.db.IncrementPackOpens(userID, today)
 
 	// Roll 3 cards: 2 random + 1 guaranteed uncommon+

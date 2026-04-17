@@ -130,6 +130,9 @@ func (b *Bot) handleSlots(c tele.Context) error {
 	// Build message
 	display := fmt.Sprintf("╔══════════╗\n║ %s │ %s │ %s ║\n╚══════════╝", r1, r2, r3)
 
+	// Log transaction
+	b.db.LogTransaction(userID, userName, "slots", profit)
+
 	var msg string
 	if isTriple && multiplier >= 25 {
 		msg = fmt.Sprintf("🎰 *ДЖЕКПОТ!!!* 🎰\n\n%s\n\n💎💎💎 x%d!\n\nСтавка: %d 🪙\nВиграш: +%d 🪙\nБаланс: %d 🪙",
@@ -175,6 +178,7 @@ func (b *Bot) handleDaily(c tele.Context) error {
 	}
 
 	newBalance := b.db.UpdateBalance(userID, userName, dailyBonus)
+	b.db.LogTransaction(userID, userName, "daily", dailyBonus)
 	b.db.SetMeta(key, today)
 
 	return c.Reply(fmt.Sprintf("🎁 *Щоденний бонус!*\n\n+%d 🪙\nБаланс: %d 🪙", dailyBonus, newBalance), &tele.SendOptions{ParseMode: tele.ModeMarkdown})

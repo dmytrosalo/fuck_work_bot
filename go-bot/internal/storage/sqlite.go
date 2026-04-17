@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"fmt"
 
 	_ "modernc.org/sqlite"
 )
@@ -49,6 +50,7 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, name TEXT NOT NULL, rarity INTEGER NOT NULL, category TEXT NOT NULL, emoji TEXT NOT NULL, description TEXT NOT NULL, atk INTEGER, def INTEGER, special_name TEXT, special INTEGER)`,
 		`CREATE TABLE IF NOT EXISTS collection (user_id TEXT NOT NULL, card_id INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, card_id))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL, activity TEXT NOT NULL, amount INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE IF NOT EXISTS balances (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 100)`,
 		`CREATE TABLE IF NOT EXISTS slot_spins (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
 		`CREATE TABLE IF NOT EXISTS pack_opens (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
@@ -500,6 +502,76 @@ func (d *DB) TransferCard(fromID, toID string, cardID int) bool {
 	}
 	d.AddToCollection(toID, cardID)
 	return true
+}
+
+// --- Transactions ---
+
+func (d *DB) LogTransaction(userID, name, activity string, amount int) {
+	d.db.Exec(`INSERT INTO transactions (user_id, name, activity, amount) VALUES (?, ?, ?, ?)`, userID, name, activity, amount)
+}
+
+type ActivityStat struct {
+	Activity string
+	Total    int
+	Count    int
+}
+
+func (d *DB) GetUserActivityStats(userID, period string) []ActivityStat {
+	var where string
+	switch period {
+	case "today":
+		where = " AND DATE(created_at) = DATE('now')"
+	case "week":
+		where = " AND created_at >= DATETIME('now', '-7 days')"
+	default:
+		where = ""
+	}
+
+	query := fmt.Sprintf(`SELECT activity, SUM(amount), COUNT(*) FROM transactions WHERE user_id = ?%s GROUP BY activity ORDER BY SUM(amount) DESC`, where)
+	rows, err := d.db.Query(query, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var stats []ActivityStat
+	for rows.Next() {
+		var s ActivityStat
+		if err := rows.Scan(&s.Activity, &s.Total, &s.Count); err != nil {
+			continue
+		}
+		stats = append(stats, s)
+	}
+	return stats
+}
+
+func (d *DB) GetAllActivityStats(period string) []ActivityStat {
+	var where string
+	switch period {
+	case "today":
+		where = " WHERE DATE(created_at) = DATE('now')"
+	case "week":
+		where = " WHERE created_at >= DATETIME('now', '-7 days')"
+	default:
+		where = ""
+	}
+
+	query := fmt.Sprintf(`SELECT activity, SUM(amount), COUNT(*) FROM transactions%s GROUP BY activity ORDER BY SUM(amount) DESC`, where)
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var stats []ActivityStat
+	for rows.Next() {
+		var s ActivityStat
+		if err := rows.Scan(&s.Activity, &s.Total, &s.Count); err != nil {
+			continue
+		}
+		stats = append(stats, s)
+	}
+	return stats
 }
 
 func (d *DB) ClearCards() {

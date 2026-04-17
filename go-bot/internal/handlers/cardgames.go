@@ -263,6 +263,7 @@ func (b *Bot) handleGacha(c tele.Context) error {
 	}
 
 	b.db.UpdateBalance(userID, userName, -cost)
+	b.db.LogTransaction(userID, userName, "gacha", -cost)
 
 	// 1 card: guaranteed epic+
 	var cards []CardData

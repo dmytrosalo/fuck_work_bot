@@ -67,6 +67,8 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/card", b.handleCardInfo)
 	bot.Handle("/dart", b.handleDart)
 	bot.Handle("/war", b.handleWar)
+	bot.Handle("/casino_stats", b.handleCasinoStats)
+	bot.Handle("/global_stats", b.handleGlobalStats)
 	bot.Handle(&tele.Btn{Unique: "war_pick"}, b.handleWarPick)
 	bot.Handle("/blackjack", b.handleBlackjack)
 	bot.Handle("/bj", b.handleBlackjack)
@@ -339,6 +341,7 @@ func (b *Bot) handleMarkWork(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 	userName := c.Sender().FirstName
 	b.db.UpdateBalance(userID, userName, 10)
+	b.db.LogTransaction(userID, userName, "feedback", 10)
 	log.Printf("[feedback] /work: %q", text)
 	return c.Reply("✅ Позначено як робота (+10 🪙)")
 }
@@ -352,6 +355,7 @@ func (b *Bot) handleMarkNotWork(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 	userName := c.Sender().FirstName
 	b.db.UpdateBalance(userID, userName, 10)
+	b.db.LogTransaction(userID, userName, "feedback", 10)
 	log.Printf("[feedback] /notwork: %q", text)
 	return c.Reply("❌ Позначено як не робота (+10 🪙)")
 }
