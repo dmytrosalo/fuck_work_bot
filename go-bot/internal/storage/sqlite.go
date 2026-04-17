@@ -330,6 +330,11 @@ func (d *DB) GetRandomCollectionCard(userID string) BattleCard {
 	return card
 }
 
+func (d *DB) FindUserByName(name string) (userID string, found bool) {
+	err := d.db.QueryRow(`SELECT user_id FROM balances WHERE name = ? LIMIT 1`, name).Scan(&userID)
+	return userID, err == nil
+}
+
 func (d *DB) CardCount() int {
 	var count int
 	d.db.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&count)

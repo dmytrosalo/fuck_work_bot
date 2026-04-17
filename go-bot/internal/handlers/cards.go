@@ -160,9 +160,14 @@ func (b *Bot) handleBattle(c tele.Context) error {
 		}
 	} else if c.Message().Payload != "" {
 		opponentName = strings.TrimPrefix(c.Message().Payload, "@")
-		return c.Reply("Відповідай на повідомлення суперника командою /battle")
+		// Try to find user by name in DB
+		if id, found := b.db.FindUserByName(opponentName); found {
+			opponentID = id
+		} else {
+			return c.Reply(fmt.Sprintf("❌ Гравець %s не знайдений. Нехай спочатку напише /daily", opponentName))
+		}
 	} else {
-		return c.Reply("Відповідай на повідомлення суперника командою /battle")
+		return c.Reply("Відповідай на повідомлення або напиши /battle @username")
 	}
 
 	userID := fmt.Sprintf("%d", c.Sender().ID)
