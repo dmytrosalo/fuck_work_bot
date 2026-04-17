@@ -335,6 +335,66 @@ func (d *DB) FindUserByName(name string) (userID string, found bool) {
 	return userID, err == nil
 }
 
+func (d *DB) FindCardByName(name string) BattleCard {
+	var card BattleCard
+	d.db.QueryRow(`SELECT id, name, rarity, emoji, atk, def, special_name, special FROM cards WHERE LOWER(name) LIKE LOWER(?) LIMIT 1`, "%"+name+"%").
+		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
+	return card
+}
+
+func (d *DB) RemoveFromCollection(userID string, cardID int) bool {
+	var count int
+	d.db.QueryRow(`SELECT count FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID).Scan(&count)
+	if count <= 0 {
+		return false
+	}
+	if count == 1 {
+		d.db.Exec(`DELETE FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID)
+	} else {
+		d.db.Exec(`UPDATE collection SET count = count - 1 WHERE user_id = ? AND card_id = ?`, userID, cardID)
+	}
+	return true
+}
+
+func (d *DB) RemoveCardsByRarity(userID string, rarity, count int) int {
+	rows, err := d.db.Query(`SELECT col.card_id, col.count FROM collection col JOIN cards c ON col.card_id = c.id WHERE col.user_id = ? AND c.rarity = ? LIMIT ?`, userID, rarity, count)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+
+	removed := 0
+	for rows.Next() && removed < count {
+		var cardID, cnt int
+		rows.Scan(&cardID, &cnt)
+		if cnt <= 1 {
+			d.db.Exec(`DELETE FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID)
+		} else {
+			d.db.Exec(`UPDATE collection SET count = count - 1 WHERE user_id = ? AND card_id = ?`, userID, cardID)
+		}
+		removed++
+	}
+	return removed
+}
+
+func (d *DB) GetRarestCard(userID string) BattleCard {
+	var card BattleCard
+	d.db.QueryRow(`SELECT c.id, c.name, c.rarity, c.emoji, c.atk, c.def, c.special_name, c.special
+		FROM collection col JOIN cards c ON col.card_id = c.id
+		WHERE col.user_id = ? ORDER BY c.rarity DESC, (c.atk+c.def+c.special) DESC LIMIT 1`, userID).
+		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
+	return card
+}
+
+func (d *DB) GetSpecificCollectionCard(userID string, cardID int) BattleCard {
+	var card BattleCard
+	d.db.QueryRow(`SELECT c.id, c.name, c.rarity, c.emoji, c.atk, c.def, c.special_name, c.special
+		FROM collection col JOIN cards c ON col.card_id = c.id
+		WHERE col.user_id = ? AND c.id = ? LIMIT 1`, userID, cardID).
+		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
+	return card
+}
+
 func (d *DB) CardCount() int {
 	var count int
 	d.db.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&count)

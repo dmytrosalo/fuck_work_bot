@@ -53,6 +53,14 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/duel", b.handleDuel)
 	bot.Handle("/accept", b.handleAccept)
 	bot.Handle(&tele.Btn{Unique: "duel_pick"}, b.handleDuelPick)
+	bot.Handle("/steal", b.handleSteal)
+	bot.Handle("/gift", b.handleGift)
+	bot.Handle("/burn", b.handleBurn)
+	bot.Handle("/sacrifice", b.handleSacrifice)
+	bot.Handle("/showcase", b.handleShowcase)
+	bot.Handle("/gacha", b.handleGacha)
+	bot.Handle("/auction", b.handleAuction)
+	bot.Handle("/bid", b.handleBid)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -76,8 +84,15 @@ func (b *Bot) handleStart(c tele.Context) error {
 🃏 *Картки (301 шт):*
 /pack — пак (20 🪙, макс 10/день)
 /collection — колекція
-/battle — швидкий батл (±10 🪙 + картка)
-/duel — дуель з вибором карток (±15 🪙)
+/battle — швидкий батл (±10 🪙)
+/duel — дуель з вибором (±15 🪙)
+/steal — вкрасти картку (30%)
+/auction — аукціон картки
+/sacrifice — 3 картки → 1 вищої
+/gacha — преміум пак (100 🪙)
+/burn — спалити за монети
+/gift — подарувати картку
+/showcase — показати найкращу
 
 🎰 *Економіка:*
 /slots — слоти (1-100 🪙, макс 20/день)
@@ -121,17 +136,28 @@ func (b *Bot) handleHelp(c tele.Context) error {
 ⭐⭐⭐⭐⭐ Legendary (3%) — 11 шт
 • Пак = 3 картки, макс 10/день
 
-⚔️ *Батл*
-• Відповідай /battle на повідомлення
-• Порівнюється ATK + DEF + Special
-• Переможець: +10 🪙 + картка програвшого
+⚔️ *Бої*
+• /battle — швидкий (випадкова картка, ±10 🪙)
+• /duel @user → /accept — обирай картку з 3 (±15 🪙)
+• Переможець забирає картку програвшого
 
-🔴 /pokemon — твій покемон сьогодні (1/день)
-🔮 /horoscope — дев-гороскоп (1/день, Gemini AI)
-🔥 /roast /compliment — підколка / комплімент
-💬 /quote /addquote — цитати з чату
-🎱 /8ball — магічна куля
-🐱 /cat 🐕 /dog — тваринки
+🦹 *Картки — дії*
+• /steal @user — 30% вкрасти, 70% втратити 20 🪙 (1/день)
+• /auction назва — аукціон 60 сек, /bid сума
+• /sacrifice common — 3 картки → 1 вищої рідкості
+• /gacha — преміум пак, гарантовано Rare+ (100 🪙)
+• /burn назва — спалити за монети (5-100 🪙)
+• /gift @user назва — подарувати картку
+• /showcase — показати найкрутішу картку
+
+🎮 *Розваги*
+• /pokemon — твій покемон сьогодні (1/день)
+• /horoscope — дев-гороскоп (1/день, Gemini)
+• /quiz — вікторина (+10-25 🪙, макс 10/день)
+• /8ball — магічна куля
+• /cat /dog — тваринки
+• /roast /compliment — підколка/комплімент
+• /quote /addquote — цитати з чату
 
 🤖 *Класифікатор*
 • Кожне повідомлення аналізується
