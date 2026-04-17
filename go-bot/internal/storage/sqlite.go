@@ -49,6 +49,8 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, name TEXT NOT NULL, rarity INTEGER NOT NULL, category TEXT NOT NULL, emoji TEXT NOT NULL, description TEXT NOT NULL, atk INTEGER, def INTEGER, special_name TEXT, special INTEGER)`,
 		`CREATE TABLE IF NOT EXISTS collection (user_id TEXT NOT NULL, card_id INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, card_id))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS balances (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 100)`,
+		`CREATE TABLE IF NOT EXISTS slot_spins (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
 		`CREATE TABLE IF NOT EXISTS pack_opens (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
 	}
 	for _, s := range stmts {
@@ -338,6 +340,87 @@ func (d *DB) GetPackOpensToday(userID, date string) int {
 
 func (d *DB) IncrementPackOpens(userID, date string) {
 	d.db.Exec(`INSERT INTO pack_opens (user_id, date, count) VALUES (?, ?, 1) ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1`, userID, date)
+}
+
+// --- Balances ---
+
+func (d *DB) GetBalance(userID, name string) int {
+	var coins int
+	err := d.db.QueryRow(`SELECT coins FROM balances WHERE user_id = ?`, userID).Scan(&coins)
+	if err != nil {
+		// Create with starting balance
+		d.db.Exec(`INSERT OR IGNORE INTO balances (user_id, name, coins) VALUES (?, ?, 100)`, userID, name)
+		return 100
+	}
+	if name != "" {
+		d.db.Exec(`UPDATE balances SET name = ? WHERE user_id = ?`, name, userID)
+	}
+	return coins
+}
+
+func (d *DB) UpdateBalance(userID, name string, amount int) int {
+	d.db.Exec(`INSERT INTO balances (user_id, name, coins) VALUES (?, ?, 100 + ?) ON CONFLICT(user_id) DO UPDATE SET coins = coins + ?, name = CASE WHEN ? != '' THEN ? ELSE name END`,
+		userID, name, amount, amount, name, name)
+	return d.GetBalance(userID, "")
+}
+
+type BalanceEntry struct {
+	UserID string
+	Name   string
+	Coins  int
+}
+
+func (d *DB) GetTopBalances(limit int) []BalanceEntry {
+	rows, err := d.db.Query(`SELECT user_id, name, coins FROM balances ORDER BY coins DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var entries []BalanceEntry
+	for rows.Next() {
+		var e BalanceEntry
+		if err := rows.Scan(&e.UserID, &e.Name, &e.Coins); err != nil {
+			continue
+		}
+		entries = append(entries, e)
+	}
+	return entries
+}
+
+// --- Slot Spins ---
+
+func (d *DB) GetSlotSpinsToday(userID, date string) int {
+	var count int
+	d.db.QueryRow(`SELECT count FROM slot_spins WHERE user_id = ? AND date = ?`, userID, date).Scan(&count)
+	return count
+}
+
+func (d *DB) IncrementSlotSpins(userID, date string) {
+	d.db.Exec(`INSERT INTO slot_spins (user_id, date, count) VALUES (?, ?, 1) ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1`, userID, date)
+}
+
+// --- Transfer between users ---
+
+func (d *DB) TransferCoins(fromID, toID string, amount int) {
+	d.UpdateBalance(fromID, "", -amount)
+	d.UpdateBalance(toID, "", amount)
+}
+
+func (d *DB) TransferCard(fromID, toID string, cardID int) bool {
+	// Check if from has this card
+	var count int
+	d.db.QueryRow(`SELECT count FROM collection WHERE user_id = ? AND card_id = ?`, fromID, cardID).Scan(&count)
+	if count <= 0 {
+		return false
+	}
+	if count == 1 {
+		d.db.Exec(`DELETE FROM collection WHERE user_id = ? AND card_id = ?`, fromID, cardID)
+	} else {
+		d.db.Exec(`UPDATE collection SET count = count - 1 WHERE user_id = ? AND card_id = ?`, fromID, cardID)
+	}
+	d.AddToCollection(toID, cardID)
+	return true
 }
 
 func (d *DB) ClearCards() {

@@ -9,7 +9,11 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-const maxPacksPerDay = 5
+const (
+	maxPacksPerDay = 10
+	packCost       = 20
+	battleReward   = 10
+)
 
 var rarityStars = map[int]string{
 	1: "⭐",
@@ -58,10 +62,22 @@ func (b *Bot) handlePack(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
 	today := time.Now().Format("2006-01-02")
 
+	userName := c.Sender().FirstName
+	if userName == "" {
+		userName = c.Sender().Username
+	}
+
 	opens := b.db.GetPackOpensToday(userID, today)
 	if opens >= maxPacksPerDay {
-		return c.Reply(fmt.Sprintf("📦 Ти вже відкрив %d паків сьогодні. Приходь завтра!", maxPacksPerDay))
+		return c.Reply(fmt.Sprintf("📦 Ліміт %d паків на день. Приходь завтра!", maxPacksPerDay))
 	}
+
+	balance := b.db.GetBalance(userID, userName)
+	if balance < packCost {
+		return c.Reply(fmt.Sprintf("💸 Недостатньо богдудіків!\nПак: %d 🪙\nБаланс: %d 🪙\n\n_/daily — щоденний бонус_", packCost, balance), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	}
+
+	b.db.UpdateBalance(userID, userName, -packCost)
 	b.db.IncrementPackOpens(userID, today)
 
 	// Roll 3 cards: 2 random + 1 guaranteed uncommon+
@@ -107,9 +123,10 @@ func (b *Bot) handlePack(c tele.Context) error {
 		sb.WriteString(fmt.Sprintf("⚔️ %d  🛡 %d  %s: %d\n\n", card.ATK, card.DEF, card.SpecialName, card.Special))
 	}
 
-	// Show collection progress
+	// Show collection progress and balance
 	unique, total := b.db.GetCollectionStats(userID)
-	sb.WriteString(fmt.Sprintf("🃏 Колекція: %d/%d", unique, total))
+	newBalance := b.db.GetBalance(userID, "")
+	sb.WriteString(fmt.Sprintf("🃏 Колекція: %d/%d | 🪙 %d", unique, total, newBalance))
 
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
@@ -177,11 +194,15 @@ func (b *Bot) handleBattle(c tele.Context) error {
 
 	// Result
 	if myPower > theirPower {
-		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!", userName))
+		b.db.TransferCoins(opponentID, userID, battleReward)
+		b.db.TransferCard(opponentID, userID, theirCard.ID)
+		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!\n+%d 🪙 і забирає %s %s!", userName, battleReward, theirCard.Emoji, theirCard.Name))
 	} else if theirPower > myPower {
-		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!", opponentName))
+		b.db.TransferCoins(userID, opponentID, battleReward)
+		b.db.TransferCard(userID, opponentID, myCard.ID)
+		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!\n%s втрачає %d 🪙 і %s %s", opponentName, userName, battleReward, myCard.Emoji, myCard.Name))
 	} else {
-		sb.WriteString("🤝 *Нічия!*")
+		sb.WriteString("🤝 *Нічия!* Ніхто нічого не втрачає")
 	}
 
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})

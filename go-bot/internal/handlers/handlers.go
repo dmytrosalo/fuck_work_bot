@@ -40,6 +40,12 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/pokemon", b.handlePokemon)
 	bot.Handle("/horoscope", b.handleHoroscope)
 	bot.Handle("/8ball", b.handleEightBall)
+	bot.Handle("/slots", b.handleSlots)
+	bot.Handle("/slot", b.handleSlots)
+	bot.Handle("/balance", b.handleBalance)
+	bot.Handle("/bal", b.handleBalance)
+	bot.Handle("/daily", b.handleDaily)
+	bot.Handle("/top", b.handleTop)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -62,6 +68,10 @@ func (b *Bot) handleStart(c tele.Context) error {
 /pokemon — твій покемон 🔴
 /horoscope — дев\\-гороскоп 🔮
 /8ball <питання> — магічна куля 🎱
+/slots <ставка> — слоти 🎰
+/daily — щоденний бонус 🎁
+/balance — баланс 💰
+/top — лідерборд 🏆
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе
@@ -195,8 +205,11 @@ func (b *Bot) handleMarkWork(c tele.Context) error {
 	}
 	text := c.Message().ReplyTo.Text
 	b.db.SaveFeedback(text, "work")
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	userName := c.Sender().FirstName
+	b.db.UpdateBalance(userID, userName, 10)
 	log.Printf("[feedback] /work: %q", text)
-	return c.Reply("✅ Позначено як робота")
+	return c.Reply("✅ Позначено як робота (+10 🪙)")
 }
 
 func (b *Bot) handleMarkNotWork(c tele.Context) error {
@@ -205,8 +218,11 @@ func (b *Bot) handleMarkNotWork(c tele.Context) error {
 	}
 	text := c.Message().ReplyTo.Text
 	b.db.SaveFeedback(text, "personal")
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	userName := c.Sender().FirstName
+	b.db.UpdateBalance(userID, userName, 10)
 	log.Printf("[feedback] /notwork: %q", text)
-	return c.Reply("❌ Позначено як не робота")
+	return c.Reply("❌ Позначено як не робота (+10 🪙)")
 }
 
 
