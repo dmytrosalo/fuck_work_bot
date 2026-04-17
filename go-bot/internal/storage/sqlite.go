@@ -46,6 +46,9 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS roasts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', text TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS compliments (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT NOT NULL DEFAULT '', text TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS quotes (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT NOT NULL, text TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, name TEXT NOT NULL, rarity INTEGER NOT NULL, category TEXT NOT NULL, emoji TEXT NOT NULL, description TEXT NOT NULL, atk INTEGER, def INTEGER, special_name TEXT, special INTEGER)`,
+		`CREATE TABLE IF NOT EXISTS collection (user_id TEXT NOT NULL, card_id INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, card_id))`,
+		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -241,6 +244,93 @@ func (d *DB) QuoteCount() int {
 
 func (d *DB) ClearQuotes() {
 	d.db.Exec(`DELETE FROM quotes`)
+}
+
+// --- Cards ---
+
+func (d *DB) AddCard(id int, name string, rarity int, category, emoji, description string, atk, def int, specialName string, special int) {
+	d.db.Exec(`INSERT OR IGNORE INTO cards (id, name, rarity, category, emoji, description, atk, def, special_name, special) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		id, name, rarity, category, emoji, description, atk, def, specialName, special)
+}
+
+func (d *DB) GetRandomCard(rarity int) (id int, name, emoji, description, specialName string, special int) {
+	d.db.QueryRow(`SELECT id, name, emoji, description, special_name, special FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1`, rarity).
+		Scan(&id, &name, &emoji, &description, &specialName, &special)
+	return
+}
+
+func (d *DB) AddToCollection(userID string, cardID int) {
+	d.db.Exec(`INSERT INTO collection (user_id, card_id, count) VALUES (?, ?, 1) ON CONFLICT(user_id, card_id) DO UPDATE SET count = count + 1`, userID, cardID)
+}
+
+func (d *DB) GetCollectionStats(userID string) (unique, total int) {
+	d.db.QueryRow(`SELECT COUNT(*) FROM collection WHERE user_id = ?`, userID).Scan(&unique)
+	d.db.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&total)
+	return
+}
+
+type CollectionCard struct {
+	Emoji string
+	Name  string
+	Count int
+}
+
+func (d *DB) GetCollectionByRarity(userID string, rarity int) []CollectionCard {
+	rows, err := d.db.Query(`SELECT c.emoji, c.name, col.count FROM collection col JOIN cards c ON col.card_id = c.id WHERE col.user_id = ? AND c.rarity = ? ORDER BY c.name`, userID, rarity)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var cards []CollectionCard
+	for rows.Next() {
+		var card CollectionCard
+		if err := rows.Scan(&card.Emoji, &card.Name, &card.Count); err != nil {
+			continue
+		}
+		cards = append(cards, card)
+	}
+	return cards
+}
+
+type BattleCard struct {
+	ID          int
+	Name        string
+	Rarity      int
+	Emoji       string
+	ATK         int
+	DEF         int
+	SpecialName string
+	Special     int
+}
+
+func (d *DB) GetRandomCollectionCard(userID string) BattleCard {
+	var card BattleCard
+	d.db.QueryRow(`SELECT c.id, c.name, c.rarity, c.emoji, c.atk, c.def, c.special_name, c.special
+		FROM collection col JOIN cards c ON col.card_id = c.id
+		WHERE col.user_id = ? ORDER BY RANDOM() LIMIT 1`, userID).
+		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
+	return card
+}
+
+func (d *DB) CardCount() int {
+	var count int
+	d.db.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&count)
+	return count
+}
+
+func (d *DB) GetMeta(key string) string {
+	var val string
+	d.db.QueryRow(`SELECT value FROM meta WHERE key = ?`, key).Scan(&val)
+	return val
+}
+
+func (d *DB) SetMeta(key, value string) {
+	d.db.Exec(`INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+}
+
+func (d *DB) ClearCards() {
+	d.db.Exec(`DELETE FROM cards`)
 }
 
 func scanStats(rows *sql.Rows) ([]UserStats, error) {

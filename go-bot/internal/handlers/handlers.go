@@ -34,6 +34,9 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/roast", b.handleRoast)
 	bot.Handle("/compliment", b.handleCompliment)
 	bot.Handle("/quote", b.handleQuote)
+	bot.Handle("/pack", b.handlePack)
+	bot.Handle("/collection", b.handleCollection)
+	bot.Handle("/battle", b.handleBattle)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -50,6 +53,9 @@ func (b *Bot) handleStart(c tele.Context) error {
 /compliment — комплімент 💖
 /quote — цитата з чату 💬
 /addquote — додати цитату \(відповідь\)
+/pack — відкрити пак карток 📦
+/collection — твоя колекція 🃏
+/battle — батл карток ⚔️
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе

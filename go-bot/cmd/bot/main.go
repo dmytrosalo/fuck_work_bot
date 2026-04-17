@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -36,22 +37,23 @@ func main() {
 	defer db.Close()
 	log.Println("Storage initialized")
 
-	// Seed DB if empty or quotes need refresh
+	// Seed DB — version-based, re-seeds when seed data changes
 	seedPath := os.Getenv("SEED_PATH")
 	if seedPath == "" {
 		seedPath = "./seed_data.json"
 	}
-	if !db.HasContent() {
-		if seedData, err := os.ReadFile(seedPath); err == nil {
-			seedDB(db, seedData)
-			log.Println("Database seeded with initial data")
-		}
-	} else if db.QuoteCount() < 1000 {
-		// Re-seed quotes if we have fewer than expected
-		db.ClearQuotes()
-		if seedData, err := os.ReadFile(seedPath); err == nil {
-			seedQuotesOnly(db, seedData)
-			log.Printf("Quotes re-seeded (%d total)", db.QuoteCount())
+	if seedData, err := os.ReadFile(seedPath); err == nil {
+		// Compute simple version from data length
+		seedVersion := fmt.Sprintf("v%d", len(seedData))
+		currentVersion := db.GetMeta("seed_version")
+
+		if currentVersion != seedVersion {
+			log.Printf("Seed version changed (%s -> %s), re-seeding...", currentVersion, seedVersion)
+			seedAll(db, seedData)
+			db.SetMeta("seed_version", seedVersion)
+			log.Printf("Seeded: %d cards, %d quotes", db.CardCount(), db.QuoteCount())
+		} else {
+			log.Printf("Seed up to date (%s)", seedVersion)
 		}
 	}
 
@@ -85,7 +87,7 @@ func main() {
 	bot.Start()
 }
 
-func seedDB(db *storage.DB, data []byte) {
+func seedAll(db *storage.DB, data []byte) {
 	var seed struct {
 		Roasts []struct {
 			Category string `json:"category"`
@@ -100,11 +102,30 @@ func seedDB(db *storage.DB, data []byte) {
 			Author string `json:"author"`
 			Text   string `json:"text"`
 		} `json:"quotes"`
+		Cards []struct {
+			ID          int    `json:"id"`
+			Name        string `json:"name"`
+			Rarity      int    `json:"rarity"`
+			Category    string `json:"category"`
+			Emoji       string `json:"emoji"`
+			Description string `json:"description"`
+			Stats       struct {
+				ATK         int    `json:"atk"`
+				DEF         int    `json:"def"`
+				SpecialName string `json:"special_name"`
+				Special     int    `json:"special"`
+			} `json:"stats"`
+		} `json:"cards"`
 	}
 	if err := json.Unmarshal(data, &seed); err != nil {
 		log.Printf("Failed to parse seed data: %v", err)
 		return
 	}
+
+	// Clear and re-seed everything
+	db.ClearQuotes()
+	db.ClearCards()
+
 	for _, r := range seed.Roasts {
 		db.AddRoast(r.Category, r.Target, r.Text)
 	}
@@ -114,21 +135,9 @@ func seedDB(db *storage.DB, data []byte) {
 	for _, q := range seed.Quotes {
 		db.AddQuote(q.Author, q.Text)
 	}
-	log.Printf("Seeded %d roasts, %d compliments, %d quotes", len(seed.Roasts), len(seed.Compliments), len(seed.Quotes))
-}
-
-func seedQuotesOnly(db *storage.DB, data []byte) {
-	var seed struct {
-		Quotes []struct {
-			Author string `json:"author"`
-			Text   string `json:"text"`
-		} `json:"quotes"`
-	}
-	if err := json.Unmarshal(data, &seed); err != nil {
-		return
-	}
-	for _, q := range seed.Quotes {
-		db.AddQuote(q.Author, q.Text)
+	for _, card := range seed.Cards {
+		db.AddCard(card.ID, card.Name, card.Rarity, card.Category, card.Emoji, card.Description,
+			card.Stats.ATK, card.Stats.DEF, card.Stats.SpecialName, card.Stats.Special)
 	}
 }
 
