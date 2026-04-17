@@ -165,8 +165,13 @@ func (b *Bot) handleBattle(c tele.Context) error {
 		}
 	} else if c.Message().Payload != "" {
 		opponentName = strings.TrimPrefix(c.Message().Payload, "@")
-		// Try to find user by name in DB
-		if id, found := b.db.FindUserByName(opponentName); found {
+		// Try resolving username to name first
+		resolved := resolveTarget(opponentName, opponentName)
+		// Search by resolved name, then original
+		if id, found := b.db.FindUserByName(resolved); found {
+			opponentID = id
+			opponentName = resolved
+		} else if id, found := b.db.FindUserByName(opponentName); found {
 			opponentID = id
 		} else {
 			return c.Reply(fmt.Sprintf("❌ Гравець %s не знайдений. Нехай спочатку напише /daily", opponentName))
