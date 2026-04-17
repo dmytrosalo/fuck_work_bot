@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"time"
@@ -43,59 +42,23 @@ func (b *Bot) handleDog(c tele.Context) error {
 	return c.Send(photo)
 }
 
-var catPhrases = []string{
-	"на стендапі",
-	"деплоїть в п'ятницю",
-	"на код рев'ю",
-	"зламав прод",
-	"на мітингу що міг бути емейлом",
-	"дедлайн був вчора",
-	"зробив force push",
-	"в merge conflict",
-	"ще 5 хвилинок і все",
-	"працює з дому",
-	"не спить а думає",
-	"в ще одному спринті",
-	"все зламав",
-	"написав цей код",
-	"каже production is fine",
-	"на мʼюті",
-	"тест не пройшов",
-	"знову рефакторить",
-	"чіпає продакшн",
-	"робить hotfix о 3 ночі",
-	"їсть хінкалі",
-	"грає в слоти",
-	"мріє про Порше",
-	"ігнорує повідомлення",
-	"каже харош!",
-	"шукає баг",
-	"дивиться на Jira",
-	"пише в Slack о суботі",
-	"каже ще трохи і все",
-	"оновлює резюме",
-}
-
-// /cat or /cat @username — cat meme with user name + random phrase
+// /cat or /cat @username — cat meme with user name
 func (b *Bot) handleCat(c tele.Context) error {
-	// Get target name
 	targetName, _ := getTarget(c)
-	phrase := catPhrases[rand.Intn(len(catPhrases))]
-	text := fmt.Sprintf("%s %s", targetName, phrase)
 
-	encoded := url.PathEscape(text)
-	imageURL := fmt.Sprintf("https://cataas.com/cat/says/%s?fontSize=35&fontColor=white&type=square", encoded)
+	encoded := url.PathEscape(targetName)
+	imageURL := fmt.Sprintf("https://cataas.com/cat/says/%s?fontSize=40&fontColor=white&type=square", encoded)
 
 	photo := &tele.Photo{
 		File:    tele.FromURL(imageURL),
-		Caption: fmt.Sprintf("🐱 %s", text),
+		Caption: fmt.Sprintf("🐱 %s", targetName),
 	}
 
 	err := c.Send(photo)
 	if err != nil {
 		photo2 := &tele.Photo{
 			File:    tele.FromURL("https://cataas.com/cat"),
-			Caption: fmt.Sprintf("🐱 %s %s", targetName, phrase),
+			Caption: fmt.Sprintf("🐱 %s", targetName),
 		}
 		return c.Send(photo2)
 	}
