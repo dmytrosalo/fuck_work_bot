@@ -33,6 +33,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/unmute", b.handleUnmute)
 	bot.Handle("/roast", b.handleRoast)
 	bot.Handle("/compliment", b.handleCompliment)
+	bot.Handle("/quote", b.handleQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
 bot.Handle(tele.OnText, b.handleText)
@@ -46,6 +47,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /stats — статистика
 /roast — підколка 🔥
 /compliment — комплімент 💖
+/quote — цитата з чату 💬
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе
