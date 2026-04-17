@@ -101,28 +101,44 @@ func (b *Bot) handlePack(c tele.Context) error {
 		return c.Reply("📦 Карток поки немає. Зверніться до адміна.")
 	}
 
-	unique, total := b.db.GetCollectionStats(userID)
-	newBalance := b.db.GetBalance(userID, "")
-
-	var sb strings.Builder
-	sb.WriteString("📦 *Пак відкрито!*\n")
-	sb.WriteString("━━━━━━━━━━━━━━━━\n\n")
-
-	for i, card := range cards {
+	// Send each card as a separate beautiful message
+	for _, card := range cards {
 		stars := rarityStars[card.Rarity]
-		sb.WriteString(fmt.Sprintf("%s  *%s*\n", stars, rarityNames[card.Rarity]))
-		sb.WriteString(fmt.Sprintf("%s  *%s*\n", card.Emoji, card.Name))
-		sb.WriteString(fmt.Sprintf("⚔️%d  🛡%d  %s: %d  (PWR: %d)\n", card.ATK, card.DEF, card.SpecialName, card.Special, card.ATK+card.DEF+card.Special))
-		sb.WriteString(fmt.Sprintf("_%s_\n", card.Description))
-		if i < len(cards)-1 {
-			sb.WriteString("\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n")
-		}
+		power := card.ATK + card.DEF + card.Special
+
+		msg := fmt.Sprintf(
+			"╔══════════════════╗\n"+
+				"  %s  %s\n"+
+				"╠══════════════════╣\n"+
+				"\n"+
+				"        %s\n"+
+				"\n"+
+				"    *%s*\n"+
+				"\n"+
+				"  ⚔️ %d    🛡 %d    💫 %d\n"+
+				"  %s: %d\n"+
+				"  ─────────────\n"+
+				"  PWR: *%d*\n"+
+				"\n"+
+				"  _%s_\n"+
+				"\n"+
+				"╚══════════════════╝",
+			stars, rarityNames[card.Rarity],
+			card.Emoji,
+			card.Name,
+			card.ATK, card.DEF, card.Special,
+			card.SpecialName, card.Special,
+			power,
+			card.Description,
+		)
+
+		c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 	}
 
-	sb.WriteString("\n━━━━━━━━━━━━━━━━\n")
-	sb.WriteString(fmt.Sprintf("🃏 %d/%d  |  🪙 %d", unique, total, newBalance))
-
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	// Summary message
+	unique, total := b.db.GetCollectionStats(userID)
+	newBalance := b.db.GetBalance(userID, "")
+	return c.Send(fmt.Sprintf("📦 Пак відкрито!\n🃏 Колекція: %d/%d  |  🪙 %d", unique, total, newBalance))
 }
 
 func (b *Bot) handleBattle(c tele.Context) error {
