@@ -46,6 +46,8 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/bal", b.handleBalance)
 	bot.Handle("/daily", b.handleDaily)
 	bot.Handle("/top", b.handleTop)
+	bot.Handle("/dog", b.handleDog)
+	bot.Handle("/cat", b.handleCat)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
@@ -72,6 +74,9 @@ func (b *Bot) handleStart(c tele.Context) error {
 /daily — щоденний бонус 🎁
 /balance — баланс 💰
 /top — лідерборд 🏆
+/cat — кіт\\-мем 🐱
+/cat <текст> — кіт з твоїм текстом
+/dog — який ти песик 🐕
 /work — позначити повідомлення як робоче
 /notwork — позначити як не робоче
 /mute — замутити себе
