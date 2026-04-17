@@ -64,11 +64,12 @@ func (b *Bot) handleSteal(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("🦹 Вкрав %s %s у %s!", card.Emoji, card.Name, targetName))
 	}
 
-	// Fail — lose 20 coins
+	// Fail — lose 20 coins, victim gets them
 	b.db.UpdateBalance(userID, userName, -20)
+	b.db.UpdateBalance(targetID, targetName, 20)
 	b.db.SetMeta(stealKey, "done")
 	bal := b.db.GetBalance(userID, "")
-	return c.Reply(fmt.Sprintf("🚨 Спіймали! -%d 🪙 (баланс: %d)", 20, bal))
+	return c.Reply(fmt.Sprintf("🚨 Спіймали! -%d 🪙 (баланс: %d)\n%s отримує +20 🪙 як компенсацію", 20, bal, targetName))
 }
 
 // --- Gift ---

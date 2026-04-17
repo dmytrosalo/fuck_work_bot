@@ -135,8 +135,7 @@ func (b *Bot) sendCardPicker(bot *tele.Bot, chatID int64, userID, userName strin
 	markup := &tele.ReplyMarkup{}
 	var buttons []tele.Btn
 	for _, card := range cards {
-		power := card.ATK + card.DEF + card.Special
-		label := fmt.Sprintf("%s %s (PWR:%d)", card.Emoji, card.Name, power)
+		label := fmt.Sprintf("%s %s", card.Emoji, card.Name)
 		btn := markup.Data(label, "duel_pick", fmt.Sprintf("%s:%d:%d", prefix, chatID, card.ID))
 		buttons = append(buttons, btn)
 	}
@@ -226,36 +225,36 @@ func (b *Bot) resolveDuel(bot *tele.Bot, duel *duelState) {
 	power2 := p2.ATK + p2.DEF + p2.Special
 
 	var sb strings.Builder
-	sb.WriteString("⚔️ *ДУЕЛЬ — РЕЗУЛЬТАТ!*\n\n")
+	sb.WriteString("⚔️ ДУЕЛЬ — РЕЗУЛЬТАТ!\n\n")
 
-	sb.WriteString(fmt.Sprintf("🔵 *%s*\n", duel.ChallengerName))
+	sb.WriteString(fmt.Sprintf("🔵 %s\n", duel.ChallengerName))
 	sb.WriteString(fmt.Sprintf("%s %s %s\n", rarityStars[p1.Rarity], p1.Emoji, p1.Name))
 	sb.WriteString(fmt.Sprintf("ATK: %d  DEF: %d  %s: %d\n", p1.ATK, p1.DEF, p1.SpecialName, p1.Special))
-	sb.WriteString(fmt.Sprintf("💪 PWR: *%d*\n\n", power1))
+	sb.WriteString(fmt.Sprintf("💪 PWR: %d\n\n", power1))
 
 	sb.WriteString("⚡ vs ⚡\n\n")
 
-	sb.WriteString(fmt.Sprintf("🔴 *%s*\n", duel.OpponentName))
+	sb.WriteString(fmt.Sprintf("🔴 %s\n", duel.OpponentName))
 	sb.WriteString(fmt.Sprintf("%s %s %s\n", rarityStars[p2.Rarity], p2.Emoji, p2.Name))
 	sb.WriteString(fmt.Sprintf("ATK: %d  DEF: %d  %s: %d\n", p2.ATK, p2.DEF, p2.SpecialName, p2.Special))
-	sb.WriteString(fmt.Sprintf("💪 PWR: *%d*\n\n", power2))
+	sb.WriteString(fmt.Sprintf("💪 PWR: %d\n\n", power2))
 
 	if power1 > power2 {
 		b.db.TransferCoins(duel.OpponentID, duel.ChallengerID, duelReward)
 		b.db.TransferCard(duel.OpponentID, duel.ChallengerID, p2.ID)
-		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!\n+%d 🪙 і забирає %s %s!",
+		sb.WriteString(fmt.Sprintf("🏆 %s перемагає!\n+%d 🪙 і забирає %s %s!",
 			duel.ChallengerName, duelReward, p2.Emoji, p2.Name))
 	} else if power2 > power1 {
 		b.db.TransferCoins(duel.ChallengerID, duel.OpponentID, duelReward)
 		b.db.TransferCard(duel.ChallengerID, duel.OpponentID, p1.ID)
-		sb.WriteString(fmt.Sprintf("🏆 *%s* перемагає!\n+%d 🪙 і забирає %s %s!",
+		sb.WriteString(fmt.Sprintf("🏆 %s перемагає!\n+%d 🪙 і забирає %s %s!",
 			duel.OpponentName, duelReward, p1.Emoji, p1.Name))
 	} else {
-		sb.WriteString("🤝 *Нічия!* Обидві картки залишаються")
+		sb.WriteString("🤝 Нічия! Обидві картки залишаються")
 	}
 
 	chat := &tele.Chat{ID: duel.ChatID}
-	bot.Send(chat, sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	bot.Send(chat, sb.String())
 }
 
 func (b *Bot) getRandomCards(userID string, count int) []storage.BattleCard {

@@ -65,9 +65,10 @@ func (b *Bot) handleRob(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("💰 Пограбував %s на %d 🪙 (%d%%)!\nБаланс: %d 🪙", targetName, stolen, pct, newBal))
 	}
 
-	// Fail — lose 20 coins
+	// Fail — lose 20 coins, victim gets them
 	penalty := 20
 	b.db.UpdateBalance(userID, userName, -penalty)
+	b.db.UpdateBalance(targetID, targetName, penalty)
 	bal := b.db.GetBalance(userID, "")
-	return c.Reply(fmt.Sprintf("🚔 Спіймали при спробі пограбувати %s!\n-%d 🪙 (баланс: %d)", targetName, penalty, bal))
+	return c.Reply(fmt.Sprintf("🚔 Спіймали при спробі пограбувати %s!\n-%d 🪙 (баланс: %d)\n%s отримує +%d 🪙 як компенсацію", targetName, penalty, bal, targetName, penalty))
 }
