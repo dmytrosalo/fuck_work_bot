@@ -72,6 +72,14 @@ func main() {
 			db.SetMeta(bonusKey2, "done")
 		}
 	}
+	// One-time reset all daily limits
+	resetKey := "reset_all_limits_v1"
+	if db.GetMeta(resetKey) == "" {
+		db.ClearDailyLimits()
+		db.SetMeta(resetKey, "done")
+		log.Println("Reset all daily limits")
+	}
+
 	bonusKey3 := "bonus_danyro_666"
 	if db.GetMeta(bonusKey3) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
