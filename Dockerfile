@@ -23,12 +23,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the compiled binary
 COPY --from=builder /build/bot /bot
 
-# Copy model and seed data
+# Copy model, seed data, and font
 COPY --from=builder /build/model/tfidf_model.json /model/tfidf_model.json
+COPY --from=builder /build/model/Roboto-Bold.ttf /model/Roboto-Bold.ttf
 COPY --from=builder /build/seed_data.json /seed_data.json
 
 ENV MODEL_PATH=/model/tfidf_model.json
 ENV DATA_DIR=/data
 ENV SEED_PATH=/seed_data.json
+ENV FONT_PATH=/model/Roboto-Bold.ttf
 
 CMD ["/bot"]

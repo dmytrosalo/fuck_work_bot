@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -81,53 +82,50 @@ func (b *Bot) handlePack(c tele.Context) error {
 	b.db.IncrementPackOpens(userID, today)
 
 	// Roll 3 cards: 2 random + 1 guaranteed uncommon+
-	type packCard struct {
-		ID          int
-		Name        string
-		Rarity      int
-		Emoji       string
-		Description string
-		ATK         int
-		DEF         int
-		SpecialName string
-		Special     int
-	}
-
-	var cards []packCard
+	var cards []CardData
 
 	rarities := []int{rollRarity(), rollRarity(), rollGuaranteedRarity()}
 	for _, rarity := range rarities {
-		id, name, emoji, desc, atk, def, specialName, special := b.db.GetRandomCard(rarity)
-		if id == 0 {
+		fc := b.db.GetRandomCard(rarity)
+		if fc.ID == 0 {
 			continue
 		}
-		cards = append(cards, packCard{id, name, rarity, emoji, desc, atk, def, specialName, special})
-
-		// Add to collection
-		b.db.AddToCollection(userID, id)
+		cards = append(cards, CardData{
+			Name: fc.Name, Rarity: fc.Rarity, Emoji: fc.Emoji,
+			Description: fc.Description, ATK: fc.ATK, DEF: fc.DEF,
+			SpecialName: fc.SpecialName, Special: fc.Special,
+		})
+		b.db.AddToCollection(userID, fc.ID)
 	}
 
 	if len(cards) == 0 {
 		return c.Reply("📦 Карток поки немає. Зверніться до адміна.")
 	}
 
-	// Build message
+	// Try to render image
+	unique, total := b.db.GetCollectionStats(userID)
+	newBalance := b.db.GetBalance(userID, "")
+	caption := fmt.Sprintf("📦 Пак відкрито!\n🃏 Колекція: %d/%d | 🪙 %d", unique, total, newBalance)
+
+	imgBytes, err := renderPackImage(cards)
+	if err == nil {
+		photo := &tele.Photo{
+			File:    tele.FromReader(bytes.NewReader(imgBytes)),
+			Caption: caption,
+		}
+		return c.Send(photo)
+	}
+
+	// Fallback to text
 	var sb strings.Builder
 	sb.WriteString("📦 *Відкриваємо пак...*\n\n")
-
 	for _, card := range cards {
-		stars := rarityStars[card.Rarity]
-		sb.WriteString(fmt.Sprintf("%s %s\n", stars, rarityNames[card.Rarity]))
+		sb.WriteString(fmt.Sprintf("%s %s\n", rarityStars[card.Rarity], rarityNames[card.Rarity]))
 		sb.WriteString(fmt.Sprintf("%s *%s*\n", card.Emoji, card.Name))
 		sb.WriteString(fmt.Sprintf("_%s_\n", card.Description))
 		sb.WriteString(fmt.Sprintf("⚔️ %d  🛡 %d  %s: %d\n\n", card.ATK, card.DEF, card.SpecialName, card.Special))
 	}
-
-	// Show collection progress and balance
-	unique, total := b.db.GetCollectionStats(userID)
-	newBalance := b.db.GetBalance(userID, "")
-	sb.WriteString(fmt.Sprintf("🃏 Колекція: %d/%d | 🪙 %d", unique, total, newBalance))
-
+	sb.WriteString(caption)
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 

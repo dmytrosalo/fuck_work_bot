@@ -256,10 +256,24 @@ func (d *DB) AddCard(id int, name string, rarity int, category, emoji, descripti
 		id, name, rarity, category, emoji, description, atk, def, specialName, special)
 }
 
-func (d *DB) GetRandomCard(rarity int) (id int, name, emoji, description string, atk, def int, specialName string, special int) {
+type FullCard struct {
+	ID          int
+	Name        string
+	Rarity      int
+	Emoji       string
+	Description string
+	ATK         int
+	DEF         int
+	SpecialName string
+	Special     int
+}
+
+func (d *DB) GetRandomCard(rarity int) FullCard {
+	var c FullCard
+	c.Rarity = rarity
 	d.db.QueryRow(`SELECT id, name, emoji, description, atk, def, special_name, special FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1`, rarity).
-		Scan(&id, &name, &emoji, &description, &atk, &def, &specialName, &special)
-	return
+		Scan(&c.ID, &c.Name, &c.Emoji, &c.Description, &c.ATK, &c.DEF, &c.SpecialName, &c.Special)
+	return c
 }
 
 func (d *DB) AddToCollection(userID string, cardID int) {
