@@ -35,19 +35,19 @@ var rarityNames = map[int]string{
 }
 
 // rollRarity returns a rarity based on weighted random.
-// 1: 35%, 2: 30%, 3: 20%, 4: 10%, 5: 4%, 6: 1%
+// 1: 41.5%, 2: 30%, 3: 20%, 4: 7%, 5: 1.2%, 6: 0.3%
 func rollRarity() int {
-	r := rand.Intn(100)
+	r := rand.Intn(1000)
 	switch {
-	case r < 35:
+	case r < 415:
 		return 1
-	case r < 65:
+	case r < 715:
 		return 2
-	case r < 85:
+	case r < 915:
 		return 3
-	case r < 95:
+	case r < 985:
 		return 4
-	case r < 99:
+	case r < 997:
 		return 5
 	default:
 		return 6
@@ -164,24 +164,29 @@ func (b *Bot) handleCollection(c tele.Context) error {
 
 	unique, total := b.db.GetCollectionStats(userID)
 	if unique == 0 {
-		return c.Reply("🃏 У тебе ще немає карток. Напиши /pack!")
+		return c.Reply("У тебе ще немає карток. Напиши /pack!")
 	}
 
-	// Get cards grouped by rarity
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🃏 *Колекція %s* (%d/%d)\n\n", userName, unique, total))
+	rarityCounts := b.db.GetRarityCounts(userID)
 
-	for rarity := 5; rarity >= 1; rarity-- {
-		cards := b.db.GetCollectionByRarity(userID, rarity)
-		if len(cards) == 0 {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("*Колекція %s* (%d/%d)\n\n", userName, unique, total))
+
+	// Rarity counts on one line
+	first := true
+	for _, rarity := range []int{1, 2, 3, 4, 5, 6} {
+		count, ok := rarityCounts[rarity]
+		if !ok || count == 0 {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("%s *%s* (%d)\n", rarityStars[rarity], rarityNames[rarity], len(cards)))
-		for _, card := range cards {
-			sb.WriteString(fmt.Sprintf("  %s %s (x%d)\n", card.Emoji, card.Name, card.Count))
+		if !first {
+			sb.WriteString(" | ")
 		}
-		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("%s %d", rarityStars[rarity], count))
+		first = false
 	}
+
+	sb.WriteString(fmt.Sprintf("\n\nhttps://fuck-work-bot.fly.dev/collection/%s", userID))
 
 	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
