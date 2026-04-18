@@ -70,12 +70,12 @@ var webRarityAccent = map[int]string{
 }
 
 var webRarityBg = map[int]string{
-	1: "rgb(55,55,65)",
-	2: "rgb(35,58,45)",
-	3: "rgb(35,45,70)",
-	4: "rgb(55,35,70)",
-	5: "rgb(65,55,30)",
-	6: "rgb(75,25,25)",
+	1: "rgb(40,40,50)",
+	2: "rgb(20,50,35)",
+	3: "rgb(18,30,60)",
+	4: "rgb(45,15,60)",
+	5: "rgb(55,42,10)",
+	6: "rgb(65,10,10)",
 }
 
 var webRarityGlow = map[int]string{
@@ -155,208 +155,181 @@ const collectionHTML = `<!DOCTYPE html>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   background: #0a0a1a;
-  background-image: radial-gradient(ellipse at 20% 50%, rgba(60,40,120,0.15) 0%, transparent 50%),
-                    radial-gradient(ellipse at 80% 20%, rgba(40,80,140,0.1) 0%, transparent 50%);
+  background-image: radial-gradient(ellipse at 20% 50%, rgba(60,40,120,0.12) 0%, transparent 50%),
+                    radial-gradient(ellipse at 80% 20%, rgba(40,80,140,0.08) 0%, transparent 50%);
   color: #e8e8f0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  padding: 16px;
+  padding: 12px;
   max-width: 860px;
   margin: 0 auto;
   min-height: 100vh;
 }
-.glass {
+.header {
+  text-align: center;
+  padding: 24px 16px;
+  margin-bottom: 24px;
   background: rgba(255,255,255,0.04);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 20px;
 }
-.header {
-  text-align: center;
-  padding: 28px 20px;
-  margin-bottom: 28px;
-}
 .header h1 {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, #fff 0%, #a0a0c0 100%);
+  background: linear-gradient(135deg, #fff, #a0a0c0);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin-bottom: 6px;
-}
-.header .progress {
-  font-size: 15px;
-  color: rgba(255,255,255,0.5);
-  font-weight: 500;
   margin-bottom: 4px;
 }
-.header .balance {
-  font-size: 15px;
-  font-weight: 600;
-  color: #fbbf24;
-}
+.header .progress { font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 2px; }
+.header .balance { font-size: 14px; font-weight: 600; color: #fbbf24; }
 .rarity-counts {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 14px;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 6px; margin-top: 12px;
 }
 .rarity-counts span {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 11px; font-weight: 600; padding: 4px 10px;
+  border-radius: 16px; background: rgba(255,255,255,0.05);
 }
-.section {
-  margin-bottom: 28px;
-}
+.section { margin-bottom: 24px; }
 .section-header {
-  font-size: 15px;
-  font-weight: 700;
-  padding: 10px 16px;
-  margin-bottom: 14px;
-  border-radius: 12px;
+  font-size: 14px; font-weight: 700; padding: 8px 14px;
+  margin-bottom: 12px; border-radius: 10px;
   background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  border-left: 3px solid;
 }
 .grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
-@media (min-width: 500px) {
-  .grid { grid-template-columns: repeat(3, 1fr); }
-}
-@media (min-width: 700px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
-}
+@media (min-width: 480px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 720px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+
+/* TCG Card */
 .card {
   position: relative;
-  border-radius: 16px;
-  padding: 14px 10px 12px;
+  border-radius: 12px;
+  padding: 0;
   text-align: center;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  border: 1px solid;
-  background: rgba(255,255,255,0.03);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.2s, box-shadow 0.3s;
+  border: 2px solid;
   overflow: hidden;
+  aspect-ratio: 3/4;
+  display: flex;
+  flex-direction: column;
 }
-.card::before {
-  content: '';
+.card:hover { transform: translateY(-4px) scale(1.02); }
+.card:active { transform: scale(0.97); }
+
+/* Card frame top — rarity color gradient */
+.card-top {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 0;
+}
+.card-top .emoji {
+  font-size: 44px;
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4));
+}
+.card-top .badge {
   position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  border-radius: 16px 16px 0 0;
+  top: 6px; right: 6px;
+  font-size: 9px; font-weight: 800;
+  background: rgba(0,0,0,0.5);
+  padding: 2px 6px; border-radius: 8px;
+  color: rgba(255,255,255,0.85);
 }
-.card:hover {
-  transform: translateY(-3px);
+
+/* Card info bottom panel */
+.card-info {
+  background: rgba(0,0,0,0.55);
+  padding: 8px 8px 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
 }
-.card:active {
-  transform: scale(0.98);
-}
-.card .emoji {
-  font-size: 40px;
-  line-height: 1.2;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-}
-.card .name {
+.card-info .name {
   font-size: 11px;
   font-weight: 700;
-  margin-top: 6px;
   color: #fff;
-  line-height: 1.3;
+  line-height: 1.2;
+  margin-bottom: 6px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.card .count {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  font-size: 10px;
-  font-weight: 700;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(8px);
-  padding: 2px 7px;
-  border-radius: 10px;
-  color: rgba(255,255,255,0.8);
-}
-.card .stats {
+.card-info .stats {
   display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 4px;
   flex-wrap: wrap;
+  justify-content: center;
 }
-.card .stats span {
-  font-size: 9px;
+.card-info .stats span {
+  font-size: 8px;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(0,0,0,0.3);
-  color: rgba(255,255,255,0.75);
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.1);
+  text-transform: uppercase;
   letter-spacing: 0.3px;
 }
-.card .stats .atk { color: #ff6b6b; }
-.card .stats .def { color: #4ecdc4; }
-.card .stats .spc { color: #fbbf24; }
+.stat-atk { color: #ff6b6b !important; }
+.stat-def { color: #4ecdc4 !important; }
+.stat-spc { color: #fbbf24 !important; }
+
+/* Card description on expand */
 .card .desc {
   display: none;
-  font-size: 10px;
-  color: rgba(255,255,255,0.5);
-  margin-top: 6px;
-  line-height: 1.4;
-  font-style: italic;
+  font-size: 9px;
+  color: rgba(255,255,255,0.6);
+  margin-top: 4px;
+  line-height: 1.3;
+  padding: 0 2px;
 }
-.card.expanded .desc {
-  display: block;
-}
-.card.expanded {
-  grid-column: span 2;
-}
+.card.expanded .desc { display: block; }
+.card.expanded { aspect-ratio: auto; }
 </style>
 </head>
 <body>
-<div class="header glass">
+<div class="header">
   <h1>{{.UserName}}</h1>
   <div class="progress">{{.Unique}} / {{.Total}} cards</div>
   <div class="balance">{{.Balance}} coins</div>
   <div class="rarity-counts">
-    {{range $rarity := .Sections}}
-    <span style="border-color:{{$rarity.AccentCSS}}40; color:{{$rarity.AccentCSS}}">{{$rarity.Stars}} {{index $.RarityCounts $rarity.Rarity}}</span>
+    {{range $s := .Sections}}
+    <span style="border:1px solid {{$s.AccentCSS}}50; color:{{$s.AccentCSS}}">{{$s.Stars}} {{index $.RarityCounts $s.Rarity}}</span>
     {{end}}
   </div>
 </div>
 
 {{range .Sections}}
-{{$accent := .AccentCSS}}{{$glow := .GlowCSS}}
+{{$accent := .AccentCSS}}{{$bg := .BgCSS}}
 <div class="section">
-  <div class="section-header" style="border-color:{{.AccentCSS}}20; color:{{.AccentCSS}}">
+  <div class="section-header" style="border-color:{{.AccentCSS}}; color:{{.AccentCSS}}">
     {{.Stars}} {{.RarityName}} ({{len .Cards}})
   </div>
   <div class="grid">
     {{range .Cards}}
     <div class="card" onclick="toggle(this)"
-         style="border-color:{{$accent}}30; box-shadow:0 0 12px {{$accent}}15, inset 0 1px 0 rgba(255,255,255,0.05);"
-         onmouseover="this.style.boxShadow='0 4px 20px {{$accent}}30, inset 0 1px 0 rgba(255,255,255,0.08)'"
-         onmouseout="this.style.boxShadow='0 0 12px {{$accent}}15, inset 0 1px 0 rgba(255,255,255,0.05)'">
-      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,{{$accent}},transparent);border-radius:16px 16px 0 0;opacity:0.6"></div>
-      {{if gt .Count 1}}<span class="count">x{{.Count}}</span>{{end}}
-      <div class="emoji">{{.Emoji}}</div>
-      <div class="name">{{.Name}}</div>
-      <div class="stats">
-        <span class="atk">ATK {{.ATK}}</span>
-        <span class="def">DEF {{.DEF}}</span>
-        <span class="spc">{{.SpecialName}} {{.Special}}</span>
+         style="border-color:{{$accent}}; background:{{$bg}}; box-shadow:0 0 10px {{$accent}}25;">
+      <div class="card-top" style="background:linear-gradient(180deg, {{$bg}} 0%, rgba(0,0,0,0.2) 100%);">
+        <div class="emoji">{{.Emoji}}</div>
+        {{if gt .Count 1}}<span class="badge">x{{.Count}}</span>{{end}}
       </div>
-      <div class="desc">{{.Description}}</div>
+      <div class="card-info">
+        <div class="name" style="color:{{$accent}}">{{.Name}}</div>
+        <div class="stats">
+          <span class="stat-atk">ATK {{.ATK}}</span>
+          <span class="stat-def">DEF {{.DEF}}</span>
+          <span class="stat-spc">{{.SpecialName}} {{.Special}}</span>
+        </div>
+        <div class="desc">{{.Description}}</div>
+      </div>
     </div>
     {{end}}
   </div>
@@ -365,13 +338,10 @@ body {
 
 <script>
 function toggle(el) {
-  var wasExpanded = el.classList.contains('expanded');
   document.querySelectorAll('.card.expanded').forEach(function(c) {
-    c.classList.remove('expanded');
+    if (c !== el) c.classList.remove('expanded');
   });
-  if (!wasExpanded) {
-    el.classList.add('expanded');
-  }
+  el.classList.toggle('expanded');
 }
 </script>
 </body>
