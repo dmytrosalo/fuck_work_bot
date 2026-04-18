@@ -285,7 +285,7 @@ func (b *Bot) handleGacha(c tele.Context) error {
 	newBal := b.db.GetBalance(userID, "")
 
 	var sb strings.Builder
-	sb.WriteString("💎 *Преміум пак!* (100 🪙)\n━━━━━━━━━━━━━━━━\n\n")
+	sb.WriteString("💎 *Преміум пак!* (300 🪙)\n━━━━━━━━━━━━━━━━\n\n")
 	for _, card := range cards {
 		sb.WriteString(fmt.Sprintf("%s %s\n", rarityStars[card.Rarity], rarityNames[card.Rarity]))
 		sb.WriteString(fmt.Sprintf("%s %s\n", card.Emoji, card.Name))

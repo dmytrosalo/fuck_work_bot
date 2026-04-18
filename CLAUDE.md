@@ -1,79 +1,49 @@
-# Project: fuck-work-bot
+# CLAUDE.md
 
-Telegram bot for a Ukrainian dev friend group. Work classifier + entertainment features.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Telegram bot for a Ukrainian dev friend group. Work classifier + entertainment features. Go bot on Fly.io (free tier, 256MB RAM, Frankfurt). Auto-deploys via GitHub Actions on push to main.
+
+## Build & Run
+
+```bash
+# Build (from repo root)
+cd go-bot && CGO_ENABLED=0 go build -o bot ./cmd/bot/
+
+# Run locally
+TELEGRAM_BOT_TOKEN=xxx MODEL_PATH=./model/tfidf_model.json DATA_DIR=./testdata ./bot
+
+# Run tests
+cd go-bot && go test ./...
+
+# Run a single test
+cd go-bot && go test ./internal/handlers/ -run TestHandleDuel
+cd go-bot && go test ./internal/storage/ -run TestBalance
+
+# Seed tool (standalone)
+cd go-bot && go run ./cmd/seed/
+```
 
 ## Architecture
 
-Go bot on Fly.io (free tier, 256MB RAM, Frankfurt). Auto-deploys via GitHub Actions on push to main.
+All Go code lives under `go-bot/`. Module: `github.com/dmytrosalo/fuck-work-bot`.
 
-```
-go-bot/
-├── cmd/bot/main.go              — entry point, scheduler, seed logic
-├── cmd/seed/main.go             — standalone seed tool
-├── internal/
-│   ├── classifier/classifier.go — TF-IDF + LogReg classifier (pure Go)
-│   ├── storage/sqlite.go        — SQLite: stats, cards, balances, collection, feedback
-│   └── handlers/
-│       ├── handlers.go          — core commands (/start, /help, /check, /stats, /mute, /work)
-│       ├── roasts.go            — username mapping for personalized content
-│       ├── quotes.go            — /quote, /addquote, /roast, /compliment
-│       ├── cards.go             — /pack, /collection, /battle
-│       ├── cardimage.go         — card image rendering (Twemoji CDN + Go image)
-│       ├── slots.go             — /slots, /balance, /daily, /top
-│       ├── pokemon.go           — /pokemon via PokeAPI
-│       ├── horoscope.go         — /horoscope via Gemini Flash
-│       ├── eightball.go         — /8ball
-│       └── fun_apis.go          — /cat (cataas.com), /dog (dog.ceo)
-├── model/tfidf_model.json       — distilled TF-IDF model (1.4MB)
-├── seed_data.json               — roasts, compliments, quotes, cards (seeded into DB)
-├── scripts/                     — Python scripts for model training
-└── Dockerfile
-```
+**Core flow:** `cmd/bot/main.go` creates storage, classifier, and `handlers.Bot`, then calls `bot.Register()` to wire all Telegram command handlers. Also starts an HTTP server on `:8080` for the collection web page. On startup it runs seed logic and scheduled daily resets.
 
-## Classifier
+**Key packages:**
+- `internal/handlers/` — All Telegram command handlers live on the `Bot` struct. `handlers.go` has `Register()` which maps commands → handler methods. Each feature area is a separate file (slots.go, cards.go, quiz.go, etc.). `web.go` serves the collection web page at `/collection/:userID`.
+- `internal/storage/sqlite.go` — Single file with all DB operations. Uses `modernc.org/sqlite` (pure Go, no CGO). Schema migrations in `migrate()` function. Tables: stats, cards, collection, balances, daily_limits, transactions, etc.
+- `internal/classifier/classifier.go` — TF-IDF + Logistic Regression classifier (pure Go). Loads model from `model/tfidf_model.json`. Keyword boost for colleague names/dev terms.
 
-- TF-IDF (15K vocab, trigrams) + Logistic Regression + keyword boost
-- Distilled from fine-tuned `paraphrase-multilingual-MiniLM-L12-v2`
-- Threshold: 80% confidence to trigger roast
-- Keyword boost: colleague names and dev terms add to logit
+**Handler pattern:** Every handler is a method on `*Bot` with signature `func (b *Bot) handleX(c tele.Context) error`. Uses `gopkg.in/telebot.v3`. Inline buttons use `tele.Btn{Unique: "name"}` for callbacks.
 
-## Content (stored in SQLite, seeded from seed_data.json)
+**Content system:** `seed_data.json` contains roasts, compliments, quotes, and cards. Seeded into SQLite on startup via version check (hash of file size). Collections/balances survive re-seeding.
 
-- 232 roasts (30 generic + 202 personal per member)
-- 382 compliments (96 generic + 286 personal)
-- 1628 quotes from chat history
-- 301 trading cards (5 rarities, 11 legendaries, rendered as images with Twemoji)
+**Web UI:** HTTP server on `:8080` serves collection pages. `handlers.RegisterWeb()` sets up routes. Fly.io expects this port (`internal_port = 8080` in fly.toml). Collection page: dark theme, mobile-first, card grid with click-to-expand.
 
-## Economy
-
-- Currency: богдудіки (starting balance 100)
-- `/daily`: +50/day
-- `/slots`: bet 1-100, max 20 spins/day, rigged mode via env
-- `/blackjack`: bet 1-100, Hit/Stand via inline buttons, BJ pays 2.5x
-- `/pack`: 20 coins, max 10/day
-- `/battle`: winner +10 coins + steals loser's card
-- `/roast @user`: 5 coins (self-roast free)
-- `/rob @user`: 40% steal 10-50% coins, 60% lose 20 (1/hour)
-- `/steal @user`: 30% steal card, 70% lose 20 coins (1/day)
-- `/gacha`: premium pack guaranteed rare+ (100 coins)
-- `/sacrifice`: 3 cards → 1 higher rarity
-- `/burn`: destroy card for coins (5-100 by rarity)
-- `/auction`/`/bid`: card auction system (60 sec)
-- `/quiz`: trivia +10-25 coins (10/day)
-- `/guess`: multiplayer number guess +30 coins
-- `/wordle`: Ukrainian wordle (1/day, +10-50 coins)
-- `/work` `/notwork`: +10 coins per feedback label
-
-## Seed System
-
-Version-based: bot computes hash of seed_data.json size on startup. If changed, re-seeds cards/quotes/roasts. Collections preserved.
-
-## Building
-
-```bash
-CGO_ENABLED=0 go build -o bot ./cmd/bot/
-TELEGRAM_BOT_TOKEN=xxx MODEL_PATH=./model/tfidf_model.json DATA_DIR=./testdata ./bot
-```
+**Economy:** Currency is "богдудіки". All economy operations go through `storage.DB` methods (UpdateBalance, GetBalance, etc.). Daily limits reset at 00:00 Kyiv time. All UI text is in Ukrainian.
 
 ## Environment Variables
 
@@ -82,5 +52,13 @@ TELEGRAM_BOT_TOKEN=xxx MODEL_PATH=./model/tfidf_model.json DATA_DIR=./testdata .
 - `DATA_DIR` — SQLite DB dir (default: `/data`)
 - `SEED_PATH` — seed data (default: `./seed_data.json`)
 - `GEMINI_API_KEY` — for /horoscope
-- `RIGGED_CASINO_USERS` — comma-separated names for rigged slots
+- `RIGGED_CASINO_USERS` — comma-separated usernames for rigged slots
 - `RIGGED_CASINO_ENABLED` — toggle (default: `true`)
+
+## Important Conventions
+
+- All user-facing text is in Ukrainian
+- `roasts.go` has `usernameMap` mapping Telegram usernames to display names for personalized content
+- Daily limits use Kyiv timezone (Europe/Kyiv) — see `helpers.go`
+- CGO is disabled (`CGO_ENABLED=0`) — SQLite uses pure Go driver `modernc.org/sqlite`
+- Deployment: push to `main` auto-deploys to Fly.io via `.github/workflows/deploy.yml`

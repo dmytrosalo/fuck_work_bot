@@ -6,8 +6,9 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 
 - **Work Classifier** — TF-IDF + LogReg distilled from a fine-tuned sentence transformer. 80% confidence threshold with keyword boost for colleague names.
 - **Personalized Roasts & Compliments** — stored in SQLite, targeted per chat member
-- **Trading Cards** — 301 cards with rendered images (Twemoji), 5 rarities, pack opening as album, collection, battles
-- **Economy** — богдудіки currency, slots casino, daily bonus, leaderboard
+- **Trading Cards** — 502 cards with rendered images (Twemoji), 6 rarities, pack opening as album, collection web page, battles
+- **Economy** — богдудіки currency, slots casino, blackjack, daily bonus, leaderboard
+- **Collection Web Page** — dark themed responsive page at `/collection/:userID`
 - **Pokemon** — daily Pokemon with official artwork via PokeAPI
 - **Horoscope** — Gemini-powered dev horoscope, 1/day
 - **Cat Memes** — cat photos with personalized text overlay
@@ -36,32 +37,34 @@ Telegram bot for a Ukrainian dev friend group. Detects work messages, roasts peo
 | `/stats` | Work message stats | — |
 | `/work` / `/notwork` | Label message (reply) | +10 🪙 |
 | `/mute` / `/unmute` | Toggle tracking | — |
-| **Cards (301)** | | |
-| `/pack` | Open card pack (max 10/day) | 20 🪙 |
-| `/gacha` | Premium pack (rare+ guaranteed) | 100 🪙 |
-| `/collection` | Your cards by rarity | — |
+| **Cards (502)** | | |
+| `/pack` | Open card pack (max 7/day) | 40 🪙 |
+| `/gacha` | Premium pack (epic+ guaranteed) | 300 🪙 |
+| `/collection` | Rarity counts + web page link | — |
 | `/card <name>` | View card with image | — |
 | `/showcase` | Flex your rarest card | — |
 | `/war @user` | War: 3 rounds, choose order | card |
 | `/duel @user` | Pick your card to fight | card |
 | `/steal @user` | 30% steal card (1/day) | risk 20 🪙 |
-| `/sacrifice <rarity>` | 3 cards → 1 higher rarity | 3 cards |
+| `/sacrifice <rarity>` | 7 cards → 1 higher rarity | 7 cards |
 | `/burn <name>` | Destroy card for coins | 5-100 🪙 |
 | `/gift @user <name>` | Give card to someone | card |
 | `/auction <name>` | Auction card (60 sec) | — |
 | `/bid <amount>` | Bid on auction | 🪙 |
 | **Economy** | | |
-| `/slots <bet>` | Slot machine (max 20/day) | 1-100 🪙 |
-| `/blackjack <bet>` | Blackjack with Hit/Stand buttons | 1-100 🪙 |
-| `/daily` | Daily bonus | +50 🪙 |
+| `/slots <bet>` | Slot machine (max 20/day) | 1-500 🪙 |
+| `/blackjack <bet>` | Blackjack with Hit/Stand buttons | 1-500 🪙 |
+| `/daily` | Daily bonus | +75 🪙 |
 | `/balance` | Check coins | — |
 | `/top` | Leaderboard | — |
-| `/rob @user` | 40% steal coins (1/hour) | risk 20 🪙 |
+| `/casino_stats` | Your casino statistics | — |
+| `/global_stats` | Server-wide statistics | — |
+| `/rob @user` | 33% steal coins (1/hour) | risk 20 🪙 |
 | `/dart @user <bet>` | Darts: 5 rounds, pot system (5/day) | custom bet |
 | **Games** | | |
-| `/quiz` | Trivia questions (10/day) | +10-25 🪙 |
-| `/guess` | Guess number 1-100 (multiplayer) | +30 🪙 |
-| `/wordle` | Ukrainian wordle (1/day) | +10-50 🪙 |
+| `/quiz` | Trivia questions (10/day) | +5-15 🪙 |
+| `/guess` | Guess number 1-100 (multiplayer) | +30/100 🪙 |
+| `/wordle` | Ukrainian wordle (3/day) | +5-30 🪙 |
 | **Fun** | | |
 | `/pokemon` | Daily Pokemon with image | — |
 | `/horoscope` | Dev horoscope (Gemini, 1/day) | — |

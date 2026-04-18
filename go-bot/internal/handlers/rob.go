@@ -51,10 +51,10 @@ func (b *Bot) handleRob(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("💸 У %s немає грошей!", targetName))
 	}
 
-	// 40% success, 60% fail
-	if rand.Intn(100) < 40 {
-		// Steal 10-50% of their balance
-		pct := rand.Intn(41) + 10 // 10-50%
+	// 33% success, 67% fail
+	if rand.Intn(100) < 33 {
+		// Steal 10-33% of their balance
+		pct := rand.Intn(24) + 10 // 10-33%
 		stolen := targetBalance * pct / 100
 		if stolen < 1 {
 			stolen = 1
