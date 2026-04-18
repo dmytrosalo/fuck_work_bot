@@ -70,12 +70,12 @@ var webRarityAccent = map[int]string{
 }
 
 var webRarityBg = map[int]string{
-	1: "rgb(40,40,50)",
-	2: "rgb(20,50,35)",
-	3: "rgb(18,30,60)",
-	4: "rgb(45,15,60)",
-	5: "rgb(55,42,10)",
-	6: "rgb(65,10,10)",
+	1: "rgb(50,50,58)",
+	2: "rgb(15,60,35)",
+	3: "rgb(15,35,85)",
+	4: "rgb(65,15,90)",
+	5: "rgb(80,60,5)",
+	6: "rgb(100,10,10)",
 }
 
 var webRarityGlow = map[int]string{
@@ -142,7 +142,11 @@ func handleCollectionPage(w http.ResponseWriter, r *http.Request, db *storage.DB
 	}
 }
 
-var collectionTmpl = template.Must(template.New("collection").Parse(collectionHTML))
+var collectionFuncs = template.FuncMap{
+	"power": func(a, d, s int) int { return a + d + s },
+}
+
+var collectionTmpl = template.Must(template.New("collection").Funcs(collectionFuncs).Parse(collectionHTML))
 
 const collectionHTML = `<!DOCTYPE html>
 <html lang="uk">
@@ -245,6 +249,12 @@ body {
   padding: 2px 6px; border-radius: 8px;
   color: rgba(255,255,255,0.85);
 }
+.card-top .power {
+  position: absolute;
+  bottom: 6px; right: 6px;
+  font-size: 14px; font-weight: 800;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
 
 /* Card info bottom panel */
 .card-info {
@@ -317,8 +327,9 @@ body {
     {{range .Cards}}
     <div class="card" onclick="toggle(this)"
          style="border-color:{{$accent}}; background:{{$bg}}; box-shadow:0 0 10px {{$accent}}25;">
-      <div class="card-top" style="background:linear-gradient(180deg, {{$bg}} 0%, rgba(0,0,0,0.2) 100%);">
+      <div class="card-top" style="background:linear-gradient(180deg, {{$bg}} 0%, rgba(0,0,0,0.3) 100%);">
         <div class="emoji">{{.Emoji}}</div>
+        <span class="power" style="color:{{$accent}}">{{power .ATK .DEF .Special}}</span>
         {{if gt .Count 1}}<span class="badge">x{{.Count}}</span>{{end}}
       </div>
       <div class="card-info">
