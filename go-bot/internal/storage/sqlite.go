@@ -262,12 +262,14 @@ type FullCard struct {
 	ID          int
 	Name        string
 	Rarity      int
+	Category    string
 	Emoji       string
 	Description string
 	ATK         int
 	DEF         int
 	SpecialName string
 	Special     int
+	Count       int
 }
 
 func (d *DB) GetRandomCard(rarity int) FullCard {
@@ -310,6 +312,49 @@ func (d *DB) GetCollectionByRarity(userID string, rarity int) []CollectionCard {
 		cards = append(cards, card)
 	}
 	return cards
+}
+
+func (d *DB) GetFullCollection(userID string) []FullCard {
+	rows, err := d.db.Query(`SELECT c.id, c.name, c.rarity, c.category, c.emoji, c.description, c.atk, c.def, c.special_name, c.special, col.count
+		FROM collection col JOIN cards c ON col.card_id = c.id
+		WHERE col.user_id = ? ORDER BY c.rarity DESC, c.name`, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var cards []FullCard
+	for rows.Next() {
+		var card FullCard
+		if err := rows.Scan(&card.ID, &card.Name, &card.Rarity, &card.Category, &card.Emoji, &card.Description, &card.ATK, &card.DEF, &card.SpecialName, &card.Special, &card.Count); err != nil {
+			continue
+		}
+		cards = append(cards, card)
+	}
+	return cards
+}
+
+func (d *DB) GetUserName(userID string) string {
+	var name string
+	d.db.QueryRow(`SELECT name FROM balances WHERE user_id = ? LIMIT 1`, userID).Scan(&name)
+	return name
+}
+
+func (d *DB) GetRarityCounts(userID string) map[int]int {
+	counts := make(map[int]int)
+	rows, err := d.db.Query(`SELECT c.rarity, SUM(col.count) FROM collection col JOIN cards c ON col.card_id = c.id WHERE col.user_id = ? GROUP BY c.rarity`, userID)
+	if err != nil {
+		return counts
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rarity, count int
+		if err := rows.Scan(&rarity, &count); err != nil {
+			continue
+		}
+		counts[rarity] = count
+	}
+	return counts
 }
 
 type BattleCard struct {
