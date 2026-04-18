@@ -70,12 +70,12 @@ var webRarityAccent = map[int]string{
 }
 
 var webRarityBg = map[int]string{
-	1: "rgb(50,50,58)",
-	2: "rgb(15,60,35)",
-	3: "rgb(15,35,85)",
-	4: "rgb(65,15,90)",
-	5: "rgb(80,60,5)",
-	6: "rgb(100,10,10)",
+	1: "rgb(60,60,70)",
+	2: "rgb(25,75,45)",
+	3: "rgb(25,50,110)",
+	4: "rgb(85,25,120)",
+	5: "rgb(110,85,15)",
+	6: "rgb(130,20,20)",
 }
 
 var webRarityGlow = map[int]string{
