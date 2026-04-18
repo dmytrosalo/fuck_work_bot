@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -111,6 +112,16 @@ func main() {
 	// Register handlers
 	h := handlers.New(clf, db)
 	h.Register(bot)
+
+	// Start web server
+	mux := http.NewServeMux()
+	handlers.RegisterWeb(mux, db)
+	go func() {
+		log.Println("Web server starting on :8080...")
+		if err := http.ListenAndServe(":8080", mux); err != nil {
+			log.Printf("Web server error: %v", err)
+		}
+	}()
 
 	// Schedule daily report at 23:00 Kyiv time
 	go scheduleDailyReport(bot, h)
