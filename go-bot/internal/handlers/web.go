@@ -38,6 +38,7 @@ type raritySection struct {
 	Stars      string
 	AccentCSS  string
 	BgCSS      string
+	GlowCSS    string
 	Cards      []storage.FullCard
 }
 
@@ -77,6 +78,15 @@ var webRarityBg = map[int]string{
 	6: "rgb(75,25,25)",
 }
 
+var webRarityGlow = map[int]string{
+	1: "rgba(120,120,130,0.15)",
+	2: "rgba(50,180,100,0.15)",
+	3: "rgba(60,120,220,0.15)",
+	4: "rgba(170,70,220,0.15)",
+	5: "rgba(240,190,40,0.15)",
+	6: "rgba(255,50,50,0.2)",
+}
+
 func handleCollectionPage(w http.ResponseWriter, r *http.Request, db *storage.DB) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/collection/"), "/")
 	userID := parts[0]
@@ -112,6 +122,7 @@ func handleCollectionPage(w http.ResponseWriter, r *http.Request, db *storage.DB
 			Stars:      webRarityStars[rarity],
 			AccentCSS:  webRarityAccent[rarity],
 			BgCSS:      webRarityBg[rarity],
+			GlowCSS:    webRarityGlow[rarity],
 			Cards:      grouped[rarity],
 		})
 	}
@@ -140,166 +151,212 @@ const collectionHTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.UserName}} — Collection</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  background: #1a1a2e;
-  color: #e0e0e0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0a0a1a;
+  background-image: radial-gradient(ellipse at 20% 50%, rgba(60,40,120,0.15) 0%, transparent 50%),
+                    radial-gradient(ellipse at 80% 20%, rgba(40,80,140,0.1) 0%, transparent 50%);
+  color: #e8e8f0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   padding: 16px;
-  max-width: 800px;
+  max-width: 860px;
   margin: 0 auto;
+  min-height: 100vh;
+}
+.glass {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
 }
 .header {
   text-align: center;
-  padding: 24px 16px;
-  margin-bottom: 24px;
-  background: #16213e;
-  border-radius: 16px;
-  border: 1px solid #0f3460;
+  padding: 28px 20px;
+  margin-bottom: 28px;
 }
 .header h1 {
-  font-size: 24px;
-  margin-bottom: 8px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #fff 0%, #a0a0c0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 6px;
 }
 .header .progress {
-  font-size: 18px;
-  color: #a0a0a0;
-  margin-bottom: 8px;
+  font-size: 15px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 500;
+  margin-bottom: 4px;
 }
 .header .balance {
-  font-size: 16px;
-  color: #f0c040;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fbbf24;
 }
 .rarity-counts {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 .rarity-counts span {
-  font-size: 13px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.05);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
 }
 .section {
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 .section-header {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  padding: 8px 0;
-  margin-bottom: 12px;
-  border-bottom: 2px solid;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
-@media (min-width: 600px) {
-  .grid { grid-template-columns: repeat(5, 1fr); }
+@media (min-width: 500px) {
+  .grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 700px) {
+  .grid { grid-template-columns: repeat(4, 1fr); }
 }
 .card {
   position: relative;
-  border-radius: 12px;
-  padding: 12px 8px;
+  border-radius: 16px;
+  padding: 14px 10px 12px;
   text-align: center;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
-  border: 2px solid;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid;
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 16px 16px 0 0;
 }
 .card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+}
+.card:active {
+  transform: scale(0.98);
 }
 .card .emoji {
-  font-size: 36px;
+  font-size: 40px;
   line-height: 1.2;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
 }
 .card .name {
-  font-size: 12px;
-  font-weight: 600;
-  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 6px;
+  color: #fff;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .card .count {
   position: absolute;
-  top: 4px;
-  right: 6px;
-  font-size: 11px;
+  top: 6px;
+  right: 8px;
+  font-size: 10px;
   font-weight: 700;
-  background: rgba(0,0,0,0.6);
-  padding: 1px 6px;
-  border-radius: 8px;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);
+  padding: 2px 7px;
+  border-radius: 10px;
+  color: rgba(255,255,255,0.8);
 }
-.card .details {
-  display: none;
+.card .stats {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
   margin-top: 8px;
-  font-size: 11px;
-  text-align: left;
-  line-height: 1.5;
+  flex-wrap: wrap;
 }
-.card.expanded .details {
+.card .stats span {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.3);
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.3px;
+}
+.card .stats .atk { color: #ff6b6b; }
+.card .stats .def { color: #4ecdc4; }
+.card .stats .spc { color: #fbbf24; }
+.card .desc {
+  display: none;
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 6px;
+  line-height: 1.4;
+  font-style: italic;
+}
+.card.expanded .desc {
   display: block;
 }
 .card.expanded {
-  grid-column: span 1;
-}
-@media (min-width: 600px) {
-  .card.expanded { grid-column: span 2; }
-}
-.details .stats {
-  display: flex;
-  gap: 8px;
-  margin: 4px 0;
-  font-weight: 600;
-}
-.details .desc {
-  color: #b0b0b0;
-  font-style: italic;
-  margin-top: 4px;
-}
-.details .stars {
-  margin-top: 4px;
+  grid-column: span 2;
 }
 </style>
 </head>
 <body>
-<div class="header">
+<div class="header glass">
   <h1>{{.UserName}}</h1>
   <div class="progress">{{.Unique}} / {{.Total}} cards</div>
   <div class="balance">{{.Balance}} coins</div>
   <div class="rarity-counts">
     {{range $rarity := .Sections}}
-    <span style="border:1px solid {{$rarity.AccentCSS}}">{{$rarity.Stars}} {{index $.RarityCounts $rarity.Rarity}}</span>
+    <span style="border-color:{{$rarity.AccentCSS}}40; color:{{$rarity.AccentCSS}}">{{$rarity.Stars}} {{index $.RarityCounts $rarity.Rarity}}</span>
     {{end}}
   </div>
 </div>
 
 {{range .Sections}}
-{{$bg := .BgCSS}}{{$accent := .AccentCSS}}
+{{$accent := .AccentCSS}}{{$glow := .GlowCSS}}
 <div class="section">
-  <div class="section-header" style="border-color:{{.AccentCSS}}; color:{{.AccentCSS}}">
+  <div class="section-header" style="border-color:{{.AccentCSS}}20; color:{{.AccentCSS}}">
     {{.Stars}} {{.RarityName}} ({{len .Cards}})
   </div>
   <div class="grid">
     {{range .Cards}}
     <div class="card" onclick="toggle(this)"
-         style="background:{{$bg}}; border-color:{{$accent}}; box-shadow:0 0 8px {{$accent}}33">
+         style="border-color:{{$accent}}30; box-shadow:0 0 12px {{$accent}}15, inset 0 1px 0 rgba(255,255,255,0.05);"
+         onmouseover="this.style.boxShadow='0 4px 20px {{$accent}}30, inset 0 1px 0 rgba(255,255,255,0.08)'"
+         onmouseout="this.style.boxShadow='0 0 12px {{$accent}}15, inset 0 1px 0 rgba(255,255,255,0.05)'">
+      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,{{$accent}},transparent);border-radius:16px 16px 0 0;opacity:0.6"></div>
       {{if gt .Count 1}}<span class="count">x{{.Count}}</span>{{end}}
       <div class="emoji">{{.Emoji}}</div>
       <div class="name">{{.Name}}</div>
-      <div class="details">
-        <div class="stats">
-          <span>ATK {{.ATK}}</span>
-          <span>DEF {{.DEF}}</span>
-          <span>{{.SpecialName}} {{.Special}}</span>
-        </div>
-        <div class="desc">{{.Description}}</div>
+      <div class="stats">
+        <span class="atk">ATK {{.ATK}}</span>
+        <span class="def">DEF {{.DEF}}</span>
+        <span class="spc">{{.SpecialName}} {{.Special}}</span>
       </div>
+      <div class="desc">{{.Description}}</div>
     </div>
     {{end}}
   </div>
