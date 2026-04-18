@@ -69,12 +69,12 @@ var webRarityAccent = map[int]string{
 }
 
 var webRarityBg = map[int]string{
-	1: "rgb(35,35,40)",
-	2: "rgb(25,38,32)",
-	3: "rgb(25,30,45)",
-	4: "rgb(38,25,45)",
-	5: "rgb(45,38,22)",
-	6: "rgb(50,15,15)",
+	1: "rgb(55,55,65)",
+	2: "rgb(35,58,45)",
+	3: "rgb(35,45,70)",
+	4: "rgb(55,35,70)",
+	5: "rgb(65,55,30)",
+	6: "rgb(75,25,25)",
 }
 
 func handleCollectionPage(w http.ResponseWriter, r *http.Request, db *storage.DB) {
@@ -280,6 +280,7 @@ body {
 </div>
 
 {{range .Sections}}
+{{$bg := .BgCSS}}{{$accent := .AccentCSS}}
 <div class="section">
   <div class="section-header" style="border-color:{{.AccentCSS}}; color:{{.AccentCSS}}">
     {{.Stars}} {{.RarityName}} ({{len .Cards}})
@@ -287,7 +288,7 @@ body {
   <div class="grid">
     {{range .Cards}}
     <div class="card" onclick="toggle(this)"
-         style="background:{{$.BgCSS}}; border-color:{{$.AccentCSS}}; box-shadow:0 0 8px {{$.AccentCSS}}33">
+         style="background:{{$bg}}; border-color:{{$accent}}; box-shadow:0 0 8px {{$accent}}33">
       {{if gt .Count 1}}<span class="count">x{{.Count}}</span>{{end}}
       <div class="emoji">{{.Emoji}}</div>
       <div class="name">{{.Name}}</div>
