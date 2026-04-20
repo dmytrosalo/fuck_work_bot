@@ -132,6 +132,27 @@ func (b *Bot) handleSlots(c tele.Context) error {
 	// Log transaction
 	b.db.LogTransaction(userID, userName, "slots", profit)
 
+	b.db.IncrementStat(userID, "slots_played", 1)
+	if profit > 0 {
+		b.db.IncrementStat(userID, "slots_won", 1)
+		b.db.SetStatMax(userID, "slots_max_win", winnings)
+		b.db.IncrementStat(userID, "total_earned", winnings)
+		st := b.db.GetUserStats(userID)
+		b.db.SetStat(userID, "slots_streak", st.SlotsStreak+1)
+		b.db.SetStatMax(userID, "slots_max_streak", st.SlotsStreak+1)
+	} else {
+		b.db.SetStat(userID, "slots_streak", 0)
+	}
+	if profit < 0 {
+		b.db.IncrementStat(userID, "total_spent", -profit)
+	}
+	slotsbal := b.db.GetBalance(userID, "")
+	b.db.SetStatMax(userID, "max_balance", slotsbal)
+	if is3AMKyiv() {
+		b.unlockSpecial(c, userID, userName, "sec_3am")
+	}
+	b.checkAchievements(c, userID, userName)
+
 	var msg string
 	if isTriple && multiplier >= 25 {
 		msg = fmt.Sprintf("🎰 *ДЖЕКПОТ!!!* 🎰\n\n%s\n\n💎💎💎 x%d!\n\nСтавка: %d 🪙\nВиграш: +%d 🪙\nБаланс: %d 🪙",
@@ -179,6 +200,11 @@ func (b *Bot) handleDaily(c tele.Context) error {
 	newBalance := b.db.UpdateBalance(userID, userName, dailyBonus)
 	b.db.LogTransaction(userID, userName, "daily", dailyBonus)
 	b.db.SetMeta(key, today)
+
+	b.db.IncrementStat(userID, "daily_claimed", 1)
+	b.db.IncrementStat(userID, "total_earned", dailyBonus)
+	b.db.SetStatMax(userID, "max_balance", newBalance)
+	b.checkAchievements(c, userID, userName)
 
 	return c.Reply(fmt.Sprintf("🎁 *Щоденний бонус!*\n\n+%d 🪙\nБаланс: %d 🪙", dailyBonus, newBalance), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }

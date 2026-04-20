@@ -61,6 +61,8 @@ func (b *Bot) handleSteal(c tele.Context) error {
 		}
 		b.db.TransferCard(targetID, userID, card.ID)
 		b.db.SetMeta(stealKey, "done")
+		b.db.IncrementStat(userID, "cards_stolen", 1)
+		b.checkAchievements(c, userID, userName)
 		return c.Reply(fmt.Sprintf("🦹 Вкрав %s %s у %s!", card.Emoji, card.Name, targetName))
 	}
 
@@ -100,6 +102,8 @@ func (b *Bot) handleGift(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("❌ Гравець %s не знайдений", recipientName))
 	}
 
+	b.db.EnsureUser(recipientID, recipientName)
+
 	// Find card by ID or name
 	var card storage.BattleCard
 	if id, err := strconv.Atoi(cardQuery); err == nil {
@@ -116,6 +120,9 @@ func (b *Bot) handleGift(c tele.Context) error {
 	if !b.db.TransferCard(userID, recipientID, card.ID) {
 		return c.Reply(fmt.Sprintf("❌ У тебе немає картки %s %s", card.Emoji, card.Name))
 	}
+
+	b.db.IncrementStat(userID, "cards_gifted", 1)
+	b.checkAchievements(c, userID, userName)
 
 	return c.Reply(fmt.Sprintf("🎁 %s подарував %s %s для %s!", userName, card.Emoji, card.Name, recipientName))
 }
@@ -161,6 +168,12 @@ func (b *Bot) handleBurn(c tele.Context) error {
 
 	reward := burnRewards[card.Rarity]
 	newBal := b.db.UpdateBalance(userID, userName, reward)
+	b.db.IncrementStat(userID, "cards_burned", 1)
+	b.db.IncrementStat(userID, "total_earned", reward)
+	if card.Rarity >= 5 {
+		b.unlockSpecial(c, userID, userName, "sec_burn_legendary")
+	}
+	b.checkAchievements(c, userID, userName)
 	return c.Reply(fmt.Sprintf("🔥 Спалив %s %s!\n+%d 🪙 (баланс: %d)", card.Emoji, card.Name, reward, newBal))
 }
 

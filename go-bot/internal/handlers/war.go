@@ -290,10 +290,14 @@ func (b *Bot) resolveWar(bot *tele.Bot, war *warState) {
 		loserCard := war.Cards2[war.Order2[rand.Intn(3)]]
 		b.db.TransferCard(war.Player2ID, war.Player1ID, loserCard.ID)
 		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!", war.Player1Name, loserCard.Emoji, loserCard.Name))
+		b.db.IncrementStat(war.Player1ID, "duels_won", 1)
+		b.db.IncrementStat(war.Player2ID, "duels_lost", 1)
 	} else if wins2 > wins1 {
 		loserCard := war.Cards1[war.Order1[rand.Intn(3)]]
 		b.db.TransferCard(war.Player1ID, war.Player2ID, loserCard.ID)
 		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!", war.Player2Name, loserCard.Emoji, loserCard.Name))
+		b.db.IncrementStat(war.Player2ID, "duels_won", 1)
+		b.db.IncrementStat(war.Player1ID, "duels_lost", 1)
 	} else {
 		sb.WriteString("🤝 Нічия! Ніхто не втрачає")
 	}

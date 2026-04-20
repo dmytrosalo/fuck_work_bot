@@ -247,10 +247,30 @@ func (b *Bot) resolveDuel(bot *tele.Bot, duel *duelState) {
 		b.db.TransferCard(duel.OpponentID, duel.ChallengerID, p2.ID)
 		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!",
 			duel.ChallengerName, p2.Emoji, p2.Name))
+		b.db.IncrementStat(duel.ChallengerID, "duels_won", 1)
+		b.db.IncrementStat(duel.OpponentID, "duels_lost", 1)
+		cs := b.db.GetUserStats(duel.ChallengerID)
+		b.db.SetStat(duel.ChallengerID, "duel_streak", cs.DuelStreak+1)
+		b.db.SetStatMax(duel.ChallengerID, "max_duel_streak", cs.DuelStreak+1)
+		b.db.SetStat(duel.ChallengerID, "lose_streak", 0)
+		os := b.db.GetUserStats(duel.OpponentID)
+		b.db.SetStat(duel.OpponentID, "lose_streak", os.LoseStreak+1)
+		b.db.SetStatMax(duel.OpponentID, "max_lose_streak", os.LoseStreak+1)
+		b.db.SetStat(duel.OpponentID, "duel_streak", 0)
 	} else if power2 > power1 {
 		b.db.TransferCard(duel.ChallengerID, duel.OpponentID, p1.ID)
 		sb.WriteString(fmt.Sprintf("🏆 %s перемагає і забирає %s %s!",
 			duel.OpponentName, p1.Emoji, p1.Name))
+		b.db.IncrementStat(duel.OpponentID, "duels_won", 1)
+		b.db.IncrementStat(duel.ChallengerID, "duels_lost", 1)
+		os2 := b.db.GetUserStats(duel.OpponentID)
+		b.db.SetStat(duel.OpponentID, "duel_streak", os2.DuelStreak+1)
+		b.db.SetStatMax(duel.OpponentID, "max_duel_streak", os2.DuelStreak+1)
+		b.db.SetStat(duel.OpponentID, "lose_streak", 0)
+		cs2 := b.db.GetUserStats(duel.ChallengerID)
+		b.db.SetStat(duel.ChallengerID, "lose_streak", cs2.LoseStreak+1)
+		b.db.SetStatMax(duel.ChallengerID, "max_lose_streak", cs2.LoseStreak+1)
+		b.db.SetStat(duel.ChallengerID, "duel_streak", 0)
 	} else {
 		sb.WriteString("🤝 Нічия! Обидві картки залишаються")
 	}

@@ -150,6 +150,12 @@ func (b *Bot) handleBlackjack(c tele.Context) error {
 		}
 		b.db.UpdateBalance(userID, userName, winnings)
 		newBal := b.db.GetBalance(userID, "")
+		b.db.IncrementStat(userID, "bj_played", 1)
+		b.db.IncrementStat(userID, "bj_won", 1)
+		b.db.IncrementStat(userID, "bj_blackjacks", 1)
+		b.db.IncrementStat(userID, "total_earned", winnings)
+		b.db.SetStatMax(userID, "max_balance", b.db.GetBalance(userID, ""))
+		b.checkAchievements(c, userID, userName)
 		return c.Send(fmt.Sprintf("🃏 *BLACKJACK!* 🎉\n\nТвої: %s = 21\nДилер: %s 🂠\n\n+%d 🪙 (баланс: %d)",
 			handString(game.PlayerCards), game.DealerCards[0].String(), winnings, newBal),
 			&tele.SendOptions{ParseMode: tele.ModeMarkdown})
@@ -270,6 +276,16 @@ func (b *Bot) bjStand(c tele.Context, game *bjGame) error {
 		b.db.LogTransaction(game.UserID, game.UserName, "blackjack", -game.Bet)
 	}
 	bal := b.db.GetBalance(game.UserID, "")
+
+	b.db.IncrementStat(game.UserID, "bj_played", 1)
+	if winnings > game.Bet {
+		b.db.IncrementStat(game.UserID, "bj_won", 1)
+		b.db.IncrementStat(game.UserID, "total_earned", winnings)
+	} else if winnings == 0 {
+		b.db.IncrementStat(game.UserID, "total_spent", game.Bet)
+	}
+	b.db.SetStatMax(game.UserID, "max_balance", bal)
+	b.checkAchievements(c, game.UserID, game.UserName)
 
 	msg := fmt.Sprintf("🃏 Blackjack — Результат\n\nТвої: %s = %d\nДилер: %s = %d\n\n%s\nБаланс: %d 🪙",
 		handString(game.PlayerCards), playerVal,

@@ -77,7 +77,9 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)
-bot.Handle(tele.OnText, b.handleText)
+	bot.Handle("/achievements", b.handleAchievements)
+	bot.Handle("/title", b.handleTitle)
+	bot.Handle(tele.OnText, b.handleText)
 }
 
 func (b *Bot) handleStart(c tele.Context) error {

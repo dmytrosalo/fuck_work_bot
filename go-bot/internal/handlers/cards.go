@@ -84,6 +84,8 @@ func (b *Bot) handlePack(c tele.Context) error {
 	b.db.UpdateBalance(userID, userName, -packCost)
 	b.db.LogTransaction(userID, userName, "pack", -packCost)
 	b.db.IncrementPackOpens(userID, today)
+	b.db.IncrementStat(userID, "packs_opened", 1)
+	b.db.IncrementStat(userID, "total_spent", packCost)
 
 	// Roll 3 cards: 2 random + 1 guaranteed uncommon+
 	var cards []CardData
@@ -108,6 +110,8 @@ func (b *Bot) handlePack(c tele.Context) error {
 
 	unique, total := b.db.GetCollectionStats(userID)
 	newBalance := b.db.GetBalance(userID, "")
+
+	b.checkAchievements(c, userID, userName)
 
 	// Try to render card images and send as album
 	var album tele.Album

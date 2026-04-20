@@ -397,6 +397,16 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		newBal := b.db.UpdateBalance(userID, userName, reward)
 		b.db.LogTransaction(userID, userName, "wordle", reward)
 
+		b.db.IncrementStat(userID, "wordle_played", 1)
+		b.db.IncrementStat(userID, "total_earned", reward)
+		if attempt == 1 {
+			b.unlockSpecial(c, userID, userName, "sec_wordle_1")
+		}
+		if is3AMKyiv() {
+			b.unlockSpecial(c, userID, userName, "sec_3am")
+		}
+		b.checkAchievements(c, userID, userName)
+
 		var sb strings.Builder
 		sb.WriteString("📝 *Wordle*\n\n")
 		for _, a := range game.Attempts {
@@ -425,6 +435,8 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		}
 		b.db.SetMeta(countKey, fmt.Sprintf("%d", played2+1))
 		remaining2 := maxWordlePerDay - played2 - 1
+
+		b.db.IncrementStat(userID, "wordle_played", 1)
 
 		var sb strings.Builder
 		sb.WriteString("📝 *Wordle*\n\n")

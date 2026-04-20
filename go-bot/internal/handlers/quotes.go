@@ -27,6 +27,11 @@ func (b *Bot) handleAddQuote(c tele.Context) error {
 	}
 
 	b.db.AddQuote(author, text)
+
+	senderID := fmt.Sprintf("%d", c.Sender().ID)
+	b.db.IncrementStat(senderID, "quotes_added", 1)
+	b.checkAchievements(c, senderID, c.Sender().FirstName)
+
 	return c.Reply(fmt.Sprintf("💬 Цитату від %s збережено!", author))
 }
 
@@ -55,6 +60,14 @@ func (b *Bot) handleRoast(c tele.Context) error {
 	}
 	roast = strings.ReplaceAll(roast, "{name}", targetName)
 
+	roasterID := fmt.Sprintf("%d", c.Sender().ID)
+	b.db.IncrementStat(roasterID, "roasts_given", 1)
+	if c.Message().ReplyTo != nil && c.Message().ReplyTo.Sender != nil {
+		targetRoastID := fmt.Sprintf("%d", c.Message().ReplyTo.Sender.ID)
+		b.db.IncrementStat(targetRoastID, "roasts_received", 1)
+	}
+	b.checkAchievements(c, roasterID, c.Sender().FirstName)
+
 	return c.Reply(fmt.Sprintf("🔥 %s", roast))
 }
 
@@ -67,6 +80,10 @@ func (b *Bot) handleCompliment(c tele.Context) error {
 		compliment = "Ти топ, не слухай нікого"
 	}
 	compliment = strings.ReplaceAll(compliment, "{name}", targetName)
+
+	senderID := fmt.Sprintf("%d", c.Sender().ID)
+	b.db.IncrementStat(senderID, "compliments_given", 1)
+	b.checkAchievements(c, senderID, c.Sender().FirstName)
 
 	return c.Reply(fmt.Sprintf("💖 %s", compliment))
 }
