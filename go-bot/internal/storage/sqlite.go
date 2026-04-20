@@ -7,7 +7,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type UserStats struct {
+type ClassifierStats struct {
 	UserID   string
 	Name     string
 	Work     int
@@ -54,6 +54,47 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS balances (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 100)`,
 		`CREATE TABLE IF NOT EXISTS slot_spins (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
 		`CREATE TABLE IF NOT EXISTS pack_opens (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
+		`CREATE TABLE IF NOT EXISTS user_stats (
+  user_id TEXT PRIMARY KEY,
+  duels_won INTEGER NOT NULL DEFAULT 0,
+  duels_lost INTEGER NOT NULL DEFAULT 0,
+  cards_stolen INTEGER NOT NULL DEFAULT 0,
+  coins_robbed INTEGER NOT NULL DEFAULT 0,
+  slots_played INTEGER NOT NULL DEFAULT 0,
+  slots_won INTEGER NOT NULL DEFAULT 0,
+  slots_max_win INTEGER NOT NULL DEFAULT 0,
+  slots_streak INTEGER NOT NULL DEFAULT 0,
+  slots_max_streak INTEGER NOT NULL DEFAULT 0,
+  bj_played INTEGER NOT NULL DEFAULT 0,
+  bj_won INTEGER NOT NULL DEFAULT 0,
+  bj_blackjacks INTEGER NOT NULL DEFAULT 0,
+  roasts_given INTEGER NOT NULL DEFAULT 0,
+  roasts_received INTEGER NOT NULL DEFAULT 0,
+  compliments_given INTEGER NOT NULL DEFAULT 0,
+  quotes_added INTEGER NOT NULL DEFAULT 0,
+  cards_gifted INTEGER NOT NULL DEFAULT 0,
+  cards_burned INTEGER NOT NULL DEFAULT 0,
+  wordle_played INTEGER NOT NULL DEFAULT 0,
+  daily_claimed INTEGER NOT NULL DEFAULT 0,
+  max_balance INTEGER NOT NULL DEFAULT 0,
+  total_earned INTEGER NOT NULL DEFAULT 0,
+  total_spent INTEGER NOT NULL DEFAULT 0,
+  packs_opened INTEGER NOT NULL DEFAULT 0,
+  duel_streak INTEGER NOT NULL DEFAULT 0,
+  max_duel_streak INTEGER NOT NULL DEFAULT 0,
+  lose_streak INTEGER NOT NULL DEFAULT 0,
+  max_lose_streak INTEGER NOT NULL DEFAULT 0
+)`,
+		`CREATE TABLE IF NOT EXISTS achievements (
+  user_id TEXT NOT NULL,
+  achievement_id TEXT NOT NULL,
+  unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(user_id, achievement_id)
+)`,
+		`CREATE TABLE IF NOT EXISTS user_titles (
+  user_id TEXT PRIMARY KEY,
+  active_title TEXT NOT NULL DEFAULT ''
+)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -81,7 +122,7 @@ func (d *DB) UpdateStats(userID, name string, isWork bool) {
 	}
 }
 
-func (d *DB) GetAllStats() ([]UserStats, error) {
+func (d *DB) GetAllStats() ([]ClassifierStats, error) {
 	rows, err := d.db.Query(`SELECT user_id, name, work, personal FROM stats ORDER BY (work + personal) DESC`)
 	if err != nil {
 		return nil, err
@@ -104,7 +145,7 @@ func (d *DB) UpdateDailyStats(userID, name string, isWork bool) {
 	}
 }
 
-func (d *DB) GetDailyStats() ([]UserStats, error) {
+func (d *DB) GetDailyStats() ([]ClassifierStats, error) {
 	rows, err := d.db.Query(`SELECT user_id, name, work, personal FROM daily_stats ORDER BY (work + personal) DESC`)
 	if err != nil {
 		return nil, err
@@ -632,14 +673,153 @@ func (d *DB) ClearDailyLimits() {
 	d.db.Exec(`DELETE FROM slot_spins`)
 }
 
+type UserStats struct {
+	DuelsWon         int
+	DuelsLost        int
+	CardsStolen      int
+	CoinsRobbed      int
+	SlotsPlayed      int
+	SlotsWon         int
+	SlotsMaxWin      int
+	SlotsStreak      int
+	SlotsMaxStreak   int
+	BJPlayed         int
+	BJWon            int
+	BJBlackjacks     int
+	RoastsGiven      int
+	RoastsReceived   int
+	ComplimentsGiven int
+	QuotesAdded      int
+	CardsGifted      int
+	CardsBurned      int
+	WordlePlayed     int
+	DailyClaimed     int
+	MaxBalance       int
+	TotalEarned      int
+	TotalSpent       int
+	PacksOpened      int
+	DuelStreak       int
+	MaxDuelStreak    int
+	LoseStreak       int
+	MaxLoseStreak    int
+}
+
+func (d *DB) GetUserStats(userID string) UserStats {
+	var s UserStats
+	d.db.QueryRow(`SELECT duels_won, duels_lost, cards_stolen, coins_robbed,
+		slots_played, slots_won, slots_max_win, slots_streak, slots_max_streak,
+		bj_played, bj_won, bj_blackjacks,
+		roasts_given, roasts_received, compliments_given, quotes_added,
+		cards_gifted, cards_burned, wordle_played, daily_claimed,
+		max_balance, total_earned, total_spent, packs_opened,
+		duel_streak, max_duel_streak, lose_streak, max_lose_streak
+		FROM user_stats WHERE user_id = ?`, userID).Scan(
+		&s.DuelsWon, &s.DuelsLost, &s.CardsStolen, &s.CoinsRobbed,
+		&s.SlotsPlayed, &s.SlotsWon, &s.SlotsMaxWin, &s.SlotsStreak, &s.SlotsMaxStreak,
+		&s.BJPlayed, &s.BJWon, &s.BJBlackjacks,
+		&s.RoastsGiven, &s.RoastsReceived, &s.ComplimentsGiven, &s.QuotesAdded,
+		&s.CardsGifted, &s.CardsBurned, &s.WordlePlayed, &s.DailyClaimed,
+		&s.MaxBalance, &s.TotalEarned, &s.TotalSpent, &s.PacksOpened,
+		&s.DuelStreak, &s.MaxDuelStreak, &s.LoseStreak, &s.MaxLoseStreak)
+	return s
+}
+
+func (d *DB) IncrementStat(userID, field string, amount int) {
+	d.db.Exec(`INSERT INTO user_stats (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING`, userID)
+	d.db.Exec(fmt.Sprintf(`UPDATE user_stats SET %s = %s + ? WHERE user_id = ?`, field, field), amount, userID)
+}
+
+func (d *DB) SetStatMax(userID, field string, value int) {
+	d.db.Exec(`INSERT INTO user_stats (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING`, userID)
+	d.db.Exec(fmt.Sprintf(`UPDATE user_stats SET %s = MAX(%s, ?) WHERE user_id = ?`, field, field), value, userID)
+}
+
+func (d *DB) SetStat(userID, field string, value int) {
+	d.db.Exec(`INSERT INTO user_stats (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING`, userID)
+	d.db.Exec(fmt.Sprintf(`UPDATE user_stats SET %s = ? WHERE user_id = ?`, field), value, userID)
+}
+
+func (d *DB) GetUnlockedAchievements(userID string) []string {
+	rows, err := d.db.Query(`SELECT achievement_id FROM achievements WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func (d *DB) UnlockAchievement(userID, achievementID string) bool {
+	res, err := d.db.Exec(`INSERT OR IGNORE INTO achievements (user_id, achievement_id) VALUES (?, ?)`, userID, achievementID)
+	if err != nil {
+		return false
+	}
+	n, _ := res.RowsAffected()
+	return n > 0
+}
+
+func (d *DB) GetActiveTitle(userID string) string {
+	var title string
+	d.db.QueryRow(`SELECT active_title FROM user_titles WHERE user_id = ?`, userID).Scan(&title)
+	return title
+}
+
+func (d *DB) SetActiveTitle(userID, title string) {
+	d.db.Exec(`INSERT INTO user_titles (user_id, active_title) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET active_title = excluded.active_title`, userID, title)
+}
+
+func (d *DB) CountAchievements(userID string) int {
+	var count int
+	d.db.QueryRow(`SELECT COUNT(*) FROM achievements WHERE user_id = ?`, userID).Scan(&count)
+	return count
+}
+
+func (d *DB) GetRarityCardCounts(userID string) map[int]int {
+	counts := make(map[int]int)
+	rows, err := d.db.Query(`SELECT c.rarity, COUNT(DISTINCT c.id) FROM collection col JOIN cards c ON col.card_id = c.id WHERE col.user_id = ? GROUP BY c.rarity`, userID)
+	if err != nil {
+		return counts
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rarity, count int
+		if err := rows.Scan(&rarity, &count); err == nil {
+			counts[rarity] = count
+		}
+	}
+	return counts
+}
+
+func (d *DB) GetTotalCardsByRarity(rarity int) int {
+	var count int
+	d.db.QueryRow(`SELECT COUNT(*) FROM cards WHERE rarity = ?`, rarity).Scan(&count)
+	return count
+}
+
+func (d *DB) GetMaxCardCopies(userID string) int {
+	var count int
+	d.db.QueryRow(`SELECT COALESCE(MAX(count), 0) FROM collection WHERE user_id = ?`, userID).Scan(&count)
+	return count
+}
+
+func (d *DB) EnsureUser(userID, name string) {
+	d.db.Exec(`INSERT OR IGNORE INTO balances (user_id, name, coins) VALUES (?, ?, 100)`, userID, name)
+}
+
 func (d *DB) ClearCards() {
 	d.db.Exec(`DELETE FROM cards`)
 }
 
-func scanStats(rows *sql.Rows) ([]UserStats, error) {
-	var stats []UserStats
+func scanStats(rows *sql.Rows) ([]ClassifierStats, error) {
+	var stats []ClassifierStats
 	for rows.Next() {
-		var s UserStats
+		var s ClassifierStats
 		if err := rows.Scan(&s.UserID, &s.Name, &s.Work, &s.Personal); err != nil {
 			return nil, err
 		}
