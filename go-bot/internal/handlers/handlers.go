@@ -272,6 +272,34 @@ func (b *Bot) handleUnmute(c tele.Context) error {
 	return c.Reply("Ти розмучений. Бот знову стежить за тобою.")
 }
 
+type pendingGift struct {
+	Key      string
+	Username string
+	CardID   int
+	CardName string
+}
+
+var pendingGifts = []pendingGift{
+	{"gift_data_emerald", "kondzhariia_data", 604, "Смарагдове небо"},
+	{"gift_data_emerald", "kondzhariia", 604, "Смарагдове небо"},
+}
+
+func (b *Bot) checkPendingGifts(c tele.Context, userID, userName string) {
+	username := c.Sender().Username
+	for _, g := range pendingGifts {
+		if username != g.Username {
+			continue
+		}
+		if b.db.GetMeta(g.Key) != "" {
+			continue
+		}
+		b.db.EnsureUser(userID, userName)
+		b.db.AddToCollection(userID, g.CardID)
+		b.db.SetMeta(g.Key, "done")
+		c.Send(fmt.Sprintf("⭐⭐⭐⭐⭐ %s отримує легендарну картку: *%s*!", userName, g.CardName), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	}
+}
+
 func (b *Bot) handleText(c tele.Context) error {
 	text := c.Text()
 	if text == "" {
@@ -290,6 +318,9 @@ func (b *Bot) handleText(c tele.Context) error {
 	}
 
 	b.db.TrackChat(chatID)
+
+	// One-time pending card gifts
+	b.checkPendingGifts(c, userID, userName)
 
 	// Check active game answers
 	if b.checkQuizAnswer(c) {
