@@ -58,6 +58,13 @@ func (b *Bot) handleSteal(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("🕐 Ти вже крав сьогодні. Скидання через %s", timeUntilReset()))
 	}
 
+	// Check target's steal protection
+	targetStealBonus := b.getTitleBonus(targetID)
+	if targetStealBonus.RobProtect > 0 && rand.Intn(100) < targetStealBonus.RobProtect {
+		b.db.SetMeta(stealKey, "done")
+		return c.Reply(fmt.Sprintf("🛡 %s заблокував крадіжку!", targetName))
+	}
+
 	// 30% success + title bonus
 	stealBonus := b.getTitleBonus(userID)
 	stealChance := 30 + stealBonus.StealChanceAdd
@@ -175,6 +182,10 @@ func (b *Bot) handleBurn(c tele.Context) error {
 	}
 
 	reward := burnRewards[card.Rarity]
+	burnBonus := b.getTitleBonus(userID)
+	if burnBonus.BurnBonusPct > 0 {
+		reward += reward * burnBonus.BurnBonusPct / 100
+	}
 	newBal := b.db.UpdateBalance(userID, userName, reward)
 	b.db.IncrementStat(userID, "cards_burned", 1)
 	b.db.IncrementStat(userID, "total_earned", reward)

@@ -125,6 +125,11 @@ func (b *Bot) handleSlots(c tele.Context) error {
 		winnings = bet // return bet
 	}
 
+	// Night owl bonus (Сова title)
+	if winnings > 0 && bonus.NightMultiplier && isNightKyiv() {
+		winnings *= 2
+	}
+
 	profit := winnings - bet
 	newBalance := b.db.UpdateBalance(userID, userName, profit)
 

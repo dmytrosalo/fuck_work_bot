@@ -50,6 +50,13 @@ func (b *Bot) handleRob(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("💸 У %s немає грошей!", targetName))
 	}
 
+	// Check target's rob protection
+	targetBonus := b.getTitleBonus(targetID)
+	if targetBonus.RobProtect > 0 && rand.Intn(100) < targetBonus.RobProtect {
+		b.db.SetMeta(robKey, "done")
+		return c.Reply(fmt.Sprintf("🛡 %s заблокував пограбування!", targetName))
+	}
+
 	// 33% success + title bonus
 	robBonus := b.getTitleBonus(userID)
 	robChance := 33 + robBonus.RobChanceAdd

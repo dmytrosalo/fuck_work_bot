@@ -144,36 +144,52 @@ var allAchievements = []achievement{
 
 // Title passive bonuses
 type titleBonus struct {
-	Description string
-	// Modifiers (0 = no effect)
-	DailyBonus     int // extra coins on /daily
-	PackCards      int // extra cards per pack (0 = default 3)
-	RobChanceAdd   int // added to rob success % (base 33)
-	StealChanceAdd int // added to steal success % (base 30)
-	SlotMaxBetAdd  int // added to max slot/bj bet (base 500)
-	SlotsLuckAdd   int // added to slot win % approximation
+	Description      string
+	DailyBonus       int  // extra coins on /daily
+	PackCards        int  // extra cards per pack
+	RobChanceAdd     int  // added to rob success % (base 33)
+	StealChanceAdd   int  // added to steal success % (base 30)
+	SlotMaxBetAdd    int  // added to max slot/bj bet (base 500)
+	FreeRoasts       bool // roasts cost 0
+	WordleExtraGames int  // extra wordle games per day
+	NightMultiplier  bool // x2 rewards 00:00-06:00 Kyiv
+	RobProtect       int  // % chance to block incoming rob
+	BurnBonusPct     int  // extra % coins from /burn
 }
 
 var titleBonuses = map[string]titleBonus{
-	"Збирач":      {Description: "+1 картка в паку", PackCards: 1},
-	"Магнат":      {Description: "+1 картка в паку, +25 /daily", PackCards: 1, DailyBonus: 25},
-	"Легенда":     {Description: "+2 картки в паку, +50 /daily", PackCards: 2, DailyBonus: 50},
-	"Золотий":     {Description: "+1 картка в паку", PackCards: 1},
-	"Барон":       {Description: "+1 картка в паку, +25 /daily", PackCards: 1, DailyBonus: 25},
-	"Олігарх":     {Description: "+50 /daily", DailyBonus: 50},
-	"Багатій":     {Description: "+25 /daily", DailyBonus: 25},
-	"Щедрий":      {Description: "+25 /daily", DailyBonus: 25},
-	"Воїн":        {Description: "+5% steal", StealChanceAdd: 5},
-	"Чемпіон":     {Description: "+10% steal, +5% rob", StealChanceAdd: 10, RobChanceAdd: 5},
-	"Злодій":      {Description: "+10% steal", StealChanceAdd: 10},
-	"Грабіжник":   {Description: "+10% rob", RobChanceAdd: 10},
-	"Гемблер":     {Description: "+100 макс ставка", SlotMaxBetAdd: 100},
-	"Джекпот":     {Description: "+200 макс ставка", SlotMaxBetAdd: 200},
-	"Шулер":       {Description: "+100 макс ставка", SlotMaxBetAdd: 100},
-	"Фартовий":    {Description: "+5% слоти", SlotsLuckAdd: 5},
-	"Сова":        {Description: "x2 нагорода 00:00-06:00", DailyBonus: 0},
-	"Геній":       {Description: "+50 /daily", DailyBonus: 50},
-	"Банкрут":     {Description: "+10 /daily", DailyBonus: 10},
+	// Collection
+	"Збирач":    {Description: "+1 картка в паку", PackCards: 1},
+	"Магнат":    {Description: "+1 картка в паку, +25 /daily", PackCards: 1, DailyBonus: 25},
+	"Легенда":   {Description: "+2 картки в паку, +50 /daily", PackCards: 2, DailyBonus: 50},
+	"Золотий":   {Description: "+1 картка в паку", PackCards: 1},
+	"Барон":     {Description: "+1 картка в паку, +25 /daily", PackCards: 1, DailyBonus: 25},
+	// Economy
+	"Олігарх":   {Description: "+50 /daily", DailyBonus: 50},
+	"Багатій":   {Description: "+25 /daily", DailyBonus: 25},
+	"Щедрий":    {Description: "+25 /daily, +25% burn", DailyBonus: 25, BurnBonusPct: 25},
+	// PvP
+	"Воїн":      {Description: "+5% steal", StealChanceAdd: 5},
+	"Чемпіон":   {Description: "+10% steal, +5% rob", StealChanceAdd: 10, RobChanceAdd: 5},
+	"Злодій":    {Description: "+10% steal", StealChanceAdd: 10},
+	"Грабіжник": {Description: "+10% rob", RobChanceAdd: 10},
+	// Gambling
+	"Гемблер":   {Description: "+100 макс ставка", SlotMaxBetAdd: 100},
+	"Джекпот":   {Description: "+200 макс ставка", SlotMaxBetAdd: 200},
+	"Шулер":     {Description: "+100 макс ставка", SlotMaxBetAdd: 100},
+	"Фартовий":  {Description: "+100 макс ставка, +25 /daily", SlotMaxBetAdd: 100, DailyBonus: 25},
+	// Social
+	"Токсик":     {Description: "безкоштовні роасти", FreeRoasts: true},
+	"Жертва":     {Description: "30% захист від /rob", RobProtect: 30},
+	"Архіваріус": {Description: "+1 wordle на день", WordleExtraGames: 1},
+	"Санта":      {Description: "+25 /daily, +25% burn", DailyBonus: 25, BurnBonusPct: 25},
+	"Душка":      {Description: "+25 /daily", DailyBonus: 25},
+	// Secret
+	"Банкрут":     {Description: "+10 /daily, 20% захист від /rob", DailyBonus: 10, RobProtect: 20},
+	"Божевільний": {Description: "+50% burn монети", BurnBonusPct: 50},
+	"Невдаха":     {Description: "30% захист від /steal", RobProtect: 30},
+	"Сова":        {Description: "x2 нагорода 00:00-06:00", NightMultiplier: true},
+	"Геній":       {Description: "+50 /daily, +1 wordle", DailyBonus: 50, WordleExtraGames: 1},
 }
 
 // getTitleBonus returns the active title's bonus for a user (zero value if none)
@@ -365,4 +381,10 @@ func is3AMKyiv() bool {
 	kyiv := kyivLocation()
 	hour := time.Now().In(kyiv).Hour()
 	return hour == 3
+}
+
+func isNightKyiv() bool {
+	kyiv := kyivLocation()
+	hour := time.Now().In(kyiv).Hour()
+	return hour >= 0 && hour < 6
 }

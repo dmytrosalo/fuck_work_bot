@@ -47,11 +47,14 @@ func (b *Bot) handleRoast(c tele.Context) error {
 	isSelf := targetName == userName || (c.Message().Payload == "" && c.Message().ReplyTo == nil)
 
 	if !isSelf {
-		balance := b.db.GetBalance(userID, userName)
-		if balance < roastCost {
-			return c.Reply(fmt.Sprintf("💸 Роаст коштує %d 🪙, у тебе %d 🪙", roastCost, balance))
+		roastBonus := b.getTitleBonus(userID)
+		if !roastBonus.FreeRoasts {
+			balance := b.db.GetBalance(userID, userName)
+			if balance < roastCost {
+				return c.Reply(fmt.Sprintf("💸 Роаст коштує %d 🪙, у тебе %d 🪙", roastCost, balance))
+			}
+			b.db.UpdateBalance(userID, userName, -roastCost)
 		}
-		b.db.UpdateBalance(userID, userName, -roastCost)
 	}
 
 	roast := b.db.GetRandomRoast(target)
