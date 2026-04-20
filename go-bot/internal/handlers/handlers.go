@@ -277,11 +277,12 @@ type pendingGift struct {
 	Username string
 	CardID   int
 	CardName string
+	Rarity   int
 }
 
 var pendingGifts = []pendingGift{
-	{"gift_data_emerald", "kondzhariia_data", 604, "Смарагдове небо"},
-	{"gift_data_emerald", "kondzhariia", 604, "Смарагдове небо"},
+	{"gift_data_emerald", "kondzhariia_data", 604, "Смарагдове небо", 5},
+	{"gift_data_emerald", "kondzhariia", 604, "Смарагдове небо", 5},
 }
 
 func (b *Bot) checkPendingGifts(c tele.Context, userID, userName string) {
@@ -296,7 +297,9 @@ func (b *Bot) checkPendingGifts(c tele.Context, userID, userName string) {
 		b.db.EnsureUser(userID, userName)
 		b.db.AddToCollection(userID, g.CardID)
 		b.db.SetMeta(g.Key, "done")
-		c.Send(fmt.Sprintf("⭐⭐⭐⭐⭐ %s отримує легендарну картку: *%s*!", userName, g.CardName), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		stars := rarityStars[g.Rarity]
+		rName := rarityNames[g.Rarity]
+		c.Send(fmt.Sprintf("%s %s отримує %s картку: *%s*!", stars, userName, rName, g.CardName), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 	}
 }
 

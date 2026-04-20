@@ -112,19 +112,26 @@ func main() {
 	}
 
 	// One-time legendary card gifts
+	rarityStarsMap := map[int]string{
+		1: "⭐", 2: "⭐⭐", 3: "⭐⭐⭐", 4: "⭐⭐⭐⭐", 5: "⭐⭐⭐⭐⭐", 6: "💎💎💎💎💎💎",
+	}
+	rarityNamesMap := map[int]string{
+		1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "Legendary", 6: "Ultra Legendary",
+	}
 	type cardGift struct {
 		Key      string
 		UserName string
 		CardID   int
 		CardName string
+		Rarity   int
 	}
 	cardGifts := []cardGift{
-		{"gift_bo_kercher", "Bo", 602, "Фотка з Керхер"},
-		{"gift_danya_rain", "Danya", 603, "Дощ після 3-ох фазної мийки"},
-		{"gift_data_emerald", "Data", 604, "Смарагдове небо"},
-		{"gift_bo_zhmykh", "Bo", 605, "Жмих"},
-		{"gift_bo_melisa", "Bo", 606, "Меліса"},
-		{"gift_danya_46", "Danya", 607, "Ті самі 46 баксів"},
+		{"gift_bo_kercher", "Bo", 602, "Фотка з Керхер", 5},
+		{"gift_danya_rain", "Danya", 603, "Дощ після 3-ох фазної мийки", 5},
+		{"gift_data_emerald", "Data", 604, "Смарагдове небо", 5},
+		{"gift_bo_zhmykh", "Bo", 605, "Жмих", 1},
+		{"gift_bo_melisa", "Bo", 606, "Меліса", 2},
+		{"gift_danya_46", "Danya", 607, "Ті самі 46 баксів", 2},
 	}
 	var giftMessages []string
 	for _, g := range cardGifts {
@@ -132,7 +139,9 @@ func main() {
 			if uid, found := db.FindUserByName(g.UserName); found {
 				db.AddToCollection(uid, g.CardID)
 				db.SetMeta(g.Key, "done")
-				giftMessages = append(giftMessages, fmt.Sprintf("⭐⭐⭐⭐⭐ %s отримує легендарну картку: *%s*!", g.UserName, g.CardName))
+				stars := rarityStarsMap[g.Rarity]
+				rName := rarityNamesMap[g.Rarity]
+				giftMessages = append(giftMessages, fmt.Sprintf("%s %s отримує %s картку: *%s*!", stars, g.UserName, rName, g.CardName))
 				log.Printf("Gifted %s card #%d (%s)", g.UserName, g.CardID, g.CardName)
 			}
 		}
