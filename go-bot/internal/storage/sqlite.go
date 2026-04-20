@@ -389,6 +389,13 @@ func (d *DB) FindCardByName(name string) BattleCard {
 	return card
 }
 
+func (d *DB) FindCardByID(id int) BattleCard {
+	var card BattleCard
+	d.db.QueryRow(`SELECT id, name, rarity, emoji, atk, def, special_name, special FROM cards WHERE id = ?`, id).
+		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
+	return card
+}
+
 func (d *DB) RemoveFromCollection(userID string, cardID int) bool {
 	var count int
 	d.db.QueryRow(`SELECT count FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID).Scan(&count)

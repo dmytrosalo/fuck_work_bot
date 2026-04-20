@@ -83,7 +83,7 @@ func (b *Bot) handleGift(c tele.Context) error {
 
 	args := strings.Fields(c.Message().Payload)
 	if len(args) < 2 {
-		return c.Reply("Формат: /gift @username назва картки")
+		return c.Reply("Формат: /gift @username <ID або назва>")
 	}
 
 	recipientName := strings.TrimPrefix(args[0], "@")
@@ -100,8 +100,14 @@ func (b *Bot) handleGift(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("❌ Гравець %s не знайдений", recipientName))
 	}
 
-	// Find card by name
-	card := b.db.FindCardByName(cardQuery)
+	// Find card by ID or name
+	var card storage.BattleCard
+	if id, err := strconv.Atoi(cardQuery); err == nil {
+		card = b.db.FindCardByID(id)
+	}
+	if card.ID == 0 {
+		card = b.db.FindCardByName(cardQuery)
+	}
 	if card.ID == 0 {
 		return c.Reply(fmt.Sprintf("❌ Картка '%s' не знайдена", cardQuery))
 	}
@@ -134,10 +140,16 @@ func (b *Bot) handleBurn(c tele.Context) error {
 
 	cardQuery := strings.TrimSpace(c.Message().Payload)
 	if cardQuery == "" {
-		return c.Reply("Формат: /burn назва картки\nCommon=5🪙, Uncommon=10, Rare=25, Epic=50, Legendary=100")
+		return c.Reply("Формат: /burn <ID або назва>\nCommon=5🪙, Uncommon=10, Rare=25, Epic=50, Legendary=100")
 	}
 
-	card := b.db.FindCardByName(cardQuery)
+	var card storage.BattleCard
+	if id, err := strconv.Atoi(cardQuery); err == nil {
+		card = b.db.FindCardByID(id)
+	}
+	if card.ID == 0 {
+		card = b.db.FindCardByName(cardQuery)
+	}
 	if card.ID == 0 {
 		return c.Reply(fmt.Sprintf("❌ Картка '%s' не знайдена", cardQuery))
 	}

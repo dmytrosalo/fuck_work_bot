@@ -241,6 +241,12 @@ body {
   font-size: 44px;
   filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4));
 }
+.card-top .card-id {
+  position: absolute;
+  top: 6px; left: 6px;
+  font-size: 9px; font-weight: 700;
+  color: rgba(255,255,255,0.35);
+}
 .card-top .badge {
   position: absolute;
   top: 6px; right: 6px;
@@ -328,6 +334,7 @@ body {
     <div class="card" onclick="toggle(this)"
          style="border-color:{{$accent}}; background:{{$bg}}; box-shadow:0 0 10px {{$accent}}25;">
       <div class="card-top" style="background:linear-gradient(180deg, {{$bg}} 0%, rgba(0,0,0,0.3) 100%);">
+        <span class="card-id">#{{.ID}}</span>
         <div class="emoji">{{.Emoji}}</div>
         <span class="power" style="color:{{$accent}}">{{power .ATK .DEF .Special}}</span>
         {{if gt .Count 1}}<span class="badge">x{{.Count}}</span>{{end}}
