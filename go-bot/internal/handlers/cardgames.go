@@ -45,6 +45,12 @@ func (b *Bot) handleSteal(c tele.Context) error {
 		return c.Reply("Не можна красти у себе 🤦")
 	}
 
+	// Target must have more than 10 cards
+	targetUnique, _ := b.db.GetCollectionStats(targetID)
+	if targetUnique < 5 {
+		return c.Reply(fmt.Sprintf("🛡 У %s менше 5 карток — красти не можна!", targetName))
+	}
+
 	// Check cooldown
 	today := todayKyiv()
 	stealKey := "steal:" + userID + ":" + today
