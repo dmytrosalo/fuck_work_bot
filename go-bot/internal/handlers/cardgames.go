@@ -58,8 +58,10 @@ func (b *Bot) handleSteal(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("🕐 Ти вже крав сьогодні. Скидання через %s", timeUntilReset()))
 	}
 
-	// 30% success, 70% fail
-	if rand.Intn(100) < 30 {
+	// 30% success + title bonus
+	stealBonus := b.getTitleBonus(userID)
+	stealChance := 30 + stealBonus.StealChanceAdd
+	if rand.Intn(100) < stealChance {
 		// Success — steal random card
 		card := b.db.GetRandomCollectionCard(targetID)
 		if card.ID == 0 {

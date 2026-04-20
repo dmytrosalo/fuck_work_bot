@@ -87,8 +87,10 @@ func (b *Bot) handleSlots(c tele.Context) error {
 	if bet < 1 {
 		return c.Reply("❌ Мінімальна ставка: 1 🪙")
 	}
-	if bet > maxBet {
-		return c.Reply(fmt.Sprintf("❌ Максимальна ставка: %d 🪙", maxBet))
+	bonus := b.getTitleBonus(userID)
+	effectiveMaxBet := maxBet + bonus.SlotMaxBetAdd
+	if bet > effectiveMaxBet {
+		return c.Reply(fmt.Sprintf("❌ Максимальна ставка: %d 🪙", effectiveMaxBet))
 	}
 
 	// Check balance
@@ -197,16 +199,23 @@ func (b *Bot) handleDaily(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("🎁 Ти вже забрав бонус. Скидання через %s", timeUntilReset()))
 	}
 
-	newBalance := b.db.UpdateBalance(userID, userName, dailyBonus)
-	b.db.LogTransaction(userID, userName, "daily", dailyBonus)
+	dailyBoost := b.getTitleBonus(userID)
+	totalDaily := dailyBonus + dailyBoost.DailyBonus
+	newBalance := b.db.UpdateBalance(userID, userName, totalDaily)
+	b.db.LogTransaction(userID, userName, "daily", totalDaily)
 	b.db.SetMeta(key, today)
 
 	b.db.IncrementStat(userID, "daily_claimed", 1)
-	b.db.IncrementStat(userID, "total_earned", dailyBonus)
+	b.db.IncrementStat(userID, "total_earned", totalDaily)
 	b.db.SetStatMax(userID, "max_balance", newBalance)
 	b.checkAchievements(c, userID, userName)
 
-	return c.Reply(fmt.Sprintf("🎁 *Щоденний бонус!*\n\n+%d 🪙\nБаланс: %d 🪙", dailyBonus, newBalance), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	msg := fmt.Sprintf("🎁 *Щоденний бонус!*\n\n+%d 🪙", totalDaily)
+	if dailyBoost.DailyBonus > 0 {
+		msg += fmt.Sprintf(" (базовий %d + титул %d)", dailyBonus, dailyBoost.DailyBonus)
+	}
+	msg += fmt.Sprintf("\nБаланс: %d 🪙", newBalance)
+	return c.Reply(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
 func (b *Bot) handleTop(c tele.Context) error {

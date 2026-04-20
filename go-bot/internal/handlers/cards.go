@@ -87,10 +87,14 @@ func (b *Bot) handlePack(c tele.Context) error {
 	b.db.IncrementStat(userID, "packs_opened", 1)
 	b.db.IncrementStat(userID, "total_spent", packCost)
 
-	// Roll 3 cards: 2 random + 1 guaranteed uncommon+
+	// Roll cards: 2 random + 1 guaranteed uncommon+ (+ title bonus)
 	var cards []CardData
+	packBonus := b.getTitleBonus(userID)
 
 	rarities := []int{rollRarity(), rollRarity(), rollGuaranteedRarity()}
+	for i := 0; i < packBonus.PackCards; i++ {
+		rarities = append(rarities, rollRarity())
+	}
 	for _, rarity := range rarities {
 		fc := b.db.GetRandomCard(rarity)
 		if fc.ID == 0 {

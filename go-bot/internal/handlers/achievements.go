@@ -142,6 +142,49 @@ var allAchievements = []achievement{
 		func(s storage.UserStats, u int, r map[int]int, m int) bool { return false }},
 }
 
+// Title passive bonuses
+type titleBonus struct {
+	Description string
+	// Modifiers (0 = no effect)
+	DailyBonus     int // extra coins on /daily
+	PackCards      int // extra cards per pack (0 = default 3)
+	RobChanceAdd   int // added to rob success % (base 33)
+	StealChanceAdd int // added to steal success % (base 30)
+	SlotMaxBetAdd  int // added to max slot/bj bet (base 500)
+	SlotsLuckAdd   int // added to slot win % approximation
+}
+
+var titleBonuses = map[string]titleBonus{
+	"Збирач":      {Description: "+1 картка в паку", PackCards: 1},
+	"Магнат":      {Description: "+1 картка в паку, +25 /daily", PackCards: 1, DailyBonus: 25},
+	"Легенда":     {Description: "+2 картки в паку, +50 /daily", PackCards: 2, DailyBonus: 50},
+	"Золотий":     {Description: "+1 картка в паку", PackCards: 1},
+	"Барон":       {Description: "+1 картка в паку, +25 /daily", PackCards: 1, DailyBonus: 25},
+	"Олігарх":     {Description: "+50 /daily", DailyBonus: 50},
+	"Багатій":     {Description: "+25 /daily", DailyBonus: 25},
+	"Щедрий":      {Description: "+25 /daily", DailyBonus: 25},
+	"Воїн":        {Description: "+5% steal", StealChanceAdd: 5},
+	"Чемпіон":     {Description: "+10% steal, +5% rob", StealChanceAdd: 10, RobChanceAdd: 5},
+	"Злодій":      {Description: "+10% steal", StealChanceAdd: 10},
+	"Грабіжник":   {Description: "+10% rob", RobChanceAdd: 10},
+	"Гемблер":     {Description: "+100 макс ставка", SlotMaxBetAdd: 100},
+	"Джекпот":     {Description: "+200 макс ставка", SlotMaxBetAdd: 200},
+	"Шулер":       {Description: "+100 макс ставка", SlotMaxBetAdd: 100},
+	"Фартовий":    {Description: "+5% слоти", SlotsLuckAdd: 5},
+	"Сова":        {Description: "x2 нагорода 00:00-06:00", DailyBonus: 0},
+	"Геній":       {Description: "+50 /daily", DailyBonus: 50},
+	"Банкрут":     {Description: "+10 /daily", DailyBonus: 10},
+}
+
+// getTitleBonus returns the active title's bonus for a user (zero value if none)
+func (b *Bot) getTitleBonus(userID string) titleBonus {
+	title := b.db.GetActiveTitle(userID)
+	if title == "" {
+		return titleBonus{}
+	}
+	return titleBonuses[title]
+}
+
 var achievementByID = func() map[string]*achievement {
 	m := make(map[string]*achievement)
 	for i := range allAchievements {
@@ -283,10 +326,14 @@ func (b *Bot) handleTitle(c tele.Context) error {
 		var sb strings.Builder
 		sb.WriteString("🏷 *Доступні титули:*\n\n")
 		for _, t := range titles {
+			bonusDesc := ""
+			if b, ok := titleBonuses[t]; ok && b.Description != "" {
+				bonusDesc = " — _" + b.Description + "_"
+			}
 			if t == current {
-				sb.WriteString(fmt.Sprintf("  ▸ *%s* (активний)\n", t))
+				sb.WriteString(fmt.Sprintf("  ▸ *%s* (активний)%s\n", t, bonusDesc))
 			} else {
-				sb.WriteString(fmt.Sprintf("  ▸ %s\n", t))
+				sb.WriteString(fmt.Sprintf("  ▸ %s%s\n", t, bonusDesc))
 			}
 		}
 		sb.WriteString("\n/title <назва> — встановити\n/title off — прибрати")
