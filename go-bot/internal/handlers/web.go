@@ -25,11 +25,24 @@ func RegisterWeb(mux *http.ServeMux, db *storage.DB) {
 
 type collectionPageData struct {
 	UserName     string
+	Title        string
 	Unique       int
 	Total        int
 	Balance      int
 	RarityCounts map[int]int
 	Sections     []raritySection
+	Stats        storage.UserStats
+	Achievements []achievementDisplay
+	AchCount     int
+	AchTotal     int
+}
+
+type achievementDisplay struct {
+	Emoji       string
+	Name        string
+	Description string
+	Unlocked    bool
+	Hidden      bool
 }
 
 type raritySection struct {
@@ -127,13 +140,36 @@ func handleCollectionPage(w http.ResponseWriter, r *http.Request, db *storage.DB
 		})
 	}
 
+	title := db.GetActiveTitle(userID)
+	userStats := db.GetUserStats(userID)
+	unlockedIDs := db.GetUnlockedAchievements(userID)
+	unlockedSet := make(map[string]bool)
+	for _, id := range unlockedIDs {
+		unlockedSet[id] = true
+	}
+	var achDisplays []achievementDisplay
+	for _, a := range allAchievements {
+		achDisplays = append(achDisplays, achievementDisplay{
+			Emoji:       a.Emoji,
+			Name:        a.Name,
+			Description: a.Description,
+			Unlocked:    unlockedSet[a.ID],
+			Hidden:      a.Hidden,
+		})
+	}
+
 	data := collectionPageData{
 		UserName:     userName,
+		Title:        title,
 		Unique:       unique,
 		Total:        total,
 		Balance:      balance,
 		RarityCounts: rarityCounts,
 		Sections:     sections,
+		Stats:        userStats,
+		Achievements: achDisplays,
+		AchCount:     len(unlockedIDs),
+		AchTotal:     len(allAchievements),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -309,16 +345,134 @@ body {
 }
 .card.expanded .desc { display: block; }
 .card.expanded { aspect-ratio: auto; }
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 4px;
+}
+.stats-panel {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 24px;
+}
+@media (min-width: 600px) {
+  .stats-panel { grid-template-columns: repeat(4, 1fr); }
+}
+.stat-group {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 12px;
+}
+.stat-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 2px 0;
+}
+.stat-row span:first-child { color: rgba(255,255,255,0.5); }
+.stat-row span:last-child { font-weight: 600; }
+.ach-section { margin-bottom: 24px; }
+.ach-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+@media (min-width: 500px) {
+  .ach-grid { grid-template-columns: repeat(5, 1fr); }
+}
+.ach-badge {
+  text-align: center;
+  padding: 10px 4px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.ach-badge.unlocked {
+  background: rgba(251,191,36,0.08);
+  border-color: rgba(251,191,36,0.2);
+}
+.ach-badge.locked { opacity: 0.4; }
+.ach-emoji { font-size: 24px; display: block; }
+.ach-name { font-size: 9px; font-weight: 600; display: block; margin-top: 4px; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>{{.UserName}}</h1>
+  {{if .Title}}<div class="title">{{.Title}}</div>{{end}}
   <div class="progress">{{.Unique}} / {{.Total}} cards</div>
   <div class="balance">{{.Balance}} coins</div>
   <div class="rarity-counts">
     {{range $s := .Sections}}
     <span style="border:1px solid {{$s.AccentCSS}}50; color:{{$s.AccentCSS}}">{{$s.Stars}} {{index $.RarityCounts $s.Rarity}}</span>
+    {{end}}
+  </div>
+</div>
+
+<div class="stats-panel">
+  <div class="stat-group">
+    <div class="stat-title">Економіка</div>
+    <div class="stat-row"><span>Заробив</span><span>{{.Stats.TotalEarned}} 🪙</span></div>
+    <div class="stat-row"><span>Витратив</span><span>{{.Stats.TotalSpent}} 🪙</span></div>
+    <div class="stat-row"><span>Макс баланс</span><span>{{.Stats.MaxBalance}} 🪙</span></div>
+    <div class="stat-row"><span>Паки</span><span>{{.Stats.PacksOpened}}</span></div>
+  </div>
+  <div class="stat-group">
+    <div class="stat-title">PvP</div>
+    <div class="stat-row"><span>Дуелі</span><span>{{.Stats.DuelsWon}}W / {{.Stats.DuelsLost}}L</span></div>
+    <div class="stat-row"><span>Серія</span><span>{{.Stats.MaxDuelStreak}}</span></div>
+    <div class="stat-row"><span>Вкрадено карт</span><span>{{.Stats.CardsStolen}}</span></div>
+    <div class="stat-row"><span>Пограбовано</span><span>{{.Stats.CoinsRobbed}} 🪙</span></div>
+  </div>
+  <div class="stat-group">
+    <div class="stat-title">Казино</div>
+    <div class="stat-row"><span>Слоти</span><span>{{.Stats.SlotsPlayed}}</span></div>
+    <div class="stat-row"><span>Блекджек</span><span>{{.Stats.BJPlayed}}</span></div>
+    <div class="stat-row"><span>Макс виграш</span><span>{{.Stats.SlotsMaxWin}} 🪙</span></div>
+    <div class="stat-row"><span>BJ натурал</span><span>{{.Stats.BJBlackjacks}}</span></div>
+  </div>
+  <div class="stat-group">
+    <div class="stat-title">Соціальне</div>
+    <div class="stat-row"><span>Роасти</span><span>{{.Stats.RoastsGiven}}</span></div>
+    <div class="stat-row"><span>Цитати</span><span>{{.Stats.QuotesAdded}}</span></div>
+    <div class="stat-row"><span>Подаровано</span><span>{{.Stats.CardsGifted}}</span></div>
+    <div class="stat-row"><span>Wordle</span><span>{{.Stats.WordlePlayed}}</span></div>
+  </div>
+</div>
+
+<div class="ach-section">
+  <div class="section-header" style="border-color:#fbbf24; color:#fbbf24">
+    🏆 Досягнення ({{.AchCount}}/{{.AchTotal}})
+  </div>
+  <div class="ach-grid">
+    {{range .Achievements}}
+    {{if .Unlocked}}
+    <div class="ach-badge unlocked">
+      <span class="ach-emoji">{{.Emoji}}</span>
+      <span class="ach-name">{{.Name}}</span>
+    </div>
+    {{else if .Hidden}}
+    <div class="ach-badge locked">
+      <span class="ach-emoji">🔒</span>
+      <span class="ach-name">???</span>
+    </div>
+    {{else}}
+    <div class="ach-badge locked">
+      <span class="ach-emoji">{{.Emoji}}</span>
+      <span class="ach-name">{{.Name}}</span>
+    </div>
+    {{end}}
     {{end}}
   </div>
 </div>
