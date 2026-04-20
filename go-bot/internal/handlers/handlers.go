@@ -371,9 +371,15 @@ func (b *Bot) handleMarkWork(c tele.Context) error {
 	if c.Message().ReplyTo == nil || c.Message().ReplyTo.Text == "" {
 		return c.Reply("Відповідай на повідомлення командою /work щоб позначити його як робочe")
 	}
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	msgID := fmt.Sprintf("%d", c.Message().ReplyTo.ID)
+	feedbackKey := "fb:" + userID + ":" + msgID
+	if b.db.GetMeta(feedbackKey) != "" {
+		return c.Reply("⚠️ Ти вже оцінив це повідомлення")
+	}
 	text := c.Message().ReplyTo.Text
 	b.db.SaveFeedback(text, "work")
-	userID := strconv.FormatInt(c.Sender().ID, 10)
+	b.db.SetMeta(feedbackKey, "work")
 	userName := c.Sender().FirstName
 	b.db.UpdateBalance(userID, userName, 10)
 	b.db.LogTransaction(userID, userName, "feedback", 10)
@@ -385,9 +391,15 @@ func (b *Bot) handleMarkNotWork(c tele.Context) error {
 	if c.Message().ReplyTo == nil || c.Message().ReplyTo.Text == "" {
 		return c.Reply("Відповідай на повідомлення командою /notwork щоб позначити його як не робочe")
 	}
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	msgID := fmt.Sprintf("%d", c.Message().ReplyTo.ID)
+	feedbackKey := "fb:" + userID + ":" + msgID
+	if b.db.GetMeta(feedbackKey) != "" {
+		return c.Reply("⚠️ Ти вже оцінив це повідомлення")
+	}
 	text := c.Message().ReplyTo.Text
 	b.db.SaveFeedback(text, "personal")
-	userID := strconv.FormatInt(c.Sender().ID, 10)
+	b.db.SetMeta(feedbackKey, "notwork")
 	userName := c.Sender().FirstName
 	b.db.UpdateBalance(userID, userName, 10)
 	b.db.LogTransaction(userID, userName, "feedback", 10)
