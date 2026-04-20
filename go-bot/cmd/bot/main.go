@@ -123,6 +123,8 @@ func main() {
 		{"gift_danya_rain", "Danya", 603, "Дощ після 3-ох фазної мийки"},
 		{"gift_data_emerald", "Data", 604, "Смарагдове небо"},
 		{"gift_bo_zhmykh", "Bo", 605, "Жмих"},
+		{"gift_bo_melisa", "Bo", 606, "Меліса"},
+		{"gift_danya_46", "Danya", 607, "Ті самі 46 баксів"},
 	}
 	var giftMessages []string
 	for _, g := range cardGifts {

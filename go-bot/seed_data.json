@@ -16379,6 +16379,34 @@
         "special_name": "ЗАЛИШОК",
         "special": 20
       }
+    },
+    {
+      "id": 606,
+      "name": "Меліса",
+      "rarity": 2,
+      "category": "uncommon",
+      "emoji": "🌿",
+      "description": "Bo каже що це просто чай. Просто чай. Нічого більше. Заспокійливий чай.",
+      "stats": {
+        "atk": 24,
+        "def": 45,
+        "special_name": "РЕЛАКС",
+        "special": 22
+      }
+    },
+    {
+      "id": 607,
+      "name": "Ті самі 46 баксів",
+      "rarity": 2,
+      "category": "uncommon",
+      "emoji": "💵",
+      "description": "Danya досі пам'ятає ці 46 доларів. І ти тепер теж.",
+      "stats": {
+        "atk": 34,
+        "def": 53,
+        "special_name": "БОРГ",
+        "special": 29
+      }
     }
   ]
 }
