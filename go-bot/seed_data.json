@@ -16365,6 +16365,20 @@
         "special_name": "МАГІЯ",
         "special": 105
       }
+    },
+    {
+      "id": 605,
+      "name": "Жмих",
+      "rarity": 1,
+      "category": "common",
+      "emoji": "🫗",
+      "description": "Те що залишається після кави, після роботи, після всього. Bo знає.",
+      "stats": {
+        "atk": 35,
+        "def": 18,
+        "special_name": "ЗАЛИШОК",
+        "special": 20
+      }
     }
   ]
 }

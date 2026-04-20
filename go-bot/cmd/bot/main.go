@@ -122,6 +122,7 @@ func main() {
 		{"gift_bo_kercher", "Bo", 602, "Фотка з Керхер"},
 		{"gift_danya_rain", "Danya", 603, "Дощ після 3-ох фазної мийки"},
 		{"gift_data_emerald", "Data", 604, "Смарагдове небо"},
+		{"gift_bo_zhmykh", "Bo", 605, "Жмих"},
 	}
 	var giftMessages []string
 	for _, g := range cardGifts {
