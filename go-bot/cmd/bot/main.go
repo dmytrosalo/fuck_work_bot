@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dmytrosalo/fuck-work-bot/internal/classifier"
@@ -109,6 +111,30 @@ func main() {
 		log.Fatalf("Failed to create bot: %v", err)
 	}
 
+	// One-time legendary card gifts
+	type cardGift struct {
+		Key      string
+		UserName string
+		CardID   int
+		CardName string
+	}
+	cardGifts := []cardGift{
+		{"gift_bo_kercher", "Bo", 602, "Фотка з Керхер"},
+		{"gift_danya_rain", "Danya", 603, "Дощ після 3-ох фазної мийки"},
+		{"gift_data_emerald", "Data", 604, "Смарагдове небо"},
+	}
+	var giftMessages []string
+	for _, g := range cardGifts {
+		if db.GetMeta(g.Key) == "" {
+			if uid, found := db.FindUserByName(g.UserName); found {
+				db.AddToCollection(uid, g.CardID)
+				db.SetMeta(g.Key, "done")
+				giftMessages = append(giftMessages, fmt.Sprintf("⭐⭐⭐⭐⭐ %s отримує легендарну картку: *%s*!", g.UserName, g.CardName))
+				log.Printf("Gifted %s card #%d (%s)", g.UserName, g.CardID, g.CardName)
+			}
+		}
+	}
+
 	// Register handlers
 	h := handlers.New(clf, db)
 	h.Register(bot)
@@ -122,6 +148,25 @@ func main() {
 			log.Printf("Web server error: %v", err)
 		}
 	}()
+
+	// Send card gift announcements to all chats
+	if len(giftMessages) > 0 {
+		go func() {
+			time.Sleep(3 * time.Second) // wait for bot to connect
+			chats, err := db.GetActiveChats()
+			if err != nil {
+				return
+			}
+			msg := "🎉 *Нові легендарні картки!*\n\n" + strings.Join(giftMessages, "\n")
+			for _, chatID := range chats {
+				id, err := strconv.ParseInt(chatID, 10, 64)
+				if err != nil {
+					continue
+				}
+				bot.Send(&tele.Chat{ID: id}, msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+			}
+		}()
+	}
 
 	// Schedule daily report at 23:00 Kyiv time
 	go scheduleDailyReport(bot, h)

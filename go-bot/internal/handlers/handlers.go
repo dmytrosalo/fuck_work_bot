@@ -96,7 +96,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /quote — цитата з чату
 /addquote — зберегти цитату
 
-🃏 *Картки (502 шт):*
+🃏 *Картки (505 шт):*
 /pack — пак (40 🪙, макс 7/день)
 /collection — колекція
 /duel — дуель з вибором картки
@@ -151,12 +151,12 @@ func (b *Bot) handleHelp(c tele.Context) error {
 • /blackjack: 1-500 🪙, Hit/Stand кнопки
 • Blackjack (21 з 2 карт) = x2.5
 
-🃏 *Картки (502 шт)*
+🃏 *Картки (505 шт)*
 ⭐ Common (41.5%) — 182 шт
 ⭐⭐ Uncommon (30%) — 146 шт
 ⭐⭐⭐ Rare (20%) — 107 шт
 ⭐⭐⭐⭐ Epic (7%) — 47 шт
-⭐⭐⭐⭐⭐ Legendary (1.2%) — 17 шт
+⭐⭐⭐⭐⭐ Legendary (1.2%) — 20 шт
 💎 ULTRA LEGENDARY MAX PRO (0.3%) — 3 шт
 • Пак = 3 картки, макс 7/день
 • Sacrifice: 7 карток → 1 вищої (Ultra не крафтиться)

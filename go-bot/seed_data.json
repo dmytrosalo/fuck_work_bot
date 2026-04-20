@@ -16323,6 +16323,48 @@
         "special_name": "ВПЛИВ",
         "special": 123
       }
+    },
+    {
+      "id": 602,
+      "name": "Фотка з Керхер",
+      "rarity": 5,
+      "category": "legendary",
+      "emoji": "💦",
+      "description": "facethestrange миє все що бачить — машини, тротуар, сусідів. Керхер — це не інструмент, це стиль життя.",
+      "stats": {
+        "atk": 110,
+        "def": 104,
+        "special_name": "ТИСК",
+        "special": 112
+      }
+    },
+    {
+      "id": 603,
+      "name": "Дощ після 3-ох фазної мийки",
+      "rarity": 5,
+      "category": "legendary",
+      "emoji": "🌧",
+      "description": "Danya помив машину на 3-фазній мийці, а через годину пішов дощ. Класика.",
+      "stats": {
+        "atk": 123,
+        "def": 91,
+        "special_name": "НЕВЕЗІННЯ",
+        "special": 114
+      }
+    },
+    {
+      "id": 604,
+      "name": "Смарагдове небо",
+      "rarity": 5,
+      "category": "legendary",
+      "emoji": "💚",
+      "description": "kondzhariia_data побачив смарагдове небо і зрозумів — це або магія, або знову баг у продакшені.",
+      "stats": {
+        "atk": 100,
+        "def": 88,
+        "special_name": "МАГІЯ",
+        "special": 105
+      }
     }
   ]
 }
