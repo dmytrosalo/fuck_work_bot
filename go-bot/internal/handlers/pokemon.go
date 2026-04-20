@@ -51,7 +51,7 @@ var typeEmoji = map[string]string{
 
 // dailyPokemonID returns a deterministic Pokemon ID for a user on a given day.
 func dailyPokemonID(userID string) int {
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 	h := fnv.New32a()
 	h.Write([]byte(userID + today))
 	return int(h.Sum32()%1010) + 1

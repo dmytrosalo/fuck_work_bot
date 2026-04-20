@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"math/rand"
-	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -39,7 +38,7 @@ func (b *Bot) handleRob(c tele.Context) error {
 	}
 
 	// Cooldown: 1 per hour
-	today := time.Now().Format("2006-01-02-15")
+	today := nowHourKyiv()
 	robKey := "rob:" + userID + ":" + today
 	if b.db.GetMeta(robKey) != "" {
 		return c.Reply(fmt.Sprintf("🕐 Можна грабувати раз на годину! Через %s", timeUntilNextHour()))

@@ -5,7 +5,6 @@ import (
 	"hash/fnv"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	tele "gopkg.in/telebot.v3"
@@ -232,7 +231,7 @@ var cleanWords = []string{
 
 // userWord returns a unique word per user per game (not shared)
 func userWord(userID string, gameNum int) string {
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 	h := fnv.New32a()
 	h.Write([]byte(today + userID + fmt.Sprintf("%d", gameNum) + "wordle"))
 	idx := int(h.Sum32()) % len(cleanWords)
@@ -258,7 +257,7 @@ const maxWordlePerDay = 3
 
 func (b *Bot) handleWordle(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 
 	// Check how many games played today
 	countKey := "wordle_count:" + userID + ":" + today
@@ -384,7 +383,7 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		delete(activeWordles, userID)
 		wordleMu.Unlock()
 
-		today := time.Now().Format("2006-01-02")
+		today := todayKyiv()
 		countKey := "wordle_count:" + userID + ":" + today
 		countStr := b.db.GetMeta(countKey)
 		played := 0
@@ -417,7 +416,7 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		delete(activeWordles, userID)
 		wordleMu.Unlock()
 
-		today := time.Now().Format("2006-01-02")
+		today := todayKyiv()
 		countKey := "wordle_count:" + userID + ":" + today
 		countStr2 := b.db.GetMeta(countKey)
 		played2 := 0

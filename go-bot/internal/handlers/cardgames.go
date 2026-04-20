@@ -46,7 +46,7 @@ func (b *Bot) handleSteal(c tele.Context) error {
 	}
 
 	// Check cooldown
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 	stealKey := "steal:" + userID + ":" + today
 	if b.db.GetMeta(stealKey) != "" {
 		return c.Reply(fmt.Sprintf("🕐 Ти вже крав сьогодні. Скидання через %s", timeUntilReset()))

@@ -56,7 +56,7 @@ func (b *Bot) handleQuiz(c tele.Context) error {
 	if userName == "" {
 		userName = c.Sender().Username
 	}
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 
 	// Check daily limit
 	key := "quiz:" + userID + ":" + today

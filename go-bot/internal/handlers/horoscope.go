@@ -19,7 +19,7 @@ var devSigns = []string{
 }
 
 func getDailySign(userID string) string {
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 	h := fnvHash(userID + today + "sign")
 	return devSigns[h%uint32(len(devSigns))]
 }
@@ -35,7 +35,7 @@ func fnvHash(s string) uint32 {
 
 func (b *Bot) handleHoroscope(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 
 	// Check daily limit
 	key := "horoscope:" + userID

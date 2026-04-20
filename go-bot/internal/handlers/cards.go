@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"strings"
-	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -65,7 +64,7 @@ func rollGuaranteedRarity() int {
 
 func (b *Bot) handlePack(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 
 	userName := c.Sender().FirstName
 	if userName == "" {

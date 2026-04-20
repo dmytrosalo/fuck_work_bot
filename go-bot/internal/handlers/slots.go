@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -68,7 +67,7 @@ func (b *Bot) handleSlots(c tele.Context) error {
 	if userName == "" {
 		userName = c.Sender().Username
 	}
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 
 	// Check daily limit
 	spins := b.db.GetSlotSpinsToday(userID, today)
@@ -169,7 +168,7 @@ func (b *Bot) handleDaily(c tele.Context) error {
 	if userName == "" {
 		userName = c.Sender().Username
 	}
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 
 	key := "daily:" + userID
 	lastClaim := b.db.GetMeta(key)

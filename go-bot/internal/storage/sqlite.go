@@ -620,7 +620,7 @@ func (d *DB) GetAllActivityStats(period string) []ActivityStat {
 }
 
 func (d *DB) ClearDailyLimits() {
-	d.db.Exec(`DELETE FROM meta WHERE key LIKE '%:2026-%'`)
+	d.db.Exec(`DELETE FROM meta WHERE key LIKE '%:20__-%'`)
 	d.db.Exec(`DELETE FROM pack_opens`)
 	d.db.Exec(`DELETE FROM slot_spins`)
 }

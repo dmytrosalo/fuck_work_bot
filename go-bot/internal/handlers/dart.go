@@ -37,7 +37,7 @@ func (b *Bot) handleDart(c tele.Context) error {
 	chatID := c.Chat().ID
 
 	// Daily limit
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 	dartKey := "dart:" + userID + ":" + today
 	countStr := b.db.GetMeta(dartKey)
 	dartCount := 0
@@ -157,7 +157,7 @@ func (b *Bot) handleDartAccept(c tele.Context) {
 	pot := dart.Bet * 2
 
 	// Increment daily count for both
-	today := time.Now().Format("2006-01-02")
+	today := todayKyiv()
 	for _, uid := range []string{dart.ChallengerID, dart.OpponentID} {
 		key := "dart:" + uid + ":" + today
 		countStr := b.db.GetMeta(key)
