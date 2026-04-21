@@ -16407,6 +16407,20 @@
         "special_name": "БОРГ",
         "special": 29
       }
+    },
+    {
+      "id": 608,
+      "name": "Тєрпіла",
+      "rarity": 2,
+      "category": "uncommon",
+      "emoji": "😤",
+      "description": "Той хто терпить все: баги, дедлайни, і цього бота.",
+      "stats": {
+        "atk": 25,
+        "def": 25,
+        "special_name": "ТЕРПІННЯ",
+        "special": 40
+      }
     }
   ]
 }

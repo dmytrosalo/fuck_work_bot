@@ -240,6 +240,8 @@ type pendingGift struct {
 var pendingGifts = []pendingGift{
 	{"gift_data_emerald", "kondzhariia_data", 604, "Смарагдове небо", 5},
 	{"gift_data_emerald", "kondzhariia", 604, "Смарагдове небо", 5},
+	{"gift_data_terpila", "kondzhariia_data", 608, "Тєрпіла", 2},
+	{"gift_data_terpila", "kondzhariia", 608, "Тєрпіла", 2},
 }
 
 func (b *Bot) checkPendingGifts(c tele.Context, userID, userName string) {
