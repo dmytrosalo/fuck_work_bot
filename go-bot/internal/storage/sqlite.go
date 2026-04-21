@@ -101,6 +101,10 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+
+	// Add stage column to collection (migration for existing DBs)
+	db.Exec(`ALTER TABLE collection ADD COLUMN stage INTEGER NOT NULL DEFAULT 1`)
+
 	return nil
 }
 
@@ -311,6 +315,7 @@ type FullCard struct {
 	SpecialName string
 	Special     int
 	Count       int
+	Stage       int
 }
 
 func (d *DB) GetRandomCard(rarity int) FullCard {
@@ -356,7 +361,7 @@ func (d *DB) GetCollectionByRarity(userID string, rarity int) []CollectionCard {
 }
 
 func (d *DB) GetFullCollection(userID string) []FullCard {
-	rows, err := d.db.Query(`SELECT c.id, c.name, c.rarity, c.category, c.emoji, c.description, c.atk, c.def, c.special_name, c.special, col.count
+	rows, err := d.db.Query(`SELECT c.id, c.name, c.rarity, c.category, c.emoji, c.description, c.atk, c.def, c.special_name, c.special, col.count, col.stage
 		FROM collection col JOIN cards c ON col.card_id = c.id
 		WHERE col.user_id = ? ORDER BY c.rarity DESC, c.name`, userID)
 	if err != nil {
@@ -367,7 +372,7 @@ func (d *DB) GetFullCollection(userID string) []FullCard {
 	var cards []FullCard
 	for rows.Next() {
 		var card FullCard
-		if err := rows.Scan(&card.ID, &card.Name, &card.Rarity, &card.Category, &card.Emoji, &card.Description, &card.ATK, &card.DEF, &card.SpecialName, &card.Special, &card.Count); err != nil {
+		if err := rows.Scan(&card.ID, &card.Name, &card.Rarity, &card.Category, &card.Emoji, &card.Description, &card.ATK, &card.DEF, &card.SpecialName, &card.Special, &card.Count, &card.Stage); err != nil {
 			continue
 		}
 		cards = append(cards, card)
@@ -416,6 +421,32 @@ func (d *DB) GetRandomCollectionCard(userID string) BattleCard {
 		WHERE col.user_id = ? ORDER BY RANDOM() LIMIT 1`, userID).
 		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
 	return card
+}
+
+// GetStealableCard returns a random card that is NOT stage 2 (stage 2 cards can't be stolen)
+func (d *DB) GetStealableCard(userID string) BattleCard {
+	var card BattleCard
+	d.db.QueryRow(`SELECT c.id, c.name, c.rarity, c.emoji, c.atk, c.def, c.special_name, c.special
+		FROM collection col JOIN cards c ON col.card_id = c.id
+		WHERE col.user_id = ? AND col.stage < 2 ORDER BY RANDOM() LIMIT 1`, userID).
+		Scan(&card.ID, &card.Name, &card.Rarity, &card.Emoji, &card.ATK, &card.DEF, &card.SpecialName, &card.Special)
+	return card
+}
+
+func (d *DB) GetCardStage(userID string, cardID int) int {
+	var stage int
+	d.db.QueryRow(`SELECT stage FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID).Scan(&stage)
+	return stage
+}
+
+func (d *DB) EvolveCard(userID string, cardID int) bool {
+	var count, stage int
+	d.db.QueryRow(`SELECT count, stage FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID).Scan(&count, &stage)
+	if count < 2 || stage >= 2 {
+		return false
+	}
+	d.db.Exec(`UPDATE collection SET count = count - 1, stage = 2 WHERE user_id = ? AND card_id = ?`, userID, cardID)
+	return true
 }
 
 func (d *DB) FindUserByName(name string) (userID string, found bool) {

@@ -69,10 +69,10 @@ func (b *Bot) handleSteal(c tele.Context) error {
 	stealBonus := b.getTitleBonus(userID)
 	stealChance := 30 + stealBonus.StealChanceAdd
 	if rand.Intn(100) < stealChance {
-		// Success — steal random card
-		card := b.db.GetRandomCollectionCard(targetID)
+		// Success — steal random card (stage 2 cards can't be stolen)
+		card := b.db.GetStealableCard(targetID)
 		if card.ID == 0 {
-			return c.Reply(fmt.Sprintf("У %s немає карток!", targetName))
+			return c.Reply(fmt.Sprintf("У %s немає карток доступних для крадіжки!", targetName))
 		}
 		b.db.TransferCard(targetID, userID, card.ID)
 		b.db.SetMeta(stealKey, "done")
@@ -194,6 +194,77 @@ func (b *Bot) handleBurn(c tele.Context) error {
 	}
 	b.checkAchievements(c, userID, userName)
 	return c.Reply(fmt.Sprintf("🔥 Спалив %s %s!\n+%d 🪙 (баланс: %d)", card.Emoji, card.Name, reward, newBal))
+}
+
+// --- Evolve ---
+
+var evolveCost = map[int]int{
+	1: 50,   // Common
+	2: 100,  // Uncommon
+	3: 200,  // Rare
+	4: 500,  // Epic
+	5: 1000, // Legendary
+	6: 2000, // Ultra
+}
+
+func (b *Bot) handleEvolve(c tele.Context) error {
+	userID := fmt.Sprintf("%d", c.Sender().ID)
+	userName := c.Sender().FirstName
+	if userName == "" {
+		userName = c.Sender().Username
+	}
+
+	cardQuery := strings.TrimSpace(c.Message().Payload)
+	if cardQuery == "" {
+		return c.Reply("Формат: /evolve <ID або назва>\nПотрібно: 2 копії картки + монети\n\nВартість: Common=50, Uncommon=100, Rare=200, Epic=500, Legendary=1000, Ultra=2000\n\nStage 2: +20% стати, не можна вкрасти через /steal")
+	}
+
+	var card storage.BattleCard
+	if id, err := strconv.Atoi(cardQuery); err == nil {
+		card = b.db.FindCardByID(id)
+	}
+	if card.ID == 0 {
+		card = b.db.FindCardByName(cardQuery)
+	}
+	if card.ID == 0 {
+		return c.Reply(fmt.Sprintf("❌ Картка '%s' не знайдена", cardQuery))
+	}
+
+	// Check stage
+	stage := b.db.GetCardStage(userID, card.ID)
+	if stage == 0 {
+		return c.Reply(fmt.Sprintf("❌ У тебе немає картки %s %s", card.Emoji, card.Name))
+	}
+	if stage >= 2 {
+		return c.Reply(fmt.Sprintf("✨ %s %s вже Stage 2!", card.Emoji, card.Name))
+	}
+
+	// Check cost
+	cost := evolveCost[card.Rarity]
+	balance := b.db.GetBalance(userID, userName)
+	if balance < cost {
+		return c.Reply(fmt.Sprintf("💸 Недостатньо монет!\nЕволюція %s: %d 🪙\nБаланс: %d 🪙", card.Name, cost, balance))
+	}
+
+	// Evolve (needs 2 copies, consumes 1)
+	if !b.db.EvolveCard(userID, card.ID) {
+		return c.Reply(fmt.Sprintf("❌ Потрібно 2 копії %s %s для еволюції (маєш тільки 1)", card.Emoji, card.Name))
+	}
+
+	b.db.UpdateBalance(userID, userName, -cost)
+	b.db.LogTransaction(userID, userName, "evolve", -cost)
+	b.db.IncrementStat(userID, "total_spent", cost)
+	newBal := b.db.GetBalance(userID, "")
+
+	// Calculate new stats
+	newATK := card.ATK + card.ATK*20/100
+	newDEF := card.DEF + card.DEF*20/100
+	newSpc := card.Special + card.Special*20/100
+
+	return c.Reply(fmt.Sprintf("✨ *Еволюція!*\n\n%s *%s* → *%s+*\n\n⚔️ ATK: %d → %d\n🛡 DEF: %d → %d\n⭐ %s: %d → %d\n\n🛡 Не можна вкрасти через /steal\n-%d 🪙 (баланс: %d)",
+		card.Emoji, card.Name, card.Name,
+		card.ATK, newATK, card.DEF, newDEF, card.SpecialName, card.Special, newSpc,
+		cost, newBal), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
 // --- Sacrifice ---

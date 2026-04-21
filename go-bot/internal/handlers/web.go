@@ -179,7 +179,25 @@ func handleCollectionPage(w http.ResponseWriter, r *http.Request, db *storage.DB
 }
 
 var collectionFuncs = template.FuncMap{
-	"power": func(a, d, s int) int { return a + d + s },
+	"power": func(a, d, s, stage int) int {
+		total := a + d + s
+		if stage >= 2 {
+			total = total * 120 / 100
+		}
+		return total
+	},
+	"boost": func(val, stage int) int {
+		if stage >= 2 {
+			return val + val*20/100
+		}
+		return val
+	},
+	"cardName": func(name string, stage int) string {
+		if stage >= 2 {
+			return name + "+"
+		}
+		return name
+	},
 }
 
 var collectionTmpl = template.Must(template.New("collection").Funcs(collectionFuncs).Parse(collectionHTML))
@@ -345,6 +363,8 @@ body {
 }
 .card.expanded .desc { display: block; }
 .card.expanded { aspect-ratio: auto; }
+.card.evolved { border-width: 2px; }
+.card.evolved .name { text-shadow: 0 0 8px currentColor; }
 .title {
   font-size: 13px;
   font-weight: 600;
@@ -485,20 +505,20 @@ body {
   </div>
   <div class="grid">
     {{range .Cards}}
-    <div class="card" onclick="toggle(this)"
-         style="border-color:{{$accent}}; background:{{$bg}}; box-shadow:0 0 10px {{$accent}}25;">
+    <div class="card{{if ge .Stage 2}} evolved{{end}}" onclick="toggle(this)"
+         style="border-color:{{$accent}}; background:{{$bg}}; box-shadow:0 0 10px {{$accent}}25{{if ge .Stage 2}}, 0 0 20px {{$accent}}50, inset 0 0 15px {{$accent}}15{{end}};">
       <div class="card-top" style="background:linear-gradient(180deg, {{$bg}} 0%, rgba(0,0,0,0.3) 100%);">
-        <span class="card-id">#{{.ID}}</span>
+        <span class="card-id">#{{.ID}}{{if ge .Stage 2}} ✨{{end}}</span>
         <div class="emoji">{{.Emoji}}</div>
-        <span class="power" style="color:{{$accent}}">{{power .ATK .DEF .Special}}</span>
+        <span class="power" style="color:{{$accent}}">{{power .ATK .DEF .Special .Stage}}</span>
         {{if gt .Count 1}}<span class="badge">x{{.Count}}</span>{{end}}
       </div>
       <div class="card-info">
-        <div class="name" style="color:{{$accent}}">{{.Name}}</div>
+        <div class="name" style="color:{{$accent}}">{{cardName .Name .Stage}}</div>
         <div class="stats">
-          <span class="stat-atk">ATK {{.ATK}}</span>
-          <span class="stat-def">DEF {{.DEF}}</span>
-          <span class="stat-spc">{{.SpecialName}} {{.Special}}</span>
+          <span class="stat-atk">ATK {{boost .ATK .Stage}}</span>
+          <span class="stat-def">DEF {{boost .DEF .Stage}}</span>
+          <span class="stat-spc">{{.SpecialName}} {{boost .Special .Stage}}</span>
         </div>
         <div class="desc">{{.Description}}</div>
       </div>
