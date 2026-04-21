@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"time"
+
+	tele "gopkg.in/telebot.v3"
 )
 
 // timeUntilMidnight returns formatted time until next day reset (00:00 Kyiv)
@@ -46,4 +48,26 @@ func todayKyiv() string {
 // nowHourKyiv returns current date-hour string in Kyiv timezone (for hourly cooldowns)
 func nowHourKyiv() string {
 	return time.Now().In(kyivLocation()).Format("2006-01-02-15")
+}
+
+// autoDelete deletes messages after a delay. Pass the command context and bot response message.
+func autoDelete(bot *tele.Bot, delay time.Duration, msgs ...*tele.Message) {
+	go func() {
+		time.Sleep(delay)
+		for _, m := range msgs {
+			if m != nil {
+				bot.Delete(m)
+			}
+		}
+	}()
+}
+
+// sendAndDelete sends a message and schedules both command + response for deletion after delay
+func sendAndDelete(c tele.Context, text string, delay time.Duration, opts ...interface{}) error {
+	resp, err := c.Bot().Send(c.Chat(), text, opts...)
+	if err != nil {
+		return err
+	}
+	autoDelete(c.Bot(), delay, c.Message(), resp)
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -176,7 +177,7 @@ func (b *Bot) handleSlots(c tele.Context) error {
 	remaining := maxSpinsPerDay - spins - 1
 	msg += fmt.Sprintf("\n\n_Спінів залишилось: %d_", remaining)
 
-	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return sendAndDelete(c, msg, 10*time.Second, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
 func (b *Bot) handleBalance(c tele.Context) error {

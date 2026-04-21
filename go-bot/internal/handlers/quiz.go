@@ -45,9 +45,11 @@ var (
 )
 
 type quizState struct {
-	Correct   string
-	Reward    int
-	ExpiresAt time.Time
+	Correct    string
+	Reward     int
+	ExpiresAt  time.Time
+	QuestionMsg *tele.Message
+	CommandMsg  *tele.Message
 }
 
 func (b *Bot) handleQuiz(c tele.Context) error {
@@ -116,15 +118,6 @@ func (b *Bot) handleQuiz(c tele.Context) error {
 	reward := difficultyReward[q.Difficulty]
 	emoji := difficultyEmoji[q.Difficulty]
 
-	// Store active quiz
-	quizMu.Lock()
-	activeQuizzes[userID] = &quizState{
-		Correct:   correctLetter,
-		Reward:    reward,
-		ExpiresAt: time.Now().Add(60 * time.Second),
-	}
-	quizMu.Unlock()
-
 	// Increment count
 	b.db.SetMeta(key, fmt.Sprintf("%d", count+1))
 
@@ -138,7 +131,20 @@ func (b *Bot) handleQuiz(c tele.Context) error {
 	}
 	sb.WriteString(fmt.Sprintf("\nReply A, B, C or D (60 sec)\nReward: +%d 🪙", reward))
 
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	questionMsg, _ := c.Bot().Send(c.Chat(), sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+
+	// Store active quiz
+	quizMu.Lock()
+	activeQuizzes[userID] = &quizState{
+		Correct:     correctLetter,
+		Reward:      reward,
+		ExpiresAt:   time.Now().Add(60 * time.Second),
+		QuestionMsg: questionMsg,
+		CommandMsg:  c.Message(),
+	}
+	quizMu.Unlock()
+
+	return nil
 }
 
 // checkQuizAnswer is called from handleText for single-letter answers
@@ -170,9 +176,11 @@ func (b *Bot) checkQuizAnswer(c tele.Context) bool {
 	if text == q.Correct {
 		newBalance := b.db.UpdateBalance(userID, userName, q.Reward)
 		b.db.LogTransaction(userID, userName, "quiz", q.Reward)
-		c.Reply(fmt.Sprintf("✅ Правильно! +%d 🪙 (баланс: %d)", q.Reward, newBalance))
+		resp, _ := c.Bot().Send(c.Chat(), fmt.Sprintf("✅ %s — Правильно! +%d 🪙 (баланс: %d)", userName, q.Reward, newBalance))
+		autoDelete(c.Bot(), 10*time.Second, q.CommandMsg, q.QuestionMsg, c.Message(), resp)
 	} else {
-		c.Reply(fmt.Sprintf("❌ Неправильно! Правильна відповідь: %s", q.Correct))
+		resp, _ := c.Bot().Send(c.Chat(), fmt.Sprintf("❌ %s — Неправильно! Правильна відповідь: %s", userName, q.Correct))
+		autoDelete(c.Bot(), 10*time.Second, q.CommandMsg, q.QuestionMsg, c.Message(), resp)
 	}
 	return true
 }

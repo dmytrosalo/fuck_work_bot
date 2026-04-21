@@ -183,9 +183,10 @@ func (b *Bot) handleBlackjack(c tele.Context) error {
 	btnStand := markup.Data("✋ Stand", "bj_stand", userID)
 	markup.Inline(markup.Row(btnHit, btnStand))
 
-	msg := fmt.Sprintf("🃏 Blackjack (ставка: %d 🪙)\n\nТвої: %s = %d\nДилер: %s 🂠\n\nHit або Stand?",
-		bet, handString(game.PlayerCards), playerVal, game.DealerCards[0].String())
+	msg := fmt.Sprintf("🃏 %s — Blackjack (ставка: %d 🪙)\n\nТвої: %s = %d\nДилер: %s 🂠\n\nHit або Stand?",
+		userName, bet, handString(game.PlayerCards), playerVal, game.DealerCards[0].String())
 
+	c.Delete() // delete /blackjack command
 	return c.Send(msg, markup)
 }
 
@@ -212,8 +213,13 @@ func (b *Bot) handleBJHit(c tele.Context) error {
 		bjMu.Unlock()
 
 		bal := b.db.GetBalance(userID, "")
+		b.db.IncrementStat(userID, "bj_played", 1)
+		b.db.IncrementStat(userID, "total_spent", game.Bet)
+		b.db.LogTransaction(userID, game.UserName, "blackjack", -game.Bet)
 		c.Edit(fmt.Sprintf("🃏 Blackjack\n\nТвої: %s = %d 💥 BUST!\nДилер: %s\n\n❌ Програв -%d 🪙 (баланс: %d)",
 			handString(game.PlayerCards), playerVal, handString(game.DealerCards), game.Bet, bal))
+		// Auto-delete after 10 seconds
+		autoDelete(c.Bot(), 10*time.Second, c.Message())
 		return c.Respond(&tele.CallbackResponse{Text: "💥 Bust!"})
 	}
 
@@ -306,6 +312,8 @@ func (b *Bot) bjStand(c tele.Context, game *bjGame) error {
 		result, bal)
 
 	c.Edit(msg)
+	// Auto-delete after 10 seconds
+	autoDelete(c.Bot(), 10*time.Second, c.Message())
 	return c.Respond()
 }
 
