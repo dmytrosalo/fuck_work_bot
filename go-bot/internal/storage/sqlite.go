@@ -105,7 +105,36 @@ func migrate(db *sql.DB) error {
 	// Add stage column to collection (migration for existing DBs)
 	db.Exec(`ALTER TABLE collection ADD COLUMN stage INTEGER NOT NULL DEFAULT 1`)
 
+	// Card ideas table
+	db.Exec(`CREATE TABLE IF NOT EXISTS card_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL, idea TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)
+
 	return nil
+}
+
+func (d *DB) SaveCardIdea(userID, name, idea string) {
+	d.db.Exec(`INSERT INTO card_ideas (user_id, name, idea) VALUES (?, ?, ?)`, userID, name, idea)
+}
+
+type CardIdea struct {
+	Name      string
+	Idea      string
+	CreatedAt string
+}
+
+func (d *DB) GetCardIdeas() []CardIdea {
+	rows, err := d.db.Query(`SELECT name, idea, created_at FROM card_ideas ORDER BY created_at DESC LIMIT 50`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var ideas []CardIdea
+	for rows.Next() {
+		var ci CardIdea
+		if err := rows.Scan(&ci.Name, &ci.Idea, &ci.CreatedAt); err == nil {
+			ideas = append(ideas, ci)
+		}
+	}
+	return ideas
 }
 
 func (d *DB) Close() error {

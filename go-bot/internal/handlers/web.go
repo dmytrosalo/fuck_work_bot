@@ -14,6 +14,12 @@ func RegisterWeb(mux *http.ServeMux, db *storage.DB) {
 	mux.HandleFunc("/collection/", func(w http.ResponseWriter, r *http.Request) {
 		handleCollectionPage(w, r, db)
 	})
+	mux.HandleFunc("/help", func(w http.ResponseWriter, r *http.Request) {
+		handleHelpPage(w, r)
+	})
+	mux.HandleFunc("/ideas", func(w http.ResponseWriter, r *http.Request) {
+		handleIdeasPage(w, r, db)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -22,6 +28,222 @@ func RegisterWeb(mux *http.ServeMux, db *storage.DB) {
 		fmt.Fprint(w, "fuck-work-bot is running")
 	})
 }
+
+func handleHelpPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	helpTmpl.Execute(w, nil)
+}
+
+func handleIdeasPage(w http.ResponseWriter, r *http.Request, db *storage.DB) {
+	ideas := db.GetCardIdeas()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	ideasTmpl.Execute(w, ideas)
+}
+
+var helpTmpl = template.Must(template.New("help").Parse(helpHTML))
+var ideasTmpl = template.Must(template.New("ideas").Parse(ideasHTML))
+
+const helpHTML = `<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FuckWorkBot — Правила</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a;
+  color: #e0e0e8;
+  font-family: 'Inter', -apple-system, sans-serif;
+  padding: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+h1 { font-size: 24px; margin-bottom: 20px; text-align: center; color: #fff; }
+h2 {
+  font-size: 16px; font-weight: 700; margin: 24px 0 12px;
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border-left: 3px solid;
+}
+.eco { border-color: #fbbf24; color: #fbbf24; }
+.casino { border-color: #ff6b6b; color: #ff6b6b; }
+.cards { border-color: #4ecdc4; color: #4ecdc4; }
+.pvp { border-color: #ff8a65; color: #ff8a65; }
+.social { border-color: #ba68c8; color: #ba68c8; }
+.games { border-color: #64b5f6; color: #64b5f6; }
+.evolve { border-color: #81c784; color: #81c784; }
+.ach { border-color: #ffd54f; color: #ffd54f; }
+.cls { border-color: #90a4ae; color: #90a4ae; }
+ul { list-style: none; padding: 0; }
+li { padding: 4px 0 4px 12px; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+li:last-child { border-bottom: none; }
+code { background: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+.cmd { color: #64b5f6; font-weight: 600; }
+.note { color: rgba(255,255,255,0.5); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+th { text-align: left; padding: 6px 8px; color: rgba(255,255,255,0.4); font-size: 11px; text-transform: uppercase; }
+td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+</style>
+</head>
+<body>
+<h1>📖 Правила та механіки</h1>
+
+<h2 class="eco">💰 Економіка (богдудіки 🪙)</h2>
+<ul>
+<li>Стартовий баланс: <b>100 🪙</b></li>
+<li><span class="cmd">/daily</span> — +75 🪙 на день (титул може давати бонус)</li>
+<li><span class="cmd">/work</span> <span class="cmd">/notwork</span> — позначити повідомлення (+10 🪙, 1 раз на повідомлення)</li>
+<li><span class="cmd">/balance</span> — перевірити баланс</li>
+<li><span class="cmd">/top</span> — лідерборд</li>
+<li><span class="cmd">/casino_stats</span> — твоя казино статистика</li>
+<li><span class="cmd">/global_stats</span> — загальна статистика</li>
+</ul>
+
+<h2 class="casino">🎰 Казино</h2>
+<ul>
+<li><span class="cmd">/slots &lt;ставка&gt;</span> — слоти, 1-500 🪙, макс 20/день</li>
+<li>Три однакових = x2-x50, 💎💎💎 = ДЖЕКПОТ x50</li>
+<li><span class="cmd">/blackjack &lt;ставка&gt;</span> (<span class="cmd">/bj</span>) — блекджек, 1-500 🪙, Hit/Stand кнопки</li>
+<li>Blackjack (21 з 2 карт) = виплата x2.5</li>
+<li class="note">Титули Гемблер/Джекпот/Шулер збільшують макс ставку</li>
+</ul>
+
+<h2 class="cards">🃏 Картки (508 шт)</h2>
+<table>
+<tr><th>Рідкість</th><th>Шанс</th><th>Кількість</th></tr>
+<tr><td>⭐ Common</td><td>41.5%</td><td>183</td></tr>
+<tr><td>⭐⭐ Uncommon</td><td>30%</td><td>148</td></tr>
+<tr><td>⭐⭐⭐ Rare</td><td>20%</td><td>107</td></tr>
+<tr><td>⭐⭐⭐⭐ Epic</td><td>7%</td><td>47</td></tr>
+<tr><td>⭐⭐⭐⭐⭐ Legendary</td><td>1.2%</td><td>20</td></tr>
+<tr><td>💎 ULTRA LEGENDARY</td><td>0.3%</td><td>3</td></tr>
+</table>
+<ul>
+<li><span class="cmd">/pack</span> — відкрити пак: 3 картки, 40 🪙, макс 7/день</li>
+<li><span class="cmd">/gacha</span> — преміум пак: 1 картка Epic+, 300 🪙</li>
+<li><span class="cmd">/collection</span> — твої картки + вебсторінка</li>
+<li><span class="cmd">/card &lt;назва&gt;</span> — подивитись будь-яку картку</li>
+<li><span class="cmd">/showcase</span> — показати найкрутішу картку</li>
+<li><span class="cmd">/burn &lt;ID або назва&gt;</span> — спалити за монети (5-100 🪙)</li>
+<li><span class="cmd">/gift @user &lt;ID або назва&gt;</span> — подарувати картку</li>
+<li><span class="cmd">/sacrifice &lt;rarity&gt;</span> — 7 карток → 1 вищої рідкості</li>
+<li><span class="cmd">/auction &lt;назва&gt;</span> — аукціон 60 сек, <span class="cmd">/bid &lt;сума&gt;</span></li>
+</ul>
+
+<h2 class="evolve">✨ Еволюція</h2>
+<ul>
+<li><span class="cmd">/evolve &lt;ID або назва&gt;</span> — еволюція картки до Stage 2</li>
+<li>Потрібно: 2 копії картки + монети</li>
+<li>Stage 2: <b>+20% всіх статів</b>, не можна вкрасти через /steal</li>
+</ul>
+<table>
+<tr><th>Рідкість</th><th>Вартість</th></tr>
+<tr><td>Common</td><td>50 🪙</td></tr>
+<tr><td>Uncommon</td><td>100 🪙</td></tr>
+<tr><td>Rare</td><td>200 🪙</td></tr>
+<tr><td>Epic</td><td>500 🪙</td></tr>
+<tr><td>Legendary</td><td>1,000 🪙</td></tr>
+<tr><td>Ultra</td><td>2,000 🪙</td></tr>
+</table>
+
+<h2 class="pvp">⚔️ PvP</h2>
+<ul>
+<li><span class="cmd">/duel @user</span> → <span class="cmd">/accept</span> — обирай картку з 3, програвший віддає картку</li>
+<li><span class="cmd">/war @user</span> → <span class="cmd">/accept</span> — 3 раунди, обирай порядок</li>
+<li><span class="cmd">/steal @user</span> — 30% вкрасти картку, 70% штраф 20 🪙 (1/день, мін 5 карток у жертви)</li>
+<li><span class="cmd">/rob @user</span> — 33% вкрасти 10-33% монет, 67% штраф 20 🪙 (1/год)</li>
+<li><span class="cmd">/dart @user &lt;ставка&gt;</span> — дартс 5 раундів, банк переможцю (5/день)</li>
+<li class="note">Stage 2 картки не можна вкрасти. Деякі титули дають захист від /rob та /steal</li>
+</ul>
+
+<h2 class="social">🔥 Соціальне</h2>
+<ul>
+<li><span class="cmd">/roast @user</span> — підколка (5 🪙 за іншого, безкоштовно з титулом Токсик)</li>
+<li><span class="cmd">/compliment @user</span> — комплімент</li>
+<li><span class="cmd">/quote</span> — випадкова цитата з чату</li>
+<li><span class="cmd">/addquote</span> — зберегти цитату (відповідь на повідомлення)</li>
+</ul>
+
+<h2 class="games">🎮 Розваги</h2>
+<ul>
+<li><span class="cmd">/pokemon</span> — покемон дня 🔴</li>
+<li><span class="cmd">/horoscope</span> — дев-гороскоп 🔮 (1/день)</li>
+<li><span class="cmd">/8ball &lt;питання&gt;</span> — магічна куля 🎱</li>
+<li><span class="cmd">/cat</span> 🐱 <span class="cmd">/dog</span> 🐕 — тваринки</li>
+<li><span class="cmd">/quiz</span> — вікторина (+5-15 🪙, 10/день)</li>
+<li><span class="cmd">/guess</span> — вгадай число 1-100 (2+ гравці, +30/+100 🪙)</li>
+<li><span class="cmd">/wordle</span> — wordle (3/день, +5-30 🪙)</li>
+</ul>
+
+<h2 class="ach">🏆 Досягнення та титули</h2>
+<ul>
+<li><span class="cmd">/achievements</span> — прогрес досягнень (50 шт)</li>
+<li><span class="cmd">/title &lt;назва&gt;</span> — встановити титул</li>
+<li>Кожен титул дає пасивний бонус (більше daily, шанс steal/rob, захист, і т.д.)</li>
+<li><span class="cmd">/card_idea &lt;опис&gt;</span> — запропонувати ідею для картки</li>
+</ul>
+
+<h2 class="cls">🤖 Класифікатор</h2>
+<ul>
+<li>Кожне повідомлення аналізується на "робочість"</li>
+<li>Робоче (80%+) = 🤡 + підколка</li>
+<li><span class="cmd">/check &lt;текст&gt;</span> — перевірити текст вручну</li>
+<li><span class="cmd">/stats</span> — статистика класифікацій</li>
+<li><span class="cmd">/mute</span> / <span class="cmd">/unmute</span> — вкл/викл трекінг</li>
+</ul>
+
+</body>
+</html>`
+
+const ideasHTML = `<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Ideas</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a;
+  color: #e0e0e8;
+  font-family: 'Inter', -apple-system, sans-serif;
+  padding: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+h1 { font-size: 24px; margin-bottom: 20px; text-align: center; color: #fff; }
+.idea {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.idea .author { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 4px; }
+.idea .text { font-size: 14px; line-height: 1.5; }
+.empty { text-align: center; color: rgba(255,255,255,0.4); padding: 40px; }
+.note { text-align: center; font-size: 13px; color: rgba(255,255,255,0.3); margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>💡 Ідеї для карток</h1>
+<p class="note">Напиши в чаті: /card_idea назва — опис</p>
+{{if .}}
+{{range .}}
+<div class="idea">
+  <div class="author">{{.Name}} · {{.CreatedAt}}</div>
+  <div class="text">{{.Idea}}</div>
+</div>
+{{end}}
+{{else}}
+<div class="empty">Поки немає ідей. Будь першим!</div>
+{{end}}
+</body>
+</html>`
 
 type collectionPageData struct {
 	UserName     string

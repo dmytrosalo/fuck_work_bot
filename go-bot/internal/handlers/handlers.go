@@ -80,6 +80,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/achievements", b.handleAchievements)
 	bot.Handle("/title", b.handleTitle)
 	bot.Handle("/evolve", b.handleEvolve)
+	bot.Handle("/card_idea", b.handleCardIdea)
 	bot.Handle(tele.OnText, b.handleText)
 }
 
@@ -131,79 +132,34 @@ func (b *Bot) handleStart(c tele.Context) error {
 /dart — дартс PvP 🎯
 /war — війна карток (3 раунди) ⚔️
 
+✨ /evolve — еволюція картки (Stage 2)
+🏆 /achievements — досягнення
+🏷 /title — титули з бонусами
+💡 /card\_idea — запропонувати картку
+
 ⚙️ /mute /unmute — трекінг
 📖 /help — правила`
 	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
 func (b *Bot) handleHelp(c tele.Context) error {
-	msg := `📖 *Правила та механіки*
+	return c.Send("📖 *Правила та механіки*\n\nhttps://fuck-work-bot.fly.dev/help", &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+}
 
-💰 *Економіка (богдудіки 🪙)*
-• Старт: 100 🪙
-• /daily: +75 🪙 на день
-• /work і /notwork: +10 🪙 за мітку
-• Пак карток: 40 🪙
-• /roast @user: 5 🪙
+func (b *Bot) handleCardIdea(c tele.Context) error {
+	idea := strings.TrimSpace(c.Message().Payload)
+	if idea == "" {
+		return c.Reply("Формат: /card\\_idea назва картки — опис\n\nНаприклад: /card\\_idea Кава о 8 ранку — коли без кави нічого не працює")
+	}
 
-🎰 *Казино*
-• /slots: 1-500 🪙, макс 20/день
-• Три однакових = x2-x50, 💎💎💎 = ДЖЕКПОТ x50
-• /blackjack: 1-500 🪙, Hit/Stand кнопки
-• Blackjack (21 з 2 карт) = x2.5
+	userID := fmt.Sprintf("%d", c.Sender().ID)
+	userName := c.Sender().FirstName
+	if userName == "" {
+		userName = c.Sender().Username
+	}
 
-🃏 *Картки (505 шт)*
-⭐ Common (41.5%) — 182 шт
-⭐⭐ Uncommon (30%) — 146 шт
-⭐⭐⭐ Rare (20%) — 107 шт
-⭐⭐⭐⭐ Epic (7%) — 47 шт
-⭐⭐⭐⭐⭐ Legendary (1.2%) — 20 шт
-💎 ULTRA LEGENDARY MAX PRO (0.3%) — 3 шт
-• Пак = 3 картки, макс 7/день
-• Sacrifice: 7 карток → 1 вищої (Ultra не крафтиться)
-
-⚔️ *Бої*
-• /duel @user → /accept — обирай картку з 3
-• /war @user → /accept — 3 раунди, обирай порядок
-• Переможець забирає картку програвшого
-
-🦹 *Картки — дії*
-• /steal @user — 30% вкрасти, 70% втратити 20 🪙 → жертві (1/день)
-• /auction назва — аукціон 60 сек, /bid сума
-• /sacrifice common — 7 карток → 1 вищої рідкості
-• /gacha — преміум пак, Epic+ (300 🪙)
-• /burn назва — спалити за монети (5-100 🪙)
-• /gift @user назва — подарувати картку
-• /showcase — показати найкрутішу картку
-• /card назва — подивитись будь-яку картку
-
-🦹 *PvP*
-• /rob @user — 33% вкрасти 10-33% монет, 67% штраф → жертві (1/год)
-• /steal @user — 30% вкрасти картку, 70% штраф → жертві (1/день)
-
-🎮 *Розваги*
-• /pokemon — покемон сьогодні (1/день)
-• /horoscope — дев-гороскоп (1/день)
-• /quiz — вікторина (+5-15 🪙, 10/день)
-• /guess — вгадай число 1-100 (2+ гравці, +30/+100 🪙)
-• /wordle — wordle (3/день, +5-30 🪙)
-• /8ball — магічна куля
-• /cat /dog — тваринки
-• /roast /compliment — підколка/комплімент
-• /quote /addquote — цитати з чату
-
-⚔️ *PvP*
-• /dart @user <ставка> — дартс 5 раундів, обидва ставлять, банк переможцю (5/день)
-• /war @user — війна карток, 3 раунди (±20 🪙 + картка)
-• /rob @user — 33% вкрасти 10-33% монет, 67% штраф → жертві (1/год)
-• /steal @user — 30% вкрасти картку, 70% штраф → жертві (1/день)
-
-🤖 *Класифікатор*
-• Кожне повідомлення аналізується
-• Робоче (80%+) = 🤡 + підколка
-• /work /notwork = тренування моделі (+10 🪙)`
-
-	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	b.db.SaveCardIdea(userID, userName, idea)
+	return c.Reply("💡 Ідею збережено! Переглянути всі: https://fuck-work-bot.fly.dev/ideas")
 }
 
 func (b *Bot) handleCheck(c tele.Context) error {
