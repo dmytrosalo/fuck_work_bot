@@ -16421,6 +16421,20 @@
         "special_name": "ТЕРПІННЯ",
         "special": 40
       }
+    },
+    {
+      "id": 609,
+      "name": "Чікуха бояри",
+      "rarity": 3,
+      "category": "rare",
+      "emoji": "🧉",
+      "description": "Від всіх хвороб. Danya гарантує. Побічних ефектів немає. Напевно.",
+      "stats": {
+        "atk": 54,
+        "def": 68,
+        "special_name": "ЛІКУВАННЯ",
+        "special": 68
+      }
     }
   ]
 }
