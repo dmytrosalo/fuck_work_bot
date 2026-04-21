@@ -182,9 +182,40 @@ td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); }
 <ul>
 <li><span class="cmd">/achievements</span> — прогрес досягнень (50 шт)</li>
 <li><span class="cmd">/title &lt;назва&gt;</span> — встановити титул</li>
-<li>Кожен титул дає пасивний бонус (більше daily, шанс steal/rob, захист, і т.д.)</li>
+<li>Кожен титул дає пасивний бонус</li>
 <li><span class="cmd">/card_idea &lt;опис&gt;</span> — запропонувати ідею для картки</li>
 </ul>
+
+<h2 class="ach">🏷 Титули та пасивні бонуси</h2>
+<table>
+<tr><th>Титул</th><th>Як отримати</th><th>Бонус</th></tr>
+<tr><td>Збирач</td><td>Зібрав 50 карток</td><td>+1 картка в паку</td></tr>
+<tr><td>Магнат</td><td>Зібрав 100 карток</td><td>+1 картка в паку, +25 /daily</td></tr>
+<tr><td>Легенда</td><td>Зібрав 200 карток</td><td>+2 картки в паку, +50 /daily</td></tr>
+<tr><td>Золотий</td><td>10+ легендарних</td><td>+1 картка в паку</td></tr>
+<tr><td>Барон</td><td>Всі Rare картки</td><td>+1 картка в паку, +25 /daily</td></tr>
+<tr><td>Олігарх</td><td>Заробив 25K монет</td><td>+50 /daily</td></tr>
+<tr><td>Багатій</td><td>1,000+ монет</td><td>+25 /daily</td></tr>
+<tr><td>Щедрий</td><td>Подарував 10+ карток</td><td>+25 /daily, +25% burn</td></tr>
+<tr><td>Воїн</td><td>Виграв 15 дуелей</td><td>+5% steal</td></tr>
+<tr><td>Чемпіон</td><td>Виграв 30 дуелей</td><td>+10% steal, +5% rob</td></tr>
+<tr><td>Злодій</td><td>Вкрав 15 карток</td><td>+10% steal</td></tr>
+<tr><td>Грабіжник</td><td>Пограбував 1K монет</td><td>+10% rob</td></tr>
+<tr><td>Гемблер</td><td>200 слотів</td><td>+100 макс ставка</td></tr>
+<tr><td>Джекпот</td><td>Вибив джекпот</td><td>+200 макс ставка</td></tr>
+<tr><td>Шулер</td><td>50 блекджеків</td><td>+100 макс ставка</td></tr>
+<tr><td>Фартовий</td><td>5 слотів поспіль</td><td>+100 макс ставка, +25 /daily</td></tr>
+<tr><td>Токсик</td><td>50 роастів</td><td>безкоштовні роасти</td></tr>
+<tr><td>Жертва</td><td>Роастнули 25 разів</td><td>30% захист від /rob</td></tr>
+<tr><td>Архіваріус</td><td>20 цитат</td><td>+1 wordle/день</td></tr>
+<tr><td>Санта</td><td>Подарував 10 карток</td><td>+25 /daily, +25% burn</td></tr>
+<tr><td>Душка</td><td>20 компліментів</td><td>+25 /daily</td></tr>
+<tr><td>Банкрут</td><td>🔒 секрет</td><td>+10 /daily, 20% захист /rob</td></tr>
+<tr><td>Божевільний</td><td>🔒 секрет</td><td>+50% burn монети</td></tr>
+<tr><td>Невдаха</td><td>🔒 секрет</td><td>30% захист від /steal</td></tr>
+<tr><td>Сова</td><td>🔒 секрет</td><td>x2 виграш слотів 00:00-06:00</td></tr>
+<tr><td>Геній</td><td>🔒 секрет</td><td>+50 /daily, +1 wordle/день</td></tr>
+</table>
 
 <h2 class="cls">🤖 Класифікатор</h2>
 <ul>
