@@ -137,6 +137,7 @@ func main() {
 		{"gift_data_terpila", "Data", 608, "Тєрпіла", 2},
 		{"gift_dmytro_terpila", "Dmytro", 608, "Тєрпіла", 2},
 		{"gift_danya_chikuha", "Danya", 609, "Чікуха бояри", 3},
+		{"gift_danya_zlyden", "Danya", 610, "Злидень", 1},
 	}
 	var giftMessages []string
 	for _, g := range cardGifts {

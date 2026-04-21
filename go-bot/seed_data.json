@@ -16435,6 +16435,20 @@
         "special_name": "ЛІКУВАННЯ",
         "special": 68
       }
+    },
+    {
+      "id": 610,
+      "name": "Злидень",
+      "rarity": 1,
+      "category": "common",
+      "emoji": "🪹",
+      "description": "Коли зарплата була вчора, а до наступної ще 29 днів.",
+      "stats": {
+        "atk": 24,
+        "def": 38,
+        "special_name": "БІДНІСТЬ",
+        "special": 22
+      }
     }
   ]
 }

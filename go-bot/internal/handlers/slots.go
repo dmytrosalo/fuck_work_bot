@@ -230,7 +230,7 @@ func (b *Bot) handleTop(c tele.Context) error {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("🏆 *ЛІДЕРБОРД* 🏆\n\n")
+	sb.WriteString("🏆 ЛІДЕРБОРД 🏆\n\n")
 
 	medals := []string{"🥇", "🥈", "🥉"}
 	for i, e := range entries {
@@ -238,8 +238,13 @@ func (b *Bot) handleTop(c tele.Context) error {
 		if i < 3 {
 			medal = medals[i]
 		}
-		sb.WriteString(fmt.Sprintf("%s %s: %d 🪙\n", medal, e.Name, e.Coins))
+		title := b.db.GetActiveTitle(e.UserID)
+		titleStr := ""
+		if title != "" {
+			titleStr = " | " + title
+		}
+		sb.WriteString(fmt.Sprintf("%s %s%s: %d 🪙\n", medal, e.Name, titleStr, e.Coins))
 	}
 
-	return c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return c.Send(sb.String())
 }
