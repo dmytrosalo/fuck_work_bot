@@ -74,6 +74,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/bj", b.handleBlackjack)
 	bot.Handle(&tele.Btn{Unique: "bj_hit"}, b.handleBJHit)
 	bot.Handle(&tele.Btn{Unique: "bj_stand"}, b.handleBJStand)
+	bot.Handle("/bj_cancel", b.handleBJCancel)
 	bot.Handle("/addquote", b.handleAddQuote)
 	bot.Handle("/work", b.handleMarkWork)
 	bot.Handle("/notwork", b.handleMarkNotWork)

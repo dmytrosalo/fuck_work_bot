@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -65,6 +67,7 @@ type bjGame struct {
 	Bet         int
 	UserID      string
 	UserName    string
+	CreatedAt   time.Time
 }
 
 var (
@@ -97,9 +100,16 @@ func (b *Bot) handleBlackjack(c tele.Context) error {
 	}
 
 	bjMu.Lock()
-	if _, ok := activeBlackjack[userID]; ok {
+	if game, ok := activeBlackjack[userID]; ok {
+		if time.Since(game.CreatedAt) > 5*time.Minute {
+			// Expired — refund and clean up
+			b.db.UpdateBalance(userID, userName, game.Bet)
+			delete(activeBlackjack, userID)
+			bjMu.Unlock()
+			return c.Reply(fmt.Sprintf("🃏 Попередня гра закінчилась по таймауту. Ставка %d 🪙 повернута. Спробуй знову!", game.Bet))
+		}
 		bjMu.Unlock()
-		return c.Reply("🃏 У тебе вже є активна гра! Натисни Hit або Stand")
+		return c.Reply("🃏 У тебе вже є активна гра! Натисни Hit або Stand\n\n_Гра автоматично скасується через 5 хв_")
 	}
 	bjMu.Unlock()
 
@@ -128,10 +138,11 @@ func (b *Bot) handleBlackjack(c tele.Context) error {
 	b.db.UpdateBalance(userID, userName, -bet)
 
 	game := &bjGame{
-		Deck:     newDeck(),
-		Bet:      bet,
-		UserID:   userID,
-		UserName: userName,
+		Deck:      newDeck(),
+		Bet:       bet,
+		UserID:    userID,
+		UserName:  userName,
+		CreatedAt: time.Now(),
 	}
 
 	game.PlayerCards = append(game.PlayerCards, game.draw(), game.draw())
@@ -296,4 +307,40 @@ func (b *Bot) bjStand(c tele.Context, game *bjGame) error {
 
 	c.Edit(msg)
 	return c.Respond()
+}
+
+func (b *Bot) handleBJCancel(c tele.Context) error {
+	userID := fmt.Sprintf("%d", c.Sender().ID)
+	userName := c.Sender().FirstName
+	if userName == "" {
+		userName = c.Sender().Username
+	}
+
+	bjMu.Lock()
+	game, ok := activeBlackjack[userID]
+	if !ok {
+		bjMu.Unlock()
+		return c.Reply("У тебе немає активної гри")
+	}
+	delete(activeBlackjack, userID)
+	bjMu.Unlock()
+
+	b.db.UpdateBalance(userID, userName, game.Bet)
+	return c.Reply(fmt.Sprintf("🃏 Гру скасовано. Ставка %d 🪙 повернута", game.Bet))
+}
+
+func init() {
+	go func() {
+		for {
+			time.Sleep(60 * time.Second)
+			bjMu.Lock()
+			for userID, game := range activeBlackjack {
+				if time.Since(game.CreatedAt) > 5*time.Minute {
+					delete(activeBlackjack, userID)
+					log.Printf("[blackjack] Expired game for user %s, bet %d", userID, game.Bet)
+				}
+			}
+			bjMu.Unlock()
+		}
+	}()
 }
