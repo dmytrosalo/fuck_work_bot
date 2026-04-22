@@ -99,6 +99,14 @@ func main() {
 			log.Printf("Gave Danya +46 coins")
 		}
 	}
+	bonusKey5 := "bonus_danyro_shvydkogroshi"
+	if db.GetMeta(bonusKey5) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 1234)
+			db.SetMeta(bonusKey5, "done")
+			log.Printf("Gave Danya +1234 coins (Швидкогроші)")
+		}
+	}
 
 	// Init classifier
 	clf, err := classifier.New(modelPath)
@@ -175,6 +183,12 @@ func main() {
 			log.Printf("Web server error: %v", err)
 		}
 	}()
+
+	// One-time Швидкогроші message
+	if db.GetMeta("msg_shvydkogroshi") == "" {
+		giftMessages = append(giftMessages, "🏦 Danya — Позику від Швидкогроші зараховано на ваш рахунок. +1234 🪙")
+		db.SetMeta("msg_shvydkogroshi", "done")
+	}
 
 	// Send card gift announcements to all chats
 	if len(giftMessages) > 0 {
