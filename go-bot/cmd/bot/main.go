@@ -91,6 +91,14 @@ func main() {
 			log.Printf("Gave Danya +666 coins")
 		}
 	}
+	bonusKey4 := "bonus_danyro_46"
+	if db.GetMeta(bonusKey4) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 46)
+			db.SetMeta(bonusKey4, "done")
+			log.Printf("Gave Danya +46 coins")
+		}
+	}
 
 	// Init classifier
 	clf, err := classifier.New(modelPath)
