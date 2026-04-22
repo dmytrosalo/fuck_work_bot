@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	tele "gopkg.in/telebot.v3"
@@ -242,6 +243,7 @@ type wordleState struct {
 	Word     string
 	Attempts []string
 	MaxTries int
+	Messages []*tele.Message // track all messages for cleanup
 }
 
 var (
@@ -291,16 +293,22 @@ func (b *Bot) handleWordle(c tele.Context) error {
 		cleaned = "слово" // fallback
 	}
 
-	activeWordles[userID] = &wordleState{
+	ws := &wordleState{
 		Word:     cleaned,
 		Attempts: nil,
 		MaxTries: 6,
+		Messages: []*tele.Message{c.Message()}, // track /wordle command
 	}
+	activeWordles[userID] = ws
 	wordleMu.Unlock()
 
 	wordLen := utf8.RuneCountInString(cleaned)
-	return c.Send(fmt.Sprintf("📝 *Wordle*\n\nВгадай слово з %d букв за 6 спроб!\nПиши слово в чат.\n\nНагорода: від 5 до 30 🪙\n🟩 = правильна буква і місце\n🟨 = правильна буква, інше місце\n⬛ = немає такої букви", wordLen),
+	startMsg, _ := c.Bot().Send(c.Chat(), fmt.Sprintf("📝 *Wordle*\n\nВгадай слово з %d букв за 6 спроб!\nПиши слово в чат.\n\nНагорода: від 5 до 30 🪙\n🟩 = правильна буква і місце\n🟨 = правильна буква, інше місце\n⬛ = немає такої букви", wordLen),
 		&tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	wordleMu.Lock()
+	ws.Messages = append(ws.Messages, startMsg)
+	wordleMu.Unlock()
+	return nil
 }
 
 func (b *Bot) checkWordleAnswer(c tele.Context) bool {
@@ -365,6 +373,7 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 
 	resultStr := string(result)
 	game.Attempts = append(game.Attempts, fmt.Sprintf("%s %s", resultStr, text))
+	game.Messages = append(game.Messages, c.Message()) // track user's guess
 	attempt := len(game.Attempts)
 
 	userName := c.Sender().FirstName
@@ -382,6 +391,7 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 	}
 
 	if allGreen {
+		msgs := game.Messages
 		delete(activeWordles, userID)
 		wordleMu.Unlock()
 
@@ -418,13 +428,16 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		if remaining > 0 {
 			sb.WriteString(fmt.Sprintf("\n\n📝 Залишилось ігор: %d. /wordle", remaining))
 		}
-		c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		resultMsg, _ := c.Bot().Send(c.Chat(), sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		msgs = append(msgs, resultMsg)
+		autoDelete(c.Bot(), 5*time.Minute, msgs...)
 		return true
 	}
 
 	// Check max tries
 	if attempt >= game.MaxTries {
 		word := game.Word
+		msgs := game.Messages
 		delete(activeWordles, userID)
 		wordleMu.Unlock()
 
@@ -449,7 +462,9 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		if remaining2 > 0 {
 			sb.WriteString(fmt.Sprintf("\n\n📝 Залишилось ігор: %d. /wordle", remaining2))
 		}
-		c.Send(sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		resultMsg, _ := c.Bot().Send(c.Chat(), sb.String(), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+		msgs = append(msgs, resultMsg)
+		autoDelete(c.Bot(), 5*time.Minute, msgs...)
 		return true
 	}
 
@@ -461,6 +476,9 @@ func (b *Bot) checkWordleAnswer(c tele.Context) bool {
 		sb.WriteString(a + "\n")
 	}
 	sb.WriteString(fmt.Sprintf("\nСпроба %d/%d", attempt, game.MaxTries))
-	c.Reply(sb.String())
+	progressMsg, _ := c.Bot().Send(c.Chat(), sb.String())
+	wordleMu.Lock()
+	game.Messages = append(game.Messages, progressMsg)
+	wordleMu.Unlock()
 	return true
 }

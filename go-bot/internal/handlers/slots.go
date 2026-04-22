@@ -188,7 +188,7 @@ func (b *Bot) handleBalance(c tele.Context) error {
 	}
 
 	balance := b.db.GetBalance(userID, userName)
-	return c.Reply(fmt.Sprintf("💰 *%s*\n\n🪙 %d богдудіків", userName, balance), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return sendAndDelete(c, fmt.Sprintf("💰 %s\n\n🪙 %d богдудіків", userName, balance), 10*time.Second)
 }
 
 func (b *Bot) handleDaily(c tele.Context) error {
@@ -202,7 +202,7 @@ func (b *Bot) handleDaily(c tele.Context) error {
 	key := "daily:" + userID
 	lastClaim := b.db.GetMeta(key)
 	if lastClaim == today {
-		return c.Reply(fmt.Sprintf("🎁 Ти вже забрав бонус. Скидання через %s", timeUntilReset()))
+		return sendAndDelete(c, fmt.Sprintf("🎁 Ти вже забрав бонус. Скидання через %s", timeUntilReset()), 10*time.Second)
 	}
 
 	dailyBoost := b.getTitleBonus(userID)
@@ -216,12 +216,12 @@ func (b *Bot) handleDaily(c tele.Context) error {
 	b.db.SetStatMax(userID, "max_balance", newBalance)
 	b.checkAchievements(c, userID, userName)
 
-	msg := fmt.Sprintf("🎁 *Щоденний бонус!*\n\n+%d 🪙", totalDaily)
+	msg := fmt.Sprintf("🎁 Щоденний бонус!\n\n+%d 🪙", totalDaily)
 	if dailyBoost.DailyBonus > 0 {
 		msg += fmt.Sprintf(" (базовий %d + титул %d)", dailyBonus, dailyBoost.DailyBonus)
 	}
 	msg += fmt.Sprintf("\nБаланс: %d 🪙", newBalance)
-	return c.Reply(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return sendAndDelete(c, msg, 10*time.Second)
 }
 
 func (b *Bot) handleTop(c tele.Context) error {
