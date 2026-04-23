@@ -196,6 +196,12 @@ func main() {
 		db.SetMeta("msg_shvydkogroshi_reminder", "done")
 	}
 
+	// Швидкогроші final
+	if db.GetMeta("msg_shvydkogroshi_final") == "" {
+		giftMessages = append(giftMessages, "🏦 @Dany\\_ro — Всі ваші картки було вилучено на користь компанії. Згідно з правила компанії, так як Ви не змогли погасити борг. Не хвилюйтеся, це був жарт. Але бажаємо вам не вийобуватись і не бикувати на казік. Дякуємо за увагу.")
+		db.SetMeta("msg_shvydkogroshi_final", "done")
+	}
+
 	// Send card gift announcements to all chats
 	if len(giftMessages) > 0 {
 		go func() {
