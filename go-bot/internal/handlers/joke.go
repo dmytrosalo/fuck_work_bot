@@ -33,14 +33,29 @@ func (b *Bot) handleJoke(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("😂 Ліміт %d жартів на день. Скидання через %s", maxJokesPerDay, timeUntilReset()))
 	}
 
-	// Optional custom topic
+	// Optional custom topic + detect target name
 	customTopic := strings.TrimSpace(c.Message().Payload)
+
+	// Check if topic mentions a known member — target joke at them
+	targetName := userName
+	knownNames := map[string]string{
+		"danya": "Danya", "данька": "Danya", "данік": "Danya", "дані": "Danya",
+		"bo": "Bo", "бо": "Bo",
+		"data": "Data", "дата": "Data",
+		"dmytro": "Dmytro", "дмитро": "Dmytro", "діма": "Dmytro",
+	}
+	for key, name := range knownNames {
+		if strings.Contains(strings.ToLower(customTopic), key) {
+			targetName = name
+			break
+		}
+	}
 
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	var joke string
 
 	if geminiKey != "" {
-		joke = generateJoke(geminiKey, userName, customTopic)
+		joke = generateJoke(geminiKey, targetName, customTopic)
 	}
 
 	if joke == "" {
@@ -49,7 +64,7 @@ func (b *Bot) handleJoke(c tele.Context) error {
 
 	b.db.SetMeta(jokeKey, fmt.Sprintf("%d", count+1))
 
-	return c.Send(fmt.Sprintf("😂 *Жарт для %s*\n\n%s", userName, joke), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	return c.Send(fmt.Sprintf("😂 *Жарт для %s*\n\n%s", targetName, joke), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
 }
 
 func generateJoke(apiKey, userName, customTopic string) string {
