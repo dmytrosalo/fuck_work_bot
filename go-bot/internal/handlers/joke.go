@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -59,7 +60,7 @@ func (b *Bot) handleJoke(c tele.Context) error {
 	}
 
 	if joke == "" {
-		joke = localJoke(userName)
+		joke = localJoke(targetName)
 	}
 
 	b.db.SetMeta(jokeKey, fmt.Sprintf("%d", count+1))
@@ -137,7 +138,13 @@ func generateJoke(apiKey, userName, customTopic string) string {
 		"contents": []map[string]interface{}{
 			{"parts": []map[string]string{{"text": prompt}}},
 		},
-		"generationConfig": map[string]interface{}{"temperature": 1.3, "maxOutputTokens": 80},
+		"generationConfig": map[string]interface{}{"temperature": 1.3, "maxOutputTokens": 100},
+		"safetySettings": []map[string]string{
+			{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+		},
 	}
 
 	jsonBody, _ := json.Marshal(body)
@@ -145,11 +152,13 @@ func generateJoke(apiKey, userName, customTopic string) string {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(url, "application/json", strings.NewReader(string(jsonBody)))
 	if err != nil {
+		log.Printf("[joke] Gemini request error: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		log.Printf("[joke] Gemini status: %d", resp.StatusCode)
 		return ""
 	}
 
