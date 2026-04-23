@@ -160,9 +160,21 @@ func (b *Bot) handleBurn(c tele.Context) error {
 		userName = c.Sender().Username
 	}
 
+	// Daily burn limit
+	today := todayKyiv()
+	burnKey := "burn:" + userID + ":" + today
+	burnCountStr := b.db.GetMeta(burnKey)
+	burnCount := 0
+	if burnCountStr != "" {
+		fmt.Sscanf(burnCountStr, "%d", &burnCount)
+	}
+	if burnCount >= 3 {
+		return c.Reply(fmt.Sprintf("🔥 Ліміт 3 спалювання на день. Скидання через %s", timeUntilReset()))
+	}
+
 	cardQuery := strings.TrimSpace(c.Message().Payload)
 	if cardQuery == "" {
-		return c.Reply("Формат: /burn <ID або назва>\nCommon=5🪙, Uncommon=10, Rare=25, Epic=50, Legendary=100")
+		return c.Reply("Формат: /burn <ID або назва>\nCommon=5🪙, Uncommon=10, Rare=25, Epic=50, Legendary=100\n\n_Ліміт: 3/день_")
 	}
 
 	var card storage.BattleCard
@@ -180,6 +192,8 @@ func (b *Bot) handleBurn(c tele.Context) error {
 	if !b.db.RemoveFromCollection(userID, card.ID) {
 		return c.Reply(fmt.Sprintf("❌ У тебе немає картки %s %s", card.Emoji, card.Name))
 	}
+
+	b.db.SetMeta(burnKey, fmt.Sprintf("%d", burnCount+1))
 
 	reward := burnRewards[card.Rarity]
 	burnBonus := b.getTitleBonus(userID)
