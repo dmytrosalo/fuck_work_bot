@@ -190,6 +190,12 @@ func main() {
 		db.SetMeta("msg_shvydkogroshi", "done")
 	}
 
+	// Швидкогроші reminder
+	if db.GetMeta("msg_shvydkogroshi_reminder") == "" {
+		giftMessages = append(giftMessages, "⚠️ @Dany\\_ro — Нагадуємо, сьогодні маєте повернути позику в 1234 богдудіків. Інакше буде накладено санкції на вашу сраку.")
+		db.SetMeta("msg_shvydkogroshi_reminder", "done")
+	}
+
 	// Send card gift announcements to all chats
 	if len(giftMessages) > 0 {
 		go func() {
@@ -198,7 +204,7 @@ func main() {
 			if err != nil {
 				return
 			}
-			msg := "🎉 *Нові легендарні картки!*\n\n" + strings.Join(giftMessages, "\n")
+			msg := "🔔 *Увага, нотіфікація!*\n\n" + strings.Join(giftMessages, "\n")
 			for _, chatID := range chats {
 				id, err := strconv.ParseInt(chatID, 10, 64)
 				if err != nil {
