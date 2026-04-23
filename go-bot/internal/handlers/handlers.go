@@ -82,6 +82,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/title", b.handleTitle)
 	bot.Handle("/evolve", b.handleEvolve)
 	bot.Handle("/card_idea", b.handleCardIdea)
+	bot.Handle("/joke", b.handleJoke)
 	bot.Handle(tele.OnText, b.handleText)
 }
 
