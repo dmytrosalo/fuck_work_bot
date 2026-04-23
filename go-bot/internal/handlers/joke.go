@@ -57,9 +57,14 @@ func (b *Bot) handleJoke(c tele.Context) error {
 
 	if geminiKey != "" {
 		joke = generateJoke(geminiKey, targetName, customTopic)
+		if joke == "" {
+			// Retry once
+			joke = generateJoke(geminiKey, targetName, customTopic)
+		}
 	}
 
 	if joke == "" {
+		log.Printf("[joke] Gemini failed for %s, using fallback", targetName)
 		joke = localJoke(targetName)
 	}
 
@@ -173,13 +178,18 @@ func generateJoke(apiKey, userName, customTopic string) string {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[joke] Gemini decode error: %v", err)
 		return ""
 	}
 
 	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
-		return strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text)
+		text := strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text)
+		if text != "" {
+			return text
+		}
 	}
 
+	log.Printf("[joke] Gemini returned empty/no candidates for %s", userName)
 	return ""
 }
 
