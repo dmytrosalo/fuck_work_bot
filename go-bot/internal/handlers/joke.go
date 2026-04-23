@@ -40,7 +40,7 @@ func (b *Bot) handleJoke(c tele.Context) error {
 	targetName := userName
 	knownNames := map[string]string{
 		"danya": "Danya", "данька": "Danya", "данік": "Danya", "дані": "Danya",
-		"bo": "Bo", "бо": "Bo",
+		"bo": "Bo", "бо": "Bo", "богдан": "Bo", "бодька": "Bo",
 		"data": "Data", "дата": "Data",
 		"dmytro": "Dmytro", "дмитро": "Dmytro", "діма": "Dmytro",
 	}
