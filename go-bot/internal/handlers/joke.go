@@ -137,7 +137,7 @@ func generateJoke(apiKey, userName, customTopic string) string {
 - Українською, сленг ок
 - ТІЛЬКИ текст жарту`, userName, topic, memberContext, userName, userName, userName)
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", apiKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s", apiKey)
 
 	body := map[string]interface{}{
 		"contents": []map[string]interface{}{
