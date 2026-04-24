@@ -80,7 +80,7 @@ func generateHoroscope(apiKey, userName, sign string) string {
 - Не згадуй війну чи політику
 - Тільки текст, без зірочок та форматування`, userName, sign)
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", apiKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s", apiKey)
 
 	body := map[string]interface{}{
 		"contents": []map[string]interface{}{
