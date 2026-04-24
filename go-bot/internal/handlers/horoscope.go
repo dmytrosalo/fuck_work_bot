@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -66,8 +67,8 @@ func (b *Bot) handleHoroscope(c tele.Context) error {
 
 	b.db.SetMeta(key, today)
 
-	msg := fmt.Sprintf("🔮 *Дев-гороскоп для %s*\n\n%s %s\n\n%s", userName, sign, "", horoscope)
-	return c.Send(msg, &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+	msg := fmt.Sprintf("🔮 Дев-гороскоп для %s\n\n%s\n\n%s", userName, sign, horoscope)
+	return c.Send(msg)
 }
 
 func generateHoroscope(apiKey, userName, sign string) string {
@@ -80,7 +81,7 @@ func generateHoroscope(apiKey, userName, sign string) string {
 - Не згадуй війну чи політику
 - Тільки текст, без зірочок та форматування`, userName, sign)
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s", apiKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", apiKey)
 
 	body := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -94,11 +95,13 @@ func generateHoroscope(apiKey, userName, sign string) string {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(url, "application/json", strings.NewReader(string(jsonBody)))
 	if err != nil {
+		log.Printf("[horoscope] Gemini request error: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		log.Printf("[horoscope] Gemini status: %d", resp.StatusCode)
 		return ""
 	}
 
@@ -113,13 +116,17 @@ func generateHoroscope(apiKey, userName, sign string) string {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[horoscope] Gemini parse error: %v", err)
 		return ""
 	}
 
 	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
-		return strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text)
+		text := strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text)
+		log.Printf("[horoscope] Gemini response: %s", text[:min(len(text), 100)])
+		return text
 	}
 
+	log.Printf("[horoscope] Gemini empty response, candidates: %d", len(result.Candidates))
 	return ""
 }
 
