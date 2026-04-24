@@ -83,6 +83,18 @@ func main() {
 		log.Println("Reset all daily limits")
 	}
 
+	// Gift 500 to everyone for surviving the work week
+	giftKey := "gift_weekend_500_v1"
+	if db.GetMeta(giftKey) == "" {
+		entries := db.GetTopBalances(100)
+		for _, e := range entries {
+			db.UpdateBalance(e.UserID, e.Name, 500)
+			db.LogTransaction(e.UserID, e.Name, "gift", 500)
+		}
+		db.SetMeta(giftKey, "done")
+		log.Printf("Gifted 500 coins to %d players: Пережили ще один робочий тиждень", len(entries))
+	}
+
 	bonusKey3 := "bonus_danyro_666"
 	if db.GetMeta(bonusKey3) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
@@ -223,6 +235,20 @@ func main() {
 
 	// Schedule daily report at 23:00 Kyiv time
 	go scheduleDailyReport(bot, h)
+
+	// Announce gift if just given
+	giftAnnounceKey := "gift_weekend_500_v1_announced"
+	if db.GetMeta(giftAnnounceKey) == "" {
+		chats, _ := db.GetActiveChats()
+		for _, chatID := range chats {
+			id, err := strconv.ParseInt(chatID, 10, 64)
+			if err != nil {
+				continue
+			}
+			bot.Send(&tele.Chat{ID: id}, "🎁 Пережили ще один робочий тиждень!\n\nВсі гравці отримали +500 🪙")
+		}
+		db.SetMeta(giftAnnounceKey, "done")
+	}
 
 	log.Println("Bot starting...")
 	bot.Start()
