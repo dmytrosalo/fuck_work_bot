@@ -261,8 +261,18 @@ func main() {
 	// Schedule daily report at 23:00 Kyiv time
 	go scheduleDailyReport(bot, h)
 
+	// Gift Arsenal card to Data and Danya
+	arsenalKey := "gift_arsenal_micne"
+	if db.GetMeta(arsenalKey) == "" {
+		db.AddCard(602, "Фанат Арсенал міцне", 3, "brands", "🍺", "П'є Арсенал міцне і вважає це за стиль життя, а не за проблему.", 65, 55, "МІЦНІСТЬ", 85)
+		db.AddToCollection("390302699", 602) // Data
+		db.AddToCollection("460670583", 602) // Danya
+		db.SetMeta(arsenalKey, "done")
+		log.Println("Gifted Фанат Арсенал міцне (Rare) to Data and Danya")
+	}
+
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v2"
+	cardGiftAnnounce := "gift_cards_announced_v3"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -270,7 +280,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунки!\n\n🔥 Data отримує Samsung S8 Fireborn (Epic)\n🎮 Danya отримує Switch 3 (Common)\n\nПеревірте /collection!")
+			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунки!\n\n🍺 Data і Danya отримують Фанат Арсенал міцне (Rare)\n\nПеревірте /collection!")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
