@@ -95,6 +95,27 @@ func main() {
 		log.Printf("Gifted 500 coins to %d players: Пережили ще один робочий тиждень", len(entries))
 	}
 
+	// Gift cards to specific users
+	giftCardKey1 := "gift_card_data_samsung_s8"
+	if db.GetMeta(giftCardKey1) == "" {
+		if dataID, found := db.FindUserByName("Data"); found {
+			// Add Samsung S8 Fireborn as Epic card, then give to Data
+			db.AddCard(600, "Samsung S8 Fireborn", 4, "tech", "🔥", "Горить яскравіше ніж продакшн у п'ятницю — буквально.", 85, 75, "FIREBORN", 90)
+			db.AddToCollection(dataID, 600)
+			db.SetMeta(giftCardKey1, "done")
+			log.Printf("Gifted Samsung S8 Fireborn (Epic) to Data")
+		}
+	}
+	giftCardKey2 := "gift_card_danya_switch3"
+	if db.GetMeta(giftCardKey2) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.AddCard(601, "Switch 3", 1, "tech", "🎮", "Купив для ігор, використовує для YouTube і слотів.", 25, 30, "ПОРТАТИВНІСТЬ", 40)
+			db.AddToCollection(danyaID, 601)
+			db.SetMeta(giftCardKey2, "done")
+			log.Printf("Gifted Switch 3 (Common) to Danya")
+		}
+	}
+
 	bonusKey3 := "bonus_danyro_666"
 	if db.GetMeta(bonusKey3) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
