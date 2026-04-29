@@ -98,13 +98,17 @@ func main() {
 	// Gift cards to specific users
 	giftCardKey1 := "gift_card_data_samsung_s8"
 	if db.GetMeta(giftCardKey1) == "" {
-		if dataID, found := db.FindUserByName("Data"); found {
-			// Add Samsung S8 Fireborn as Epic card, then give to Data
-			db.AddCard(600, "Samsung S8 Fireborn", 4, "tech", "🔥", "Горить яскравіше ніж продакшн у п'ятницю — буквально.", 85, 75, "FIREBORN", 90)
-			db.AddToCollection(dataID, 600)
-			db.SetMeta(giftCardKey1, "done")
-			log.Printf("Gifted Samsung S8 Fireborn (Epic) to Data")
-		}
+		// Already done but went to wrong user
+		db.SetMeta(giftCardKey1, "done")
+	}
+	// Fix: give Samsung to correct Data (390302699)
+	giftCardFix := "gift_card_data_samsung_s8_fix"
+	if db.GetMeta(giftCardFix) == "" {
+		// Remove from Dmytro, give to Data
+		db.RemoveFromCollection("309888599", 600)
+		db.AddToCollection("390302699", 600)
+		db.SetMeta(giftCardFix, "done")
+		log.Printf("Fixed Samsung S8 Fireborn: moved from Dmytro to Data")
 	}
 	giftCardKey2 := "gift_card_danya_switch3"
 	if db.GetMeta(giftCardKey2) == "" {
@@ -256,6 +260,20 @@ func main() {
 
 	// Schedule daily report at 23:00 Kyiv time
 	go scheduleDailyReport(bot, h)
+
+	// Announce card gifts
+	cardGiftAnnounce := "gift_cards_announced_v2"
+	if db.GetMeta(cardGiftAnnounce) == "" {
+		chats, _ := db.GetActiveChats()
+		for _, chatID := range chats {
+			id, err := strconv.ParseInt(chatID, 10, 64)
+			if err != nil {
+				continue
+			}
+			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунки!\n\n🔥 Data отримує Samsung S8 Fireborn (Epic)\n🎮 Danya отримує Switch 3 (Common)\n\nПеревірте /collection!")
+		}
+		db.SetMeta(cardGiftAnnounce, "done")
+	}
 
 	// Announce gift if just given
 	giftAnnounceKey := "gift_weekend_500_v1_announced"
