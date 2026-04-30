@@ -271,8 +271,17 @@ func main() {
 		log.Println("Gifted Фанат Арсенал міцне (Rare) to Data and Danya")
 	}
 
+	// Gift Металочерепиця to Danya
+	metalKey := "gift_danya_metalocherepytsya"
+	if db.GetMeta(metalKey) == "" {
+		db.AddCard(603, "Металочерепиця", 1, "daily", "🏠", "Дах тече, гроші течуть, але металочерепиця тримається — на відміну від бюджету.", 20, 35, "ПОКРІВЛЯ", 30)
+		db.AddToCollection("460670583", 603) // Danya
+		db.SetMeta(metalKey, "done")
+		log.Println("Gifted Металочерепиця (Common) to Danya")
+	}
+
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v3"
+	cardGiftAnnounce := "gift_cards_announced_v4"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -280,7 +289,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунки!\n\n🍺 Data і Danya отримують Фанат Арсенал міцне (Rare)\n\nПеревірте /collection!")
+			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунок!\n\n🏠 Danya отримує Металочерепиця (Common)\n\nПеревірте /collection!")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
