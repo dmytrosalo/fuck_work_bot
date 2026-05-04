@@ -280,8 +280,19 @@ func main() {
 		log.Println("Gifted Металочерепиця (Common) to Danya")
 	}
 
+	// Gift Danya 1000 coins
+	eveningKey := "bonus_danyro_evening_1000"
+	if db.GetMeta(eveningKey) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 1000)
+			db.LogTransaction(danyaID, "Danya", "gift", 1000)
+			db.SetMeta(eveningKey, "done")
+			log.Println("Gave Danya +1000 coins evening gift")
+		}
+	}
+
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v4"
+	cardGiftAnnounce := "gift_cards_announced_v5"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -289,7 +300,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунок!\n\n🏠 Danya отримує Металочерепиця (Common)\n\nПеревірте /collection!")
+			bot.Send(&tele.Chat{ID: id}, "🎰 Гарного вечора. Наш казік памʼятає Ваші інвестиції і цінує це!\n\nDanya отримує +1000 🪙")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
