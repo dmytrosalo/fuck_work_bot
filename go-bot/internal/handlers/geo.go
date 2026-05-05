@@ -74,22 +74,22 @@ var geoCountries = []struct {
 	{"Reykjavik Iceland", "Ісландія", []string{"ісландія", "iceland"}},
 }
 
-const maxGeoPerDay = 5
+const maxGeoPerHour = 20
 
 func (b *Bot) handleGeo(c tele.Context) error {
 	userID := fmt.Sprintf("%d", c.Sender().ID)
 	chatID := c.Chat().ID
-	today := todayKyiv()
+	hour := nowHourKyiv()
 
-	// Daily limit
-	geoKey := "geo:" + userID + ":" + today
+	// Hourly limit
+	geoKey := "geo:" + userID + ":" + hour
 	countStr := b.db.GetMeta(geoKey)
 	geoCount := 0
 	if countStr != "" {
 		fmt.Sscanf(countStr, "%d", &geoCount)
 	}
-	if geoCount >= maxGeoPerDay {
-		return c.Reply(fmt.Sprintf("🌍 Ліміт %d гео на день. Скидання через %s", maxGeoPerDay, timeUntilReset()))
+	if geoCount >= maxGeoPerHour {
+		return c.Reply(fmt.Sprintf("🌍 Ліміт %d гео на годину. Через %s", maxGeoPerHour, timeUntilNextHour()))
 	}
 
 	geoMu.Lock()
@@ -150,7 +150,7 @@ func (b *Bot) handleGeo(c tele.Context) error {
 	// Send photo
 	telePhoto := &tele.Photo{
 		File:    tele.FromURL(photo.URLs.Regular),
-		Caption: "🌍 Де це? Напиши назву країни! (60 сек)\nНагорода: +30 🪙",
+		Caption: "🌍 Де це? Напиши назву країни! (20 сек)\nНагорода: +30 🪙",
 	}
 	sent, _ := c.Bot().Send(c.Chat(), telePhoto)
 
@@ -163,7 +163,7 @@ func (b *Bot) handleGeo(c tele.Context) error {
 
 	// Auto-close after 60 seconds
 	go func() {
-		time.Sleep(60 * time.Second)
+		time.Sleep(20 * time.Second)
 		geoMu.Lock()
 		game, ok := activeGeo[chatID]
 		if ok && game.Winner == "" {
