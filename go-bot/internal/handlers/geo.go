@@ -170,7 +170,7 @@ func (b *Bot) handleGeo(c tele.Context) error {
 	// Send photo
 	telePhoto := &tele.Photo{
 		File:    tele.FromURL(photo.URLs.Regular),
-		Caption: "🌍 Де це? Напиши назву країни! (20 сек)\nНагорода: +15 🪙",
+		Caption: "🌍 Де це? Напиши назву країни! (30 сек)\nНагорода: +15 🪙",
 	}
 	sent, _ := c.Bot().Send(c.Chat(), telePhoto)
 
@@ -182,7 +182,7 @@ func (b *Bot) handleGeo(c tele.Context) error {
 
 	// Auto-close after 20 seconds
 	go func() {
-		time.Sleep(20 * time.Second)
+		time.Sleep(30 * time.Second)
 		geoMu.Lock()
 		game, ok := activeGeo[chatID]
 		if ok && game.Winner == "" {

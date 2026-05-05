@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"math"
@@ -41,11 +42,12 @@ func fetchTile(z, x, y int) (image.Image, error) {
 	return png.Decode(resp.Body)
 }
 
-// renderMap creates a 3x3 tile map image
+// renderMap creates a 3x3 tile map image with a red dot in center
 func renderMap(lat, lng float64, zoom int) ([]byte, error) {
 	cx, cy := latLngToTile(lat, lng, zoom)
 	tileSize := 256
-	img := image.NewRGBA(image.Rect(0, 0, tileSize*3, tileSize*3))
+	imgW, imgH := tileSize*3, tileSize*3
+	img := image.NewRGBA(image.Rect(0, 0, imgW, imgH))
 
 	for dx := -1; dx <= 1; dx++ {
 		for dy := -1; dy <= 1; dy++ {
@@ -56,6 +58,21 @@ func renderMap(lat, lng float64, zoom int) ([]byte, error) {
 			offsetX := (dx + 1) * tileSize
 			offsetY := (dy + 1) * tileSize
 			draw.Draw(img, image.Rect(offsetX, offsetY, offsetX+tileSize, offsetY+tileSize), tile, image.Point{}, draw.Src)
+		}
+	}
+
+	// Draw red dot with white outline in center
+	centerX, centerY := imgW/2, imgH/2
+	redColor := color.RGBA{255, 30, 30, 255}
+	whiteColor := color.RGBA{255, 255, 255, 255}
+	for dx := -8; dx <= 8; dx++ {
+		for dy := -8; dy <= 8; dy++ {
+			dist := dx*dx + dy*dy
+			if dist <= 36 {
+				img.Set(centerX+dx, centerY+dy, redColor)
+			} else if dist <= 64 {
+				img.Set(centerX+dx, centerY+dy, whiteColor)
+			}
 		}
 	}
 
@@ -149,12 +166,12 @@ var zoomLevels = []struct {
 	Zoom int
 	Name string
 }{
-	{4, "🔴 Hard"},
-	{5, "🔴 Hard"},
-	{6, "🟡 Medium"},
-	{7, "🟡 Medium"},
-	{8, "🟢 Easy"},
-	{9, "🟢 Easy"},
+	{6, "🔴 Hard"},
+	{7, "🔴 Hard"},
+	{8, "🟡 Medium"},
+	{9, "🟡 Medium"},
+	{10, "🟢 Easy"},
+	{11, "🟢 Easy"},
 }
 
 func (b *Bot) handleMapGuess(c tele.Context) error {
@@ -214,7 +231,7 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 
 	telePhoto := &tele.Photo{
 		File:    tele.FromReader(bytes.NewReader(mapBytes)),
-		Caption: fmt.Sprintf("🗺️ Де це? %s (20 сек)\nНагорода: +15 🪙", zl.Name),
+		Caption: fmt.Sprintf("🗺️ Де це? %s (30 сек)\nНагорода: +15 🪙", zl.Name),
 	}
 	sent, err := c.Bot().Send(c.Chat(), telePhoto)
 	if err != nil {
@@ -234,7 +251,7 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 	cmdMsg := c.Message()
 
 	go func() {
-		time.Sleep(20 * time.Second)
+		time.Sleep(30 * time.Second)
 		mapGameMu.Lock()
 		game, ok := activeMapGame[chatID]
 		if ok && game.Winner == "" {

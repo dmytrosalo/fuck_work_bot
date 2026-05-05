@@ -223,7 +223,7 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 
 	telePhoto := &tele.Photo{
 		File:    tele.FromURL(photo.URLs.Regular),
-		Caption: "🚗 Що за марка? (20 сек)\nНагорода: +15 🪙",
+		Caption: "🚗 Що за марка? (30 сек)\nНагорода: +15 🪙",
 	}
 	sent, err := c.Bot().Send(c.Chat(), telePhoto)
 	if err != nil {
@@ -243,7 +243,7 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 	cmdMsg := c.Message()
 
 	go func() {
-		time.Sleep(20 * time.Second)
+		time.Sleep(30 * time.Second)
 		carGameMu.Lock()
 		game, ok := activeCarGame[chatID]
 		if ok && game.Winner == "" {
@@ -352,7 +352,7 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 
 		telePhoto := &tele.Photo{
 			File:    tele.FromURL(logoURL),
-			Caption: "🏷️ Чий це логотип? (20 сек)\nНагорода: +15 🪙",
+			Caption: "🏷️ Чий це логотип? (30 сек)\nНагорода: +15 🪙",
 		}
 		sent, err = c.Bot().Send(c.Chat(), telePhoto)
 		if err == nil {
@@ -376,7 +376,7 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 	logoGameMu.Unlock()
 
 	go func() {
-		time.Sleep(20 * time.Second)
+		time.Sleep(30 * time.Second)
 		logoGameMu.Lock()
 		game, ok := activeLogoGame[chatID]
 		if ok && game.Winner == "" {
