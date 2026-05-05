@@ -82,6 +82,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/war", b.muteCheck(b.handleWar))
 	bot.Handle("/casino_stats", b.muteCheck(b.handleCasinoStats))
 	bot.Handle("/global_stats", b.muteCheck(b.handleGlobalStats))
+	bot.Handle("/geo", b.muteCheck(b.handleGeo))
 	bot.Handle(&tele.Btn{Unique: "war_pick"}, b.handleWarPick)
 	bot.Handle("/blackjack", b.handleBlackjack)
 	bot.Handle("/bj", b.handleBlackjack)
@@ -144,6 +145,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 /quiz — вікторина (+5-15 🪙) 🧠
 /guess — вгадай число (мультиплеєр, +30/+100) 🎯
 /wordle — wordle (3/день, +5-30 🪙) 📝
+/geo — вгадай країну по фото 🌍
 /dart — дартс PvP 🎯
 /war — війна карток (3 раунди) ⚔️
 
@@ -319,6 +321,9 @@ func (b *Bot) handleText(c tele.Context) error {
 	b.checkPendingGifts(c, userID, userName)
 
 	// Check active game answers
+	if b.checkGeoAnswer(c) {
+		return nil
+	}
 	if b.checkQuizAnswer(c) {
 		return nil
 	}
