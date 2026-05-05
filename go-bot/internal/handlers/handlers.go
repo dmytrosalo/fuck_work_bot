@@ -234,14 +234,32 @@ func (b *Bot) handleStats(c tele.Context) error {
 
 func (b *Bot) handleMute(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
+	today := todayKyiv()
+
+	// Check if already toggled today
+	key := "mute_toggle:" + userID + ":" + today
+	if b.db.GetMeta(key) != "" {
+		return c.Reply(fmt.Sprintf("🔇 Ти вже використав /mute або /unmute сьогодні. Скидання через %s", timeUntilReset()))
+	}
+
 	b.db.Mute(userID)
-	return c.Reply("Ти замучений. Бот більше не буде реагувати на твої повідомлення.")
+	b.db.SetMeta(key, "mute")
+	return c.Reply("🔇 Ти замучений. Всі команди заблоковані до /unmute")
 }
 
 func (b *Bot) handleUnmute(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
+	today := todayKyiv()
+
+	// Check if already toggled today
+	key := "mute_toggle:" + userID + ":" + today
+	if b.db.GetMeta(key) != "" {
+		return c.Reply(fmt.Sprintf("🔊 Ти вже використав /mute або /unmute сьогодні. Скидання через %s", timeUntilReset()))
+	}
+
 	b.db.Unmute(userID)
-	return c.Reply("Ти розмучений. Бот знову стежить за тобою.")
+	b.db.SetMeta(key, "unmute")
+	return c.Reply("🔊 Ти розмучений. Всі команди доступні!")
 }
 
 type pendingGift struct {
