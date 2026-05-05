@@ -72,6 +72,11 @@ func loadCountries() {
 			strings.ToLower(c.Name.Common),
 			strings.ToLower(c.CCA2),
 		}
+		// Add without diacritics for common misspellings
+		simplified := strings.ToLower(c.Name.Common)
+		if simplified != strings.ToLower(ukName) {
+			aliases = append(aliases, simplified)
+		}
 
 		allCountries = append(allCountries, struct {
 			Query   string
@@ -85,8 +90,22 @@ func loadCountries() {
 	}
 }
 
+const maxGeoPerHour = 10
+
 func (b *Bot) handleGeo(c tele.Context) error {
+	userID := fmt.Sprintf("%d", c.Sender().ID)
 	chatID := c.Chat().ID
+	hour := nowHourKyiv()
+
+	geoKey := "geo:" + userID + ":" + hour
+	countStr := b.db.GetMeta(geoKey)
+	geoCount := 0
+	if countStr != "" {
+		fmt.Sscanf(countStr, "%d", &geoCount)
+	}
+	if geoCount >= maxGeoPerHour {
+		return c.Reply(fmt.Sprintf("🌍 Ліміт %d на годину. Через %s", maxGeoPerHour, timeUntilNextHour()))
+	}
 
 	geoMu.Lock()
 	if g, ok := activeGeo[chatID]; ok && time.Since(g.CreatedAt) < 20*time.Second {
@@ -134,6 +153,9 @@ func (b *Bot) handleGeo(c tele.Context) error {
 		return c.Reply("❌ Фото не знайдено")
 	}
 
+	// Increment hourly count
+	b.db.SetMeta(geoKey, fmt.Sprintf("%d", geoCount+1))
+
 	// Set active game
 	geoMu.Lock()
 	activeGeo[chatID] = &geoGame{
@@ -148,7 +170,7 @@ func (b *Bot) handleGeo(c tele.Context) error {
 	// Send photo
 	telePhoto := &tele.Photo{
 		File:    tele.FromURL(photo.URLs.Regular),
-		Caption: "🌍 Де це? Напиши назву країни! (20 сек)\nНагорода: +30 🪙",
+		Caption: "🌍 Де це? Напиши назву країни! (20 сек)\nНагорода: +15 🪙",
 	}
 	sent, _ := c.Bot().Send(c.Chat(), telePhoto)
 
@@ -175,7 +197,8 @@ func (b *Bot) handleGeo(c tele.Context) error {
 			if cmdMsg != nil {
 				c.Bot().Delete(cmdMsg)
 			}
-			c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🌍 Час вийшов! Це було: %s", name))
+			msg, _ := c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🌍 Час вийшов! Це було: %s", name))
+			autoDelete(c.Bot(), 5*time.Second, msg)
 		} else {
 			geoMu.Unlock()
 		}
@@ -218,7 +241,7 @@ func (b *Bot) checkGeoAnswer(c tele.Context) bool {
 	delete(activeGeo, chatID)
 	geoMu.Unlock()
 
-	reward := 30
+	reward := 15
 	newBal := b.db.UpdateBalance(userID, userName, reward)
 	b.db.LogTransaction(userID, userName, "geo", reward)
 

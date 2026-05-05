@@ -154,8 +154,22 @@ var carBrands = []carBrand{
 	{"Toyota Supra car", "Toyota", "toyota.com", []string{"toyota", "тойота", "supra", "супра"}},
 }
 
+const maxCarPerHour = 10
+
 func (b *Bot) handleCarGuess(c tele.Context) error {
+	userID := fmt.Sprintf("%d", c.Sender().ID)
 	chatID := c.Chat().ID
+	hour := nowHourKyiv()
+
+	carKey := "carguess:" + userID + ":" + hour
+	countStr := b.db.GetMeta(carKey)
+	carCount := 0
+	if countStr != "" {
+		fmt.Sscanf(countStr, "%d", &carCount)
+	}
+	if carCount >= maxCarPerHour {
+		return c.Reply(fmt.Sprintf("🚗 Ліміт %d на годину. Через %s", maxCarPerHour, timeUntilNextHour()))
+	}
 
 	carGameMu.Lock()
 	if g, ok := activeCarGame[chatID]; ok && time.Since(g.CreatedAt) < 20*time.Second {
@@ -195,6 +209,8 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 		return c.Reply("❌ Фото не знайдено")
 	}
 
+	b.db.SetMeta(carKey, fmt.Sprintf("%d", carCount+1))
+
 	carGameMu.Lock()
 	activeCarGame[chatID] = &carGame{
 		Brand:     brand.Name,
@@ -207,7 +223,7 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 
 	telePhoto := &tele.Photo{
 		File:    tele.FromURL(photo.URLs.Regular),
-		Caption: "🚗 Що за марка? (20 сек)\nНагорода: +25 🪙",
+		Caption: "🚗 Що за марка? (20 сек)\nНагорода: +15 🪙",
 	}
 	sent, _ := c.Bot().Send(c.Chat(), telePhoto)
 
@@ -233,7 +249,8 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 			if cmdMsg != nil {
 				c.Bot().Delete(cmdMsg)
 			}
-			c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🚗 Час вийшов! Це було: %s", name))
+			msg, _ := c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🚗 Час вийшов! Це було: %s", name))
+			autoDelete(c.Bot(), 5*time.Second, msg)
 		} else {
 			carGameMu.Unlock()
 		}
@@ -276,7 +293,7 @@ func (b *Bot) checkCarAnswer(c tele.Context) bool {
 	delete(activeCarGame, chatID)
 	carGameMu.Unlock()
 
-	reward := 25
+	reward := 15
 	newBal := b.db.UpdateBalance(userID, userName, reward)
 	b.db.LogTransaction(userID, userName, "carguess", reward)
 
@@ -311,10 +328,33 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 	}
 	logoGameMu.Unlock()
 
-	brand := carBrands[rand.Intn(len(carBrands))]
+	// Try up to 5 brands until we find one with a working logo
+	var brand carBrand
+	var sent *tele.Message
+	for attempt := 0; attempt < 5; attempt++ {
+		brand = carBrands[rand.Intn(len(carBrands))]
+		logoURL := fmt.Sprintf("https://logo.clearbit.com/%s?size=200", brand.Domain)
 
-	// Get logo from Clearbit
-	logoURL := fmt.Sprintf("https://logo.clearbit.com/%s?size=200", brand.Domain)
+		// Check if logo exists
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Head(logoURL)
+		if err != nil || resp.StatusCode != 200 {
+			continue
+		}
+
+		telePhoto := &tele.Photo{
+			File:    tele.FromURL(logoURL),
+			Caption: "🏷️ Чий це логотип? (20 сек)\nНагорода: +15 🪙",
+		}
+		sent, err = c.Bot().Send(c.Chat(), telePhoto)
+		if err == nil {
+			break
+		}
+	}
+
+	if sent == nil {
+		return c.Reply("❌ Логотип не знайдено, спробуй ще раз")
+	}
 
 	logoGameMu.Lock()
 	activeLogoGame[chatID] = &logoGame{
@@ -322,26 +362,8 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 		ChatID:    chatID,
 		Aliases:   brand.Aliases,
 		CmdMsg:    c.Message(),
+		SentMsg:   sent,
 		CreatedAt: time.Now(),
-	}
-	logoGameMu.Unlock()
-
-	telePhoto := &tele.Photo{
-		File:    tele.FromURL(logoURL),
-		Caption: "🏷️ Чий це логотип? (20 сек)\nНагорода: +20 🪙",
-	}
-	sent, err := c.Bot().Send(c.Chat(), telePhoto)
-	if err != nil {
-		// Clearbit might not have this logo, try another brand
-		logoGameMu.Lock()
-		delete(activeLogoGame, chatID)
-		logoGameMu.Unlock()
-		return c.Reply("❌ Логотип не знайдено, спробуй ще раз")
-	}
-
-	logoGameMu.Lock()
-	if g, ok := activeLogoGame[chatID]; ok {
-		g.SentMsg = sent
 	}
 	logoGameMu.Unlock()
 
@@ -361,7 +383,8 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 			if cmdMsg != nil {
 				c.Bot().Delete(cmdMsg)
 			}
-			c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🏷️ Час вийшов! Це було: %s", name))
+			msg, _ := c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🏷️ Час вийшов! Це було: %s", name))
+			autoDelete(c.Bot(), 5*time.Second, msg)
 		} else {
 			logoGameMu.Unlock()
 		}
@@ -404,7 +427,7 @@ func (b *Bot) checkLogoAnswer(c tele.Context) bool {
 	delete(activeLogoGame, chatID)
 	logoGameMu.Unlock()
 
-	reward := 20
+	reward := 15
 	newBal := b.db.UpdateBalance(userID, userName, reward)
 	b.db.LogTransaction(userID, userName, "logo", reward)
 
