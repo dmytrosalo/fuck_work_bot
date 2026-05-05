@@ -26,9 +26,10 @@ func latLngToTile(lat, lng float64, zoom int) (int, int) {
 	return x, y
 }
 
-// fetchTile downloads a single OSM tile
+// fetchTile downloads a single map tile (no labels)
 func fetchTile(z, x, y int) (image.Image, error) {
-	url := fmt.Sprintf("https://tile.openstreetmap.org/%d/%d/%d.png", z, x, y)
+	// CartoDB no-labels tiles — no text, just terrain and borders
+	url := fmt.Sprintf("https://basemaps.cartocdn.com/light_nolabels/%d/%d/%d.png", z, x, y)
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "FuckWorkBot/1.0")
@@ -148,11 +149,12 @@ var zoomLevels = []struct {
 	Zoom int
 	Name string
 }{
-	{3, "🔴 Hard"},
-	{4, "🟡 Medium"},
-	{5, "🟡 Medium"},
-	{6, "🟢 Easy"},
+	{4, "🔴 Hard"},
+	{5, "🔴 Hard"},
+	{6, "🟡 Medium"},
+	{7, "🟡 Medium"},
 	{8, "🟢 Easy"},
+	{9, "🟢 Easy"},
 }
 
 func (b *Bot) handleMapGuess(c tele.Context) error {
@@ -228,24 +230,26 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 	}
 	mapGameMu.Unlock()
 
+	bot := c.Bot()
+	cmdMsg := c.Message()
+
 	go func() {
 		time.Sleep(20 * time.Second)
 		mapGameMu.Lock()
 		game, ok := activeMapGame[chatID]
 		if ok && game.Winner == "" {
 			sentMsg := game.SentMsg
-			cmdMsg := game.CmdMsg
 			name := game.Country
 			delete(activeMapGame, chatID)
 			mapGameMu.Unlock()
 			if sentMsg != nil {
-				c.Bot().Delete(sentMsg)
+				bot.Delete(sentMsg)
 			}
 			if cmdMsg != nil {
-				c.Bot().Delete(cmdMsg)
+				bot.Delete(cmdMsg)
 			}
-			msg, _ := c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🗺️ Час вийшов! Це було: %s", name))
-			autoDelete(c.Bot(), 5*time.Second, msg)
+			msg, _ := bot.Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🗺️ Час вийшов! Це було: %s", name))
+			autoDelete(bot, 5*time.Second, msg)
 		} else {
 			mapGameMu.Unlock()
 		}
