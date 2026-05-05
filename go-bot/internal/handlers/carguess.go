@@ -225,7 +225,13 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 		File:    tele.FromURL(photo.URLs.Regular),
 		Caption: "🚗 Що за марка? (20 сек)\nНагорода: +15 🪙",
 	}
-	sent, _ := c.Bot().Send(c.Chat(), telePhoto)
+	sent, err := c.Bot().Send(c.Chat(), telePhoto)
+	if err != nil {
+		carGameMu.Lock()
+		delete(activeCarGame, chatID)
+		carGameMu.Unlock()
+		return c.Reply("❌ Не вдалося відправити фото")
+	}
 
 	carGameMu.Lock()
 	if g, ok := activeCarGame[chatID]; ok {
@@ -233,24 +239,26 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 	}
 	carGameMu.Unlock()
 
+	bot := c.Bot()
+	cmdMsg := c.Message()
+
 	go func() {
 		time.Sleep(20 * time.Second)
 		carGameMu.Lock()
 		game, ok := activeCarGame[chatID]
 		if ok && game.Winner == "" {
 			sentMsg := game.SentMsg
-			cmdMsg := game.CmdMsg
 			name := game.Brand
 			delete(activeCarGame, chatID)
 			carGameMu.Unlock()
 			if sentMsg != nil {
-				c.Bot().Delete(sentMsg)
+				bot.Delete(sentMsg)
 			}
 			if cmdMsg != nil {
-				c.Bot().Delete(cmdMsg)
+				bot.Delete(cmdMsg)
 			}
-			msg, _ := c.Bot().Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🚗 Час вийшов! Це було: %s", name))
-			autoDelete(c.Bot(), 5*time.Second, msg)
+			msg, _ := bot.Send(&tele.Chat{ID: chatID}, fmt.Sprintf("🚗 Час вийшов! Це було: %s", name))
+			autoDelete(bot, 5*time.Second, msg)
 		} else {
 			carGameMu.Unlock()
 		}
