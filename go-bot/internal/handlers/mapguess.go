@@ -166,12 +166,12 @@ var zoomLevels = []struct {
 	Zoom int
 	Name string
 }{
-	{6, "🔴 Hard"},
-	{7, "🔴 Hard"},
-	{8, "🟡 Medium"},
-	{9, "🟡 Medium"},
-	{10, "🟢 Easy"},
-	{11, "🟢 Easy"},
+	{4, "🔴 Hard"},
+	{5, "🔴 Hard"},
+	{6, "🟡 Medium"},
+	{7, "🟡 Medium"},
+	{8, "🟢 Easy"},
+	{9, "🟢 Easy"},
 }
 
 func (b *Bot) handleMapGuess(c tele.Context) error {
