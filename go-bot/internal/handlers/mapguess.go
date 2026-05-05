@@ -1,8 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
+	"math"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -11,6 +16,54 @@ import (
 
 	tele "gopkg.in/telebot.v3"
 )
+
+// lat/lng to tile coordinates
+func latLngToTile(lat, lng float64, zoom int) (int, int) {
+	n := math.Pow(2, float64(zoom))
+	x := int((lng + 180.0) / 360.0 * n)
+	latRad := lat * math.Pi / 180.0
+	y := int((1.0 - math.Log(math.Tan(latRad)+1.0/math.Cos(latRad))/math.Pi) / 2.0 * n)
+	return x, y
+}
+
+// fetchTile downloads a single OSM tile
+func fetchTile(z, x, y int) (image.Image, error) {
+	url := fmt.Sprintf("https://tile.openstreetmap.org/%d/%d/%d.png", z, x, y)
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "FuckWorkBot/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return png.Decode(resp.Body)
+}
+
+// renderMap creates a 3x3 tile map image
+func renderMap(lat, lng float64, zoom int) ([]byte, error) {
+	cx, cy := latLngToTile(lat, lng, zoom)
+	tileSize := 256
+	img := image.NewRGBA(image.Rect(0, 0, tileSize*3, tileSize*3))
+
+	for dx := -1; dx <= 1; dx++ {
+		for dy := -1; dy <= 1; dy++ {
+			tile, err := fetchTile(zoom, cx+dx, cy+dy)
+			if err != nil {
+				continue
+			}
+			offsetX := (dx + 1) * tileSize
+			offsetY := (dy + 1) * tileSize
+			draw.Draw(img, image.Rect(offsetX, offsetY, offsetX+tileSize, offsetY+tileSize), tile, image.Point{}, draw.Src)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
 type mapGame struct {
 	Country   string
@@ -138,8 +191,11 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 	latOffset := (rand.Float64() - 0.5) * 2.0
 	lngOffset := (rand.Float64() - 0.5) * 2.0
 
-	mapURL := fmt.Sprintf("https://staticmap.openstreetmap.de/staticmap.php?center=%.4f,%.4f&zoom=%d&size=600x400&maptype=mapnik",
-		country.Lat+latOffset, country.Lng+lngOffset, zl.Zoom)
+	// Render map from OSM tiles
+	mapBytes, err := renderMap(country.Lat+latOffset, country.Lng+lngOffset, zl.Zoom)
+	if err != nil {
+		return c.Reply("❌ Не вдалося отримати карту")
+	}
 
 	b.db.SetMeta(mapKey, fmt.Sprintf("%d", mapCount+1))
 
@@ -155,7 +211,7 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 	mapGameMu.Unlock()
 
 	telePhoto := &tele.Photo{
-		File:    tele.FromURL(mapURL),
+		File:    tele.FromReader(bytes.NewReader(mapBytes)),
 		Caption: fmt.Sprintf("🗺️ Де це? %s (20 сек)\nНагорода: +15 🪙", zl.Name),
 	}
 	sent, err := c.Bot().Send(c.Chat(), telePhoto)
@@ -163,7 +219,7 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 		mapGameMu.Lock()
 		delete(activeMapGame, chatID)
 		mapGameMu.Unlock()
-		return c.Reply("❌ Не вдалося отримати карту")
+		return c.Reply("❌ Не вдалося відправити карту")
 	}
 
 	mapGameMu.Lock()
