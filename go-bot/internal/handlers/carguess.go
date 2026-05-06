@@ -196,7 +196,7 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return c.Reply("❌ Unsplash API помилка")
+		return c.Reply(fmt.Sprintf("❌ Unsplash API помилка (код: %d)", resp.StatusCode))
 	}
 
 	var photo struct {

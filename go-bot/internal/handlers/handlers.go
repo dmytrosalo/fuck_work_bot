@@ -244,29 +244,20 @@ func (b *Bot) handleMute(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
 	today := todayKyiv()
 
-	// Check if already toggled today
-	key := "mute_toggle:" + userID + ":" + today
+	// Mute only once per day
+	key := "mute:" + userID + ":" + today
 	if b.db.GetMeta(key) != "" {
-		return c.Reply(fmt.Sprintf("🔇 Ти вже використав /mute або /unmute сьогодні. Скидання через %s", timeUntilReset()))
+		return c.Reply(fmt.Sprintf("🔇 Ти вже мутився сьогодні. Скидання через %s", timeUntilReset()))
 	}
 
 	b.db.Mute(userID)
-	b.db.SetMeta(key, "mute")
+	b.db.SetMeta(key, "done")
 	return c.Reply("🔇 Ти замучений. Всі команди заблоковані до /unmute")
 }
 
 func (b *Bot) handleUnmute(c tele.Context) error {
 	userID := strconv.FormatInt(c.Sender().ID, 10)
-	today := todayKyiv()
-
-	// Check if already toggled today
-	key := "mute_toggle:" + userID + ":" + today
-	if b.db.GetMeta(key) != "" {
-		return c.Reply(fmt.Sprintf("🔊 Ти вже використав /mute або /unmute сьогодні. Скидання через %s", timeUntilReset()))
-	}
-
 	b.db.Unmute(userID)
-	b.db.SetMeta(key, "unmute")
 	return c.Reply("🔊 Ти розмучений. Всі команди доступні!")
 }
 
