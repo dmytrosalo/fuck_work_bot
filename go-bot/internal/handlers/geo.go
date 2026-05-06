@@ -14,6 +14,7 @@ import (
 )
 
 type geoGame struct {
+	ID        int64
 	Country   string
 	ChatID    int64
 	Aliases   []string
@@ -156,9 +157,12 @@ func (b *Bot) handleGeo(c tele.Context) error {
 	// Increment hourly count
 	b.db.SetMeta(geoKey, fmt.Sprintf("%d", geoCount+1))
 
+	gameID := time.Now().UnixNano()
+
 	// Set active game
 	geoMu.Lock()
 	activeGeo[chatID] = &geoGame{
+		ID:        gameID,
 		Country:   country.Name,
 		ChatID:    chatID,
 		Aliases:   country.Aliases,
@@ -185,7 +189,7 @@ func (b *Bot) handleGeo(c tele.Context) error {
 		time.Sleep(30 * time.Second)
 		geoMu.Lock()
 		game, ok := activeGeo[chatID]
-		if ok && game.Winner == "" {
+		if ok && game.Winner == "" && game.ID == gameID {
 			sentMsg := game.SentMsg
 			cmdMsg := game.CmdMsg
 			name := game.Country

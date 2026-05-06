@@ -84,6 +84,7 @@ func renderMap(lat, lng float64, zoom int) ([]byte, error) {
 }
 
 type mapGame struct {
+	ID        int64
 	Country   string
 	ChatID    int64
 	Aliases   []string
@@ -218,8 +219,11 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 
 	b.db.SetMeta(mapKey, fmt.Sprintf("%d", mapCount+1))
 
+	gameID := time.Now().UnixNano()
+
 	mapGameMu.Lock()
 	activeMapGame[chatID] = &mapGame{
+		ID:        gameID,
 		Country:   country.UkName,
 		ChatID:    chatID,
 		Aliases:   country.Aliases,
@@ -254,7 +258,7 @@ func (b *Bot) handleMapGuess(c tele.Context) error {
 		time.Sleep(30 * time.Second)
 		mapGameMu.Lock()
 		game, ok := activeMapGame[chatID]
-		if ok && game.Winner == "" {
+		if ok && game.Winner == "" && game.ID == gameID {
 			sentMsg := game.SentMsg
 			name := game.Country
 			delete(activeMapGame, chatID)

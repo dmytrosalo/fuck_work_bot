@@ -14,6 +14,7 @@ import (
 )
 
 type carGame struct {
+	ID        int64
 	Brand     string
 	ChatID    int64
 	Aliases   []string
@@ -211,8 +212,11 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 
 	b.db.SetMeta(carKey, fmt.Sprintf("%d", carCount+1))
 
+	gameID := time.Now().UnixNano()
+
 	carGameMu.Lock()
 	activeCarGame[chatID] = &carGame{
+		ID:        gameID,
 		Brand:     brand.Name,
 		ChatID:    chatID,
 		Aliases:   brand.Aliases,
@@ -246,7 +250,7 @@ func (b *Bot) handleCarGuess(c tele.Context) error {
 		time.Sleep(30 * time.Second)
 		carGameMu.Lock()
 		game, ok := activeCarGame[chatID]
-		if ok && game.Winner == "" {
+		if ok && game.Winner == "" && game.ID == gameID {
 			sentMsg := game.SentMsg
 			name := game.Brand
 			delete(activeCarGame, chatID)
@@ -312,6 +316,7 @@ func (b *Bot) checkCarAnswer(c tele.Context) bool {
 // --- Logo Guess ---
 
 type logoGame struct {
+	ID        int64
 	Brand     string
 	ChatID    int64
 	Aliases   []string
@@ -364,8 +369,11 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 		return c.Reply("❌ Логотип не знайдено, спробуй ще раз")
 	}
 
+	logoGameID := time.Now().UnixNano()
+
 	logoGameMu.Lock()
 	activeLogoGame[chatID] = &logoGame{
+		ID:        logoGameID,
 		Brand:     brand.Name,
 		ChatID:    chatID,
 		Aliases:   brand.Aliases,
@@ -379,7 +387,7 @@ func (b *Bot) handleLogoGuess(c tele.Context) error {
 		time.Sleep(30 * time.Second)
 		logoGameMu.Lock()
 		game, ok := activeLogoGame[chatID]
-		if ok && game.Winner == "" {
+		if ok && game.Winner == "" && game.ID == logoGameID {
 			sentMsg := game.SentMsg
 			cmdMsg := game.CmdMsg
 			name := game.Brand
