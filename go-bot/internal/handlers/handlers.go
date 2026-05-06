@@ -86,6 +86,8 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/car_guess", b.muteCheck(b.handleCarGuess))
 	bot.Handle("/logo", b.muteCheck(b.handleLogoGuess))
 	bot.Handle("/map", b.muteCheck(b.handleMapGuess))
+	bot.Handle("/flag", b.muteCheck(b.handleFlagGuess))
+	bot.Handle("/movie", b.muteCheck(b.handleMovieGuess))
 	bot.Handle(&tele.Btn{Unique: "war_pick"}, b.handleWarPick)
 	bot.Handle("/blackjack", b.handleBlackjack)
 	bot.Handle("/bj", b.handleBlackjack)
@@ -152,6 +154,8 @@ func (b *Bot) handleStart(c tele.Context) error {
 /car_guess — вгадай марку авто 🚗
 /logo — вгадай логотип 🏷️
 /map — вгадай країну по карті 🗺️
+/flag — вгадай країну по прапору 🏳️
+/movie — вгадай фільм по постеру 🎬
 /dart — дартс PvP 🎯
 /war — війна карток (3 раунди) ⚔️
 
@@ -328,6 +332,12 @@ func (b *Bot) handleText(c tele.Context) error {
 		return nil
 	}
 	if b.checkMapAnswer(c) {
+		return nil
+	}
+	if b.checkFlagAnswer(c) {
+		return nil
+	}
+	if b.checkMovieAnswer(c) {
 		return nil
 	}
 	if b.checkQuizAnswer(c) {
