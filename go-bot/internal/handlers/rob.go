@@ -79,8 +79,13 @@ func (b *Bot) handleRob(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("💰 Пограбував %s на %d 🪙 (%d%%)!\nБаланс: %d 🪙", targetName, stolen, pct, newBal))
 	}
 
-	// Fail — lose 20 coins, victim gets them
-	penalty := 20
+	// Fail — lose 10-50% of YOUR balance, victim gets it
+	myBalance := b.db.GetBalance(userID, userName)
+	failPct := rand.Intn(15) + 3 // 3-17%
+	penalty := myBalance * failPct / 100
+	if penalty < 1 {
+		penalty = 1
+	}
 	b.db.UpdateBalance(userID, userName, -penalty)
 	b.db.UpdateBalance(targetID, targetName, penalty)
 	b.db.LogTransaction(userID, userName, "rob_fail", -penalty)
