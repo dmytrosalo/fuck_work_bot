@@ -281,6 +281,16 @@ func main() {
 	}
 
 	// Gift Danya 1000 coins
+	mayGiftKey := "bonus_danyro_may12_10000"
+	if db.GetMeta(mayGiftKey) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 10000)
+			db.LogTransaction(danyaID, "Danya", "gift", 10000)
+			db.SetMeta(mayGiftKey, "done")
+			log.Println("Gave Danya +10000 coins may gift")
+		}
+	}
+
 	dongfengKey := "bonus_danyro_dongfeng_10000"
 	if db.GetMeta(dongfengKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
@@ -302,7 +312,7 @@ func main() {
 	}
 
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v6"
+	cardGiftAnnounce := "gift_cards_announced_v7"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -310,7 +320,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "🚗 Гарній людині не шкода, гарній людині донгфенг\n\nDanya отримує +10000 🪙")
+			bot.Send(&tele.Chat{ID: id}, "🎁 Найкращому Ромчику в цьому чаті!\n\nDanya отримує +10000 🪙")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
