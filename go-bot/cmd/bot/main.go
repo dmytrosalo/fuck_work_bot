@@ -281,6 +281,15 @@ func main() {
 	}
 
 	// Gift Danya 1000 coins
+	syklivKey := "gift_danya_sykliv_ultra"
+	if db.GetMeta(syklivKey) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.AddToCollection(danyaID, 403) // Сіклів 7/7 (Ultra Legendary, id=403)
+			db.SetMeta(syklivKey, "done")
+			log.Println("Gifted Сіклів 7/7 (Ultra Legendary) to Danya")
+		}
+	}
+
 	mayGiftKey := "bonus_danyro_may12_10000"
 	if db.GetMeta(mayGiftKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
@@ -312,7 +321,7 @@ func main() {
 	}
 
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v7"
+	cardGiftAnnounce := "gift_cards_announced_v8"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -320,7 +329,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "🎁 Найкращому Ромчику в цьому чаті!\n\nDanya отримує +10000 🪙")
+			bot.Send(&tele.Chat{ID: id}, "💎 Danya отримує ULTRA LEGENDARY MAX PRO картку — Сіклів 7/7!\n\nПеревірте /collection!")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
