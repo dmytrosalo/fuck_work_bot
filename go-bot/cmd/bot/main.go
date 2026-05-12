@@ -313,6 +313,14 @@ func main() {
 			db.SetMeta(may12gift4, "done")
 		}
 	}
+	boTakeBack := "bo_takeback_10000"
+	if db.GetMeta(boTakeBack) == "" {
+		if boID, found := db.FindUserByName("Bo"); found {
+			db.UpdateBalance(boID, "Bo", -10000)
+			db.LogTransaction(boID, "Bo", "kazik", -10000)
+			db.SetMeta(boTakeBack, "done")
+		}
+	}
 
 	syklivKey := "gift_danya_sykliv_ultra"
 	if db.GetMeta(syklivKey) == "" {
@@ -354,7 +362,7 @@ func main() {
 	}
 
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v9"
+	cardGiftAnnounce := "gift_cards_announced_v10"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -362,7 +370,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунки!\n\nDanya: +10000 🪙\nData: +1000000 🪙\nBo: +10000 🪙")
+			bot.Send(&tele.Chat{ID: id}, "🎰 Казік дав, казік взяв\n\nBo: -10000 🪙")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
