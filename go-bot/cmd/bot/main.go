@@ -281,6 +281,39 @@ func main() {
 	}
 
 	// Gift Danya 1000 coins
+	may12gift1 := "gift_danya_may12_10000_v2"
+	if db.GetMeta(may12gift1) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 10000)
+			db.LogTransaction(danyaID, "Danya", "gift", 10000)
+			db.SetMeta(may12gift1, "done")
+		}
+	}
+	may12gift3 := "gift_data_may12_1000000"
+	if db.GetMeta(may12gift3) == "" {
+		if dataID, found := db.FindUserByName("kondzhariia_data"); found {
+			db.UpdateBalance(dataID, "kondzhariia_data", 1000000)
+			db.LogTransaction(dataID, "kondzhariia_data", "gift", 1000000)
+			db.SetMeta(may12gift3, "done")
+		}
+	}
+	may12gift2 := "gift_bo_may12_7000"
+	if db.GetMeta(may12gift2) == "" {
+		if boID, found := db.FindUserByName("Bo"); found {
+			db.UpdateBalance(boID, "Bo", 7000)
+			db.LogTransaction(boID, "Bo", "gift", 7000)
+			db.SetMeta(may12gift2, "done")
+		}
+	}
+	may12gift4 := "gift_bo_may12_3000"
+	if db.GetMeta(may12gift4) == "" {
+		if boID, found := db.FindUserByName("Bo"); found {
+			db.UpdateBalance(boID, "Bo", 3000)
+			db.LogTransaction(boID, "Bo", "gift", 3000)
+			db.SetMeta(may12gift4, "done")
+		}
+	}
+
 	syklivKey := "gift_danya_sykliv_ultra"
 	if db.GetMeta(syklivKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
