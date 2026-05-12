@@ -354,7 +354,7 @@ func main() {
 	}
 
 	// Announce card gifts
-	cardGiftAnnounce := "gift_cards_announced_v8"
+	cardGiftAnnounce := "gift_cards_announced_v9"
 	if db.GetMeta(cardGiftAnnounce) == "" {
 		chats, _ := db.GetActiveChats()
 		for _, chatID := range chats {
@@ -362,7 +362,7 @@ func main() {
 			if err != nil {
 				continue
 			}
-			bot.Send(&tele.Chat{ID: id}, "💎 Danya отримує ULTRA LEGENDARY MAX PRO картку — Сіклів 7/7!\n\nПеревірте /collection!")
+			bot.Send(&tele.Chat{ID: id}, "🎁 Подарунки!\n\nDanya: +10000 🪙\nData: +1000000 🪙\nBo: +10000 🪙")
 		}
 		db.SetMeta(cardGiftAnnounce, "done")
 	}
