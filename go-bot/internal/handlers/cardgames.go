@@ -81,12 +81,18 @@ func (b *Bot) handleSteal(c tele.Context) error {
 		return c.Reply(fmt.Sprintf("🦹 Вкрав %s %s у %s!", card.Emoji, card.Name, targetName))
 	}
 
-	// Fail — lose 20 coins, victim gets them
-	b.db.UpdateBalance(userID, userName, -20)
-	b.db.UpdateBalance(targetID, targetName, 20)
+	// Fail — lose 3-17% of balance, victim gets it
+	myBalance := b.db.GetBalance(userID, userName)
+	failPct := rand.Intn(15) + 3 // 3-17%
+	penalty := myBalance * failPct / 100
+	if penalty < 1 {
+		penalty = 1
+	}
+	b.db.UpdateBalance(userID, userName, -penalty)
+	b.db.UpdateBalance(targetID, targetName, penalty)
 	b.db.SetMeta(stealKey, "done")
 	bal := b.db.GetBalance(userID, "")
-	return c.Reply(fmt.Sprintf("🚨 Спіймали! -%d 🪙 (баланс: %d)\n%s отримує +20 🪙 як компенсацію", 20, bal, targetName))
+	return c.Reply(fmt.Sprintf("🚨 Спіймали! -%d 🪙 (%d%%)\nБаланс: %d 🪙\n%s отримує +%d 🪙", penalty, failPct, bal, targetName, penalty))
 }
 
 // --- Gift ---

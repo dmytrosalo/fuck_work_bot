@@ -11,7 +11,7 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-const maxDartsPerDay = 5
+const maxDartsPerDay = 10
 
 type dartChallenge struct {
 	ChallengerID   string
@@ -91,8 +91,8 @@ func (b *Bot) handleDart(c tele.Context) error {
 	if userID == opponentID {
 		return c.Reply("Не можна грати з самим собою 🤦")
 	}
-	if bet > 500 {
-		bet = 500
+	if bet > 10000 {
+		bet = 10000
 	}
 
 	// Check challenger balance

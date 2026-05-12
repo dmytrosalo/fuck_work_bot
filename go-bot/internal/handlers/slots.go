@@ -28,7 +28,7 @@ var slotPayouts = map[string]int{
 
 const (
 	maxSpinsPerDay = 20
-	maxBet         = 500
+	maxBet         = 10000
 	defaultBet     = 10
 	dailyBonus     = 75
 )

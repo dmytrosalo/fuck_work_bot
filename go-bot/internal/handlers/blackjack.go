@@ -125,7 +125,7 @@ func (b *Bot) handleBlackjack(c tele.Context) error {
 		return c.Reply("❌ Мінімальна ставка: 1 🪙")
 	}
 	bjBonus := b.getTitleBonus(userID)
-	bjMaxBet := 500 + bjBonus.SlotMaxBetAdd
+	bjMaxBet := 10000 + bjBonus.SlotMaxBetAdd
 	if bet > bjMaxBet {
 		return c.Reply(fmt.Sprintf("❌ Максимальна ставка: %d 🪙", bjMaxBet))
 	}
