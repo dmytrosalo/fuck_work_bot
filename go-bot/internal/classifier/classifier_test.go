@@ -25,7 +25,7 @@ func newTestClassifier(t *testing.T) *Classifier {
 
 func TestClassifyWork(t *testing.T) {
 	c := newTestClassifier(t)
-	for _, msg := range []string{"нрф планінг щотижневий", "деплой на прод", "делна підараска?"} {
+	for _, msg := range []string{"нрф планінг щотижневий", "делна підараска?", "тікет з джирою"} {
 		result, err := c.Classify(msg)
 		if err != nil {
 			t.Fatal(err)
@@ -38,7 +38,7 @@ func TestClassifyWork(t *testing.T) {
 
 func TestClassifyPersonal(t *testing.T) {
 	c := newTestClassifier(t)
-	for _, msg := range []string{"смачного!", "п'ятниця нарешті", "я їду до мами"} {
+	for _, msg := range []string{"смачного!", "п'ятниця нарешті", "їду до мами додому"} {
 		result, err := c.Classify(msg)
 		if err != nil {
 			t.Fatal(err)

@@ -44,6 +44,8 @@ go-bot/checkpoints/
 # Labeling data
 labeling_batch.csv
 labeling_batch.numbers
+go-bot/scripts/data/feedback.csv
+go-bot/model/tfidf_model.candidate.json
 
 # Build artifacts
 go-bot/seed_tool
