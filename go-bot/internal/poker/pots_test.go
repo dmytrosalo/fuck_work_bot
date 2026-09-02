@@ -9,6 +9,7 @@ func seat(committed int, folded bool) *Seat {
 func TestReturnUncalledGivesBackExcess(t *testing.T) {
 	// A bets 500, B calls all-in for 200. A's extra 300 is uncalled.
 	a := seat(500, false)
+	a.AllIn = true // Set AllIn to true before refund
 	b := seat(200, false)
 	ReturnUncalled([]*Seat{a, b})
 	if a.Committed != 200 {
@@ -17,8 +18,28 @@ func TestReturnUncalledGivesBackExcess(t *testing.T) {
 	if a.Stack != 300 {
 		t.Errorf("A stack = %d, want 300 returned", a.Stack)
 	}
+	// After refund, AllIn must be cleared when Stack > 0
 	if a.AllIn {
-		t.Error("A should not be marked AllIn after refund")
+		t.Error("A should not be marked AllIn after refund with Stack > 0")
+	}
+}
+
+func TestReturnUncalledAllInStaysTrueWhenNoRefund(t *testing.T) {
+	// A bets 200, B calls 200. No uncalled amount. A is all-in but refund leaves Stack == 0.
+	// AllIn must remain true.
+	a := seat(200, false)
+	a.AllIn = true
+	b := seat(200, false)
+	ReturnUncalled([]*Seat{a, b})
+	if a.Committed != 200 {
+		t.Errorf("A committed = %d, want 200", a.Committed)
+	}
+	if a.Stack != 0 {
+		t.Errorf("A stack = %d, want 0 (no refund)", a.Stack)
+	}
+	// AllIn must remain true when no refund occurs
+	if !a.AllIn {
+		t.Error("A should remain AllIn when refund does not occur")
 	}
 }
 
@@ -215,7 +236,9 @@ func TestBuildPotsZeroEligibleAllFolded(t *testing.T) {
 }
 
 func TestBuildPotsConservationProperty(t *testing.T) {
-	// Table-driven conservation test across varied scenarios
+	// Table-driven conservation test for the composed pipeline: ReturnUncalled + BuildPots.
+	// The invariant that matters in production is:
+	//   Σ pot.Amount + Σ (chips refunded into stacks) == totalCommitted (before ReturnUncalled)
 	testCases := []struct {
 		name  string
 		seats []*Seat
@@ -236,21 +259,55 @@ func TestBuildPotsConservationProperty(t *testing.T) {
 			name:  "no one committed",
 			seats: []*Seat{seat(0, false), seat(0, false)},
 		},
+		{
+			name:  "refund fires: unique top commitment ascending",
+			seats: []*Seat{seat(200, false), seat(500, false)},
+		},
+		{
+			name:  "refund fires: unique top commitment descending",
+			seats: []*Seat{seat(500, false), seat(200, false)},
+		},
+		{
+			name:  "refund fires: folded high stack",
+			seats: []*Seat{seat(100, false), seat(200, true)},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			committed := 0
+			// Capture total committed BEFORE ReturnUncalled
+			totalBefore := 0
 			for _, s := range tc.seats {
-				committed += s.Committed
+				totalBefore += s.Committed
 			}
+
+			// Record stacks before ReturnUncalled to calculate refunds
+			stacksBefore := make([]int, len(tc.seats))
+			for i, s := range tc.seats {
+				stacksBefore[i] = s.Stack
+			}
+
+			// Call ReturnUncalled, then BuildPots (the production pipeline)
+			ReturnUncalled(tc.seats)
 			pots := BuildPots(tc.seats)
+
+			// Calculate total in pots
 			potTotal := 0
 			for _, p := range pots {
 				potTotal += p.Amount
 			}
-			if potTotal != committed {
-				t.Errorf("%s: pots total %d != committed %d", tc.name, potTotal, committed)
+
+			// Calculate total refunded into stacks
+			refundedTotal := 0
+			for i, s := range tc.seats {
+				refundedTotal += s.Stack - stacksBefore[i]
+			}
+
+			// The invariant: Σ pot.Amount + Σ refunded == totalBefore
+			total := potTotal + refundedTotal
+			if total != totalBefore {
+				t.Errorf("%s: pots (%d) + refunds (%d) = %d, want %d (chips created/destroyed)",
+					tc.name, potTotal, refundedTotal, total, totalBefore)
 			}
 		})
 	}
