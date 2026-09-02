@@ -66,3 +66,6 @@ go-bot/cmd/seed/extract.go
 # Go binaries
 go-bot/bot
 go-bot/cmd/bot/bot
+
+# Brainstorming visual companion
+.superpowers/
