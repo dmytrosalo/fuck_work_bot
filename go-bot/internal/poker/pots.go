@@ -31,9 +31,9 @@ func ReturnUncalled(seats []*Seat) {
 	excess := max - second
 	top.Committed -= excess
 	top.Stack += excess
-	if top.Stack > 0 {
-		top.AllIn = false
-	}
+	// A refund only executes when excess > 0, so the stack is necessarily
+	// non-zero afterwards; no conditional guard is needed.
+	top.AllIn = false
 }
 
 // BuildPots splits commitments into a main pot and any side pots.

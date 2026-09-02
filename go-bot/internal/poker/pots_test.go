@@ -24,22 +24,31 @@ func TestReturnUncalledGivesBackExcess(t *testing.T) {
 	}
 }
 
-func TestReturnUncalledAllInStaysTrueWhenNoRefund(t *testing.T) {
-	// A bets 200, B calls 200. No uncalled amount. A is all-in but refund leaves Stack == 0.
-	// AllIn must remain true.
+func TestReturnUncalledTiedMaxProducesNoRefund(t *testing.T) {
+	// A and B both commit 200 (tied maximum). With tied max, the early-return
+	// guard prevents any refund. Nothing should be refunded, Committed unchanged,
+	// and AllIn state untouched.
 	a := seat(200, false)
 	a.AllIn = true
 	b := seat(200, false)
 	ReturnUncalled([]*Seat{a, b})
+	// With tied max, nothing is refunded
 	if a.Committed != 200 {
-		t.Errorf("A committed = %d, want 200", a.Committed)
+		t.Errorf("A committed = %d, want 200 (no refund with tied max)", a.Committed)
 	}
 	if a.Stack != 0 {
 		t.Errorf("A stack = %d, want 0 (no refund)", a.Stack)
 	}
-	// AllIn must remain true when no refund occurs
+	// AllIn state should be untouched when no refund occurs
 	if !a.AllIn {
-		t.Error("A should remain AllIn when refund does not occur")
+		t.Error("A AllIn should be untouched with tied max (no refund path)")
+	}
+	// B should also be completely unaffected
+	if b.Committed != 200 {
+		t.Errorf("B committed = %d, want 200 (unaffected by tied max)", b.Committed)
+	}
+	if b.Stack != 0 {
+		t.Errorf("B stack = %d, want 0 (unaffected)", b.Stack)
 	}
 }
 
