@@ -125,8 +125,14 @@ func (t *Table) StartHand() error {
 	}
 
 	t.Button = t.nextOccupied(t.Button)
-	sb := t.nextOccupied(t.Button)
-	bb := t.nextOccupied(sb)
+	var sb, bb int
+	if t.SeatedCount() == 2 {
+		sb = t.Button
+		bb = t.nextOccupied(t.Button)
+	} else {
+		sb = t.nextOccupied(t.Button)
+		bb = t.nextOccupied(sb)
+	}
 	t.post(t.Seats[sb], SmallBlind)
 	t.post(t.Seats[bb], BigBlind)
 
