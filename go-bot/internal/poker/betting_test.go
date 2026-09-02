@@ -102,47 +102,76 @@ func totalChips(tbl *Table) int {
 }
 
 // TestMinRaiseStaysNonNegativeWithShortAllIn is a regression test for C1:
-// when a player goes all-in for less than a full raise, MinRaise must not go negative.
-// Against the broken code, this test fails: MinRaise becomes negative, subsequent "raises"
-// bypass the min-raise check, and post() is called with negative amounts, conjuring chips.
+// A short all-in BELOW the current high must not make MinRaise negative.
+// Sequence: A raises to 900; B re-raises to 2000 (high); C all-in for 1000 (below high).
+// Pre-fix: MinRaise = 1000 - 2000 = -1000, breaking the min-raise threshold.
+// Post-fix: MinRaise stays non-negative, and sub-high "raises" are rejected.
 func TestMinRaiseStaysNonNegativeWithShortAllIn(t *testing.T) {
 	tbl := NewTable("t1", 1)
 	_ = tbl.Sit("u1", "Alice", 3000)
-	_ = tbl.Sit("u2", "Bob", 1050) // Small stack for short all-in
-	_ = tbl.Sit("u3", "Carol", 3000)
+	_ = tbl.Sit("u2", "Bob", 2000)
+	_ = tbl.Sit("u3", "Carol", 1050) // Will have ~1000 to commit after BB
 	if err := tbl.StartHand(); err != nil {
 		t.Fatalf("StartHand: %v", err)
 	}
-	initialChips := totalChips(tbl)
 
 	// u1 (button) raises to 900
 	actor := tbl.Seats[tbl.ToAct].UserID
 	if err := tbl.Act(actor, ActRaise, 900); err != nil {
-		t.Fatalf("raise to 900: %v", err)
+		t.Fatalf("u1 raise to 900: %v", err)
 	}
 
-	// u2 (small blind, started with 1050, posted 50 SB, has 1000 left) goes all-in
-	// Total commitment: all 1000 remaining + 50 already bet = 1050
-	// This is less than a full raise from 900: full raise would be 900 + (900-100) = 1700
-	actor = tbl.Seats[tbl.ToAct].UserID
-	if err := tbl.Act(actor, ActRaise, 1050); err != nil {
-		t.Fatalf("all-in for 1050: %v", err)
-	}
-
-	// u3 (big blind) re-raises to 2000 (genuine raise)
+	// u2 (small blind) re-raises to 2000 (establishes high bet)
 	actor = tbl.Seats[tbl.ToAct].UserID
 	if err := tbl.Act(actor, ActRaise, 2000); err != nil {
-		t.Fatalf("raise to 2000: %v", err)
+		t.Fatalf("u2 raise to 2000: %v", err)
 	}
 
-	// After u2's short all-in, MinRaise must not go negative
+	// u3 (big blind, ~1000 left) goes all-in for 1000 (BELOW the high of 2000)
+	// Pre-fix: MinRaise = 1000 - 2000 = -1000
+	u3Idx := 2
+	u3 := tbl.Seats[u3Idx]
+	u2Idx := 1
+	u2 := tbl.Seats[u2Idx]
+	if err := tbl.Act(u3.UserID, ActRaise, u3.Bet+u3.Stack); err != nil {
+		t.Fatalf("u3 all-in: %v", err)
+	}
+
+	// Record state before the attempted invalid raise
+	potBeforeInvalidRaise := BuildPots(tbl.Seats)
+	potTotalBefore := 0
+	for _, p := range potBeforeInvalidRaise {
+		potTotalBefore += p.Amount
+	}
+	u2StackBefore := u2.Stack
+
+	// MinRaise must not go negative
 	if tbl.MinRaise < 0 {
-		t.Errorf("MinRaise = %d after short all-in, want >= 0 (invariant C1 broken)", tbl.MinRaise)
+		t.Errorf("MinRaise = %d after short all-in, want >= 0 (C1 broken)", tbl.MinRaise)
 	}
 
-	// Total chips must be conserved (no conjuring via negative post)
-	if finalChips := totalChips(tbl); finalChips != initialChips {
-		t.Errorf("total chips = %d, want %d (chips conjured/destroyed)", finalChips, initialChips)
+	// u1 attempts a "raise" to 1500 (below high of 2000)
+	// Pre-fix: MinRaise=-1000, so 1500 < 2000-1000=1000? No, 1500 >= 1000, passes!
+	// Post-fix: must reject (below high + MinRaise)
+	actor = tbl.Seats[tbl.ToAct].UserID
+	err := tbl.Act(actor, ActRaise, 1500)
+	if err == nil {
+		t.Error("u1 sub-high raise to 1500 should be rejected, but succeeded (C1 broken)")
+	}
+
+	// Verify pot was not affected by the rejected action
+	potAfterInvalidRaise := BuildPots(tbl.Seats)
+	potTotalAfter := 0
+	for _, p := range potAfterInvalidRaise {
+		potTotalAfter += p.Amount
+	}
+	if potTotalAfter != potTotalBefore {
+		t.Errorf("pot total = %d after rejected raise, want %d (chips conjured/destroyed)", potTotalAfter, potTotalBefore)
+	}
+
+	// Verify u2's stack unchanged by rejected action
+	if u2.Stack != u2StackBefore {
+		t.Errorf("u2.Stack = %d after rejected raise, want %d (chips affected by rejected action)", u2.Stack, u2StackBefore)
 	}
 }
 
