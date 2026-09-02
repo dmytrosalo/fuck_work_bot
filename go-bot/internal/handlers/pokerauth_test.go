@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -79,8 +80,12 @@ func TestVerifyInitDataRejectsStaleAuthDate(t *testing.T) {
 	f := validFields()
 	f["auth_date"] = fmt.Sprintf("%d", time.Now().Add(-48*time.Hour).Unix())
 	data := signInitData("test-token", f)
-	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+	_, _, _, err := verifyInitData(data, "test-token", 24*time.Hour)
+	if err == nil {
 		t.Fatal("expected stale auth_date to be rejected")
+	}
+	if !errors.Is(err, errStaleAuth) {
+		t.Errorf("expected errStaleAuth, got %v", err)
 	}
 }
 
@@ -102,6 +107,15 @@ func TestVerifyInitDataRejectsZeroUserID(t *testing.T) {
 	data := signInitData("test-token", f)
 	if id, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
 		t.Fatalf("expected zero user id to be rejected, got id=%d err=nil", id)
+	}
+}
+
+func TestVerifyInitDataRejectsNegativeUserID(t *testing.T) {
+	f := validFields()
+	f["user"] = `{"id":-5,"first_name":"Test","username":"test_user"}`
+	data := signInitData("test-token", f)
+	if id, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatalf("expected negative user id to be rejected, got id=%d err=nil", id)
 	}
 }
 
@@ -146,8 +160,12 @@ func TestVerifyInitDataRejectsMissingAuthDate(t *testing.T) {
 		"user": `{"id":460670583,"first_name":"Test","username":"test_user"}`,
 	}
 	data := signInitData("test-token", f)
-	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+	_, _, _, err := verifyInitData(data, "test-token", 24*time.Hour)
+	if err == nil {
 		t.Fatal("expected missing auth_date to be rejected")
+	}
+	if !errors.Is(err, errMalformedAuth) {
+		t.Errorf("expected errMalformedAuth, got %v", err)
 	}
 }
 
@@ -155,8 +173,12 @@ func TestVerifyInitDataRejectsMalformedAuthDate(t *testing.T) {
 	f := validFields()
 	f["auth_date"] = "not-a-number"
 	data := signInitData("test-token", f)
-	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+	_, _, _, err := verifyInitData(data, "test-token", 24*time.Hour)
+	if err == nil {
 		t.Fatal("expected malformed auth_date to be rejected")
+	}
+	if !errors.Is(err, errMalformedAuth) {
+		t.Errorf("expected errMalformedAuth, got %v", err)
 	}
 }
 
@@ -164,7 +186,11 @@ func TestVerifyInitDataRejectsFutureAuthDate(t *testing.T) {
 	f := validFields()
 	f["auth_date"] = fmt.Sprintf("%d", time.Now().Add(2*time.Minute).Unix())
 	data := signInitData("test-token", f)
-	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+	_, _, _, err := verifyInitData(data, "test-token", 24*time.Hour)
+	if err == nil {
 		t.Fatal("expected future auth_date to be rejected")
+	}
+	if !errors.Is(err, errStaleAuth) {
+		t.Errorf("expected errStaleAuth, got %v", err)
 	}
 }

@@ -77,7 +77,7 @@ func verifyInitData(initData, botToken string, maxAge time.Duration) (int64, str
 	if err := json.Unmarshal([]byte(values.Get("user")), &user); err != nil {
 		return 0, "", "", err
 	}
-	if user.ID == 0 {
+	if user.ID <= 0 {
 		return 0, "", "", errBadSignature
 	}
 	return user.ID, user.FirstName, user.Username, nil
