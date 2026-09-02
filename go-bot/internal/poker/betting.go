@@ -41,7 +41,6 @@ func (t *Table) Act(userID string, a Action, amount int) error {
 		return ErrNotYourTurn
 	}
 	s := t.Seats[t.ToAct]
-	s.actedThisStreet = true
 	high := t.highBet()
 
 	switch a {
@@ -57,15 +56,23 @@ func (t *Table) Act(userID string, a Action, amount int) error {
 		if amount > s.Stack+s.Bet {
 			return ErrNotEnough
 		}
+		if amount < s.Bet {
+			return ErrRaiseTooLow
+		}
 		if amount < high+t.MinRaise && amount < s.Stack+s.Bet {
 			return ErrRaiseTooLow
 		}
-		t.MinRaise = amount - high
+		// Only update MinRaise on a genuine raise (amount > high).
+		// An all-in-for-less does not reopen betting or change min-raise.
+		if amount > high {
+			t.MinRaise = max(t.MinRaise, amount-high)
+		}
 		t.post(s, amount-s.Bet)
 	default:
 		return ErrHandOver
 	}
 
+	s.actedThisStreet = true
 	t.Seq++
 
 	if t.liveCount() <= 1 {
@@ -100,7 +107,7 @@ func (t *Table) bettingClosed() bool {
 		if !s.InHand || s.Folded || s.AllIn {
 			continue
 		}
-	if s.Bet != high || !s.actedThisStreet {
+		if s.Bet != high || !s.actedThisStreet {
 			return false
 		}
 	}
@@ -130,6 +137,9 @@ func (t *Table) advance() {
 			t.Board = append(t.Board, t.draw())
 		case StageRiver:
 			t.Stage = StageShowdown
+			return
+		default:
+			// Guard against terminal stages or unknown stages causing infinite loop
 			return
 		}
 

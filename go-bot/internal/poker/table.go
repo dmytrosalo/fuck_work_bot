@@ -20,16 +20,16 @@ const (
 )
 
 type Seat struct {
-	UserID     string
-	Name       string
-	Stack      int       // chips at the table
-	Hole       []pk.Card
-	Folded     bool
-	AllIn      bool
-	Committed  int // total committed THIS HAND — basis for side pots
-	Bet        int // committed on the CURRENT street — basis for min-raise
-	InHand     bool
-	startStack int // stack when the hand began, for settlement deltas
+	UserID          string
+	Name            string
+	Stack           int // chips at the table
+	Hole            []pk.Card
+	Folded          bool
+	AllIn           bool
+	Committed       int // total committed THIS HAND — basis for side pots
+	Bet             int // committed on the CURRENT street — basis for min-raise
+	InHand          bool
+	startStack      int // stack when the hand began, for settlement deltas
 	actedThisStreet bool
 }
 
@@ -97,6 +97,9 @@ func (t *Table) SeatedCount() int {
 // post moves up to amount from the seat's stack into the pot, marking the
 // seat all-in when it cannot cover the full amount.
 func (t *Table) post(s *Seat, amount int) {
+	if amount <= 0 {
+		return
+	}
 	if amount >= s.Stack {
 		amount = s.Stack
 		s.AllIn = true
