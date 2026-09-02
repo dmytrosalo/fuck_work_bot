@@ -30,6 +30,7 @@ type Seat struct {
 	Bet        int // committed on the CURRENT street — basis for min-raise
 	InHand     bool
 	startStack int // stack when the hand began, for settlement deltas
+	actedThisStreet bool
 }
 
 type Pot struct {
@@ -120,6 +121,7 @@ func (t *Table) StartHand() error {
 		s.AllIn = false
 		s.Committed = 0
 		s.Bet = 0
+		s.actedThisStreet = false
 		s.InHand = s.Stack > 0
 		s.startStack = s.Stack
 	}
