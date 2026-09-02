@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	errBadSignature = errors.New("invalid initData signature")
-	errStaleAuth    = errors.New("initData is too old")
+	errBadSignature  = errors.New("invalid initData signature")
+	errStaleAuth     = errors.New("initData is too old")
+	errMalformedAuth = errors.New("malformed auth_date")
 )
 
 // verifyInitData validates a Telegram Mini App initData payload and returns
@@ -57,9 +58,14 @@ func verifyInitData(initData, botToken string, maxAge time.Duration) (int64, str
 
 	ts, err := strconv.ParseInt(values.Get("auth_date"), 10, 64)
 	if err != nil {
+		return 0, "", "", errMalformedAuth
+	}
+	authTime := time.Unix(ts, 0)
+	now := time.Now()
+	if now.Sub(authTime) > maxAge {
 		return 0, "", "", errStaleAuth
 	}
-	if time.Since(time.Unix(ts, 0)) > maxAge {
+	if authTime.Sub(now) > time.Minute {
 		return 0, "", "", errStaleAuth
 	}
 
@@ -70,6 +76,9 @@ func verifyInitData(initData, botToken string, maxAge time.Duration) (int64, str
 	}
 	if err := json.Unmarshal([]byte(values.Get("user")), &user); err != nil {
 		return 0, "", "", err
+	}
+	if user.ID == 0 {
+		return 0, "", "", errBadSignature
 	}
 	return user.ID, user.FirstName, user.Username, nil
 }

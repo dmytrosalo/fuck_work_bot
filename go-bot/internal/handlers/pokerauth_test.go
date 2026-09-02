@@ -83,3 +83,88 @@ func TestVerifyInitDataRejectsStaleAuthDate(t *testing.T) {
 		t.Fatal("expected stale auth_date to be rejected")
 	}
 }
+
+func TestVerifyInitDataRejectsMissingHash(t *testing.T) {
+	f := validFields()
+	// Manually construct payload without hash
+	q := url.Values{}
+	q.Set("auth_date", f["auth_date"])
+	q.Set("user", f["user"])
+	data := q.Encode()
+	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatal("expected missing hash field to be rejected")
+	}
+}
+
+func TestVerifyInitDataRejectsZeroUserID(t *testing.T) {
+	f := validFields()
+	f["user"] = `{"id":0,"first_name":"Test","username":"test_user"}`
+	data := signInitData("test-token", f)
+	if id, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatalf("expected zero user id to be rejected, got id=%d err=nil", id)
+	}
+}
+
+func TestVerifyInitDataRejectsNullUser(t *testing.T) {
+	f := validFields()
+	f["user"] = "null"
+	data := signInitData("test-token", f)
+	if id, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatalf("expected null user to be rejected, got id=%d err=nil", id)
+	}
+}
+
+func TestVerifyInitDataRejectsEmptyUserObject(t *testing.T) {
+	f := validFields()
+	f["user"] = `{}`
+	data := signInitData("test-token", f)
+	if id, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatalf("expected empty user object to be rejected, got id=%d err=nil", id)
+	}
+}
+
+func TestVerifyInitDataRejectsUserMissingID(t *testing.T) {
+	f := validFields()
+	f["user"] = `{"first_name":"Test","username":"test_user"}`
+	data := signInitData("test-token", f)
+	if id, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatalf("expected user missing id to be rejected, got id=%d err=nil", id)
+	}
+}
+
+func TestVerifyInitDataRejectsMalformedUserJSON(t *testing.T) {
+	f := validFields()
+	f["user"] = `{"id":123,"first_name":"Test"` // truncated JSON
+	data := signInitData("test-token", f)
+	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatal("expected malformed user JSON to be rejected")
+	}
+}
+
+func TestVerifyInitDataRejectsMissingAuthDate(t *testing.T) {
+	f := map[string]string{
+		"user": `{"id":460670583,"first_name":"Test","username":"test_user"}`,
+	}
+	data := signInitData("test-token", f)
+	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatal("expected missing auth_date to be rejected")
+	}
+}
+
+func TestVerifyInitDataRejectsMalformedAuthDate(t *testing.T) {
+	f := validFields()
+	f["auth_date"] = "not-a-number"
+	data := signInitData("test-token", f)
+	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatal("expected malformed auth_date to be rejected")
+	}
+}
+
+func TestVerifyInitDataRejectsFutureAuthDate(t *testing.T) {
+	f := validFields()
+	f["auth_date"] = fmt.Sprintf("%d", time.Now().Add(2*time.Minute).Unix())
+	data := signInitData("test-token", f)
+	if _, _, _, err := verifyInitData(data, "test-token", 24*time.Hour); err == nil {
+		t.Fatal("expected future auth_date to be rejected")
+	}
+}
