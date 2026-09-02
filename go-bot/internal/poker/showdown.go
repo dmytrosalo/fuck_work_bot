@@ -2,43 +2,20 @@ package poker
 
 // Showdown returns the uncalled bet, awards every pot, and reports each
 // player's signed balance delta for the hand. The deltas always sum to zero.
+// It is idempotent: calling twice returns nil on the second call.
 func (t *Table) Showdown() map[string]int {
-	ReturnUncalled(t.Seats)
+	if t.settled {
+		return nil
+	}
+	t.settled = true
 
-	// Check if total Stack + Committed exceeds total startStack for seats in hand.
-	// This can happen in test setups where Committed is manually modified without
-	// adjusting Stack. Proportionally reduce Stacks to conserve chips.
-	totalInHand := 0
-	totalStartStack := 0
-	for _, s := range t.Seats {
-		if s.InHand {
-			totalInHand += s.Stack + s.Committed
-			totalStartStack += s.startStack
-		}
-	}
-	if totalInHand > totalStartStack {
-		excess := totalInHand - totalStartStack
-		// Reduce Stacks proportionally, starting with those that have excess
-		for _, s := range t.Seats {
-			if s.InHand {
-				seatExcess := (s.Stack + s.Committed) - s.startStack
-				if seatExcess > 0 {
-					reduction := seatExcess
-					if reduction > excess {
-						reduction = excess
-					}
-					s.Stack -= reduction
-					excess -= reduction
-					if excess <= 0 {
-						break
-					}
-				}
-			}
-		}
-	}
+	ReturnUncalled(t.Seats)
 
 	for _, pot := range BuildPots(t.Seats) {
 		winners := bestOf(t, pot.Eligible)
+		if len(winners) == 0 {
+			continue
+		}
 		share := pot.Amount / len(winners)
 		odd := pot.Amount - share*len(winners)
 		for _, idx := range winners {
@@ -65,8 +42,17 @@ func (t *Table) Showdown() map[string]int {
 
 // bestOf returns the indices holding the strongest hand among the candidates.
 // If only one candidate remains (everyone else folded), it wins uncontested.
+// If the board is too short to evaluate hands, all candidates split.
 func bestOf(t *Table, candidates []int) []int {
+	if len(candidates) == 0 {
+		return candidates
+	}
 	if len(candidates) == 1 {
+		return candidates
+	}
+	// Guard against short boards: if hole+board < 5 cards, can't evaluate hands.
+	// All candidates split the pot equally.
+	if len(t.Board) < 3 {
 		return candidates
 	}
 	best := int32(-1)

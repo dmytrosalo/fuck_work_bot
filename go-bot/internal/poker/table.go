@@ -50,6 +50,7 @@ type Table struct {
 	MinRaise int
 	Deadline time.Time
 	Seq      uint64
+	settled  bool // true after Showdown() to prevent re-settlement
 	mu       sync.Mutex
 }
 
@@ -117,6 +118,7 @@ func (t *Table) StartHand() error {
 	t.Board = nil
 	t.Stage = StagePreflop
 	t.MinRaise = BigBlind
+	t.settled = false
 
 	for _, s := range t.Seats {
 		s.Hole = nil
