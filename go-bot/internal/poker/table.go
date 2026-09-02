@@ -1,6 +1,7 @@
 package poker
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -50,3 +51,133 @@ type Table struct {
 	Seq      uint64
 	mu       sync.Mutex
 }
+
+var (
+	ErrTableFull   = errors.New("стіл заповнений")
+	ErrAlreadySat  = errors.New("ти вже за столом")
+	ErrBuyInTooLow = errors.New("замало богдудіків")
+	ErrNeedPlayers = errors.New("потрібно щонайменше 2 гравці")
+)
+
+func NewTable(id string, chatID int64) *Table {
+	return &Table{ID: id, ChatID: chatID, Stage: StageWaiting, Button: -1}
+}
+
+func (t *Table) Sit(userID, name string, buyIn int) error {
+	if buyIn < MinBuyIn {
+		return ErrBuyInTooLow
+	}
+	if buyIn > MaxBuyIn {
+		buyIn = MaxBuyIn
+	}
+	if len(t.Seats) >= MaxSeats {
+		return ErrTableFull
+	}
+	for _, s := range t.Seats {
+		if s.UserID == userID {
+			return ErrAlreadySat
+		}
+	}
+	t.Seats = append(t.Seats, &Seat{UserID: userID, Name: name, Stack: buyIn})
+	t.Seq++
+	return nil
+}
+
+func (t *Table) SeatedCount() int {
+	n := 0
+	for _, s := range t.Seats {
+		if s.Stack > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// post moves up to amount from the seat's stack into the pot, marking the
+// seat all-in when it cannot cover the full amount.
+func (t *Table) post(s *Seat, amount int) {
+	if amount >= s.Stack {
+		amount = s.Stack
+		s.AllIn = true
+	}
+	s.Stack -= amount
+	s.Bet += amount
+	s.Committed += amount
+}
+
+func (t *Table) StartHand() error {
+	if t.SeatedCount() < 2 {
+		return ErrNeedPlayers
+	}
+	t.Deck = NewShuffledDeck()
+	t.Board = nil
+	t.Stage = StagePreflop
+	t.MinRaise = BigBlind
+
+	for _, s := range t.Seats {
+		s.Hole = nil
+		s.Folded = s.Stack <= 0
+		s.AllIn = false
+		s.Committed = 0
+		s.Bet = 0
+		s.InHand = s.Stack > 0
+		s.startStack = s.Stack
+	}
+
+	t.Button = t.nextOccupied(t.Button)
+	sb := t.nextOccupied(t.Button)
+	bb := t.nextOccupied(sb)
+	t.post(t.Seats[sb], SmallBlind)
+	t.post(t.Seats[bb], BigBlind)
+
+	for i := 0; i < 2; i++ {
+		for _, s := range t.Seats {
+			if s.InHand {
+				s.Hole = append(s.Hole, t.draw())
+			}
+		}
+	}
+
+	t.ToAct = t.nextActive(bb)
+	t.Deadline = time.Now().Add(TurnTimeout)
+	t.Seq++
+	return nil
+}
+
+func (t *Table) draw() pk.Card {
+	c := t.Deck[0]
+	t.Deck = t.Deck[1:]
+	return c
+}
+
+// nextOccupied returns the next seat index with chips, wrapping around.
+func (t *Table) nextOccupied(from int) int {
+	n := len(t.Seats)
+	for i := 1; i <= n; i++ {
+		idx := (from + i%n + n) % n
+		if t.Seats[idx].Stack > 0 || t.Seats[idx].InHand {
+			return idx
+		}
+	}
+	return 0
+}
+
+// nextActive returns the next seat still able to act.
+func (t *Table) nextActive(from int) int {
+	n := len(t.Seats)
+	for i := 1; i <= n; i++ {
+		idx := (from + i) % n
+		s := t.Seats[idx]
+		if s.InHand && !s.Folded && !s.AllIn {
+			return idx
+		}
+	}
+	return -1
+}
+
+// Lock guards the table for callers outside this package. The engine itself
+// is lock-free so it stays testable; HTTP handlers must hold this lock
+// around Sit, Act, Showdown and ViewFor.
+func (t *Table) Lock() { t.mu.Lock() }
+
+func (t *Table) Unlock() { t.mu.Unlock() }
