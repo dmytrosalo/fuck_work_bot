@@ -386,22 +386,33 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 }
 
 // claimSeat atomically reserves userID's single hub-wide seat for tableID.
-// ok is false if userID already holds a claim on a *different* table, in
-// which case the caller must reject the join outright. fresh is true when
-// this call created the claim (nothing existed before) — the caller must
-// remember that, because only a fresh claim should be released if the
-// subsequent Sit() fails; a pre-existing claim for this same table means
-// the user may already have a live seat here, and releasing it out from
-// under them on an unrelated Sit failure would let a concurrent join steal
-// their spot at another table.
-func (h *PokerHub) claimSeat(userID, tableID string) (fresh, ok bool) {
+// live is false if tableID is no longer present in h.tables — the caller
+// (a request that resolved its *poker.Table pointer before the sweeper
+// reclaimed the table out from under it, a TOCTOU window between Register's
+// existence check and this call) must refuse the join outright and must
+// NOT fall through to the ok check below: writing h.seatedAt for a dead
+// table id would resurrect a hub-map entry the sweeper will never see
+// again (it only ever iterates the current h.tables), permanently
+// stranding that claim exactly like the bug item 3 was written to fix.
+// ok is false if userID already holds a claim on a *different*, still-live
+// table, in which case the caller must reject the join outright. fresh is
+// true when this call created the claim (nothing existed before) — the
+// caller must remember that, because only a fresh claim should be released
+// if the subsequent Sit() fails; a pre-existing claim for this same table
+// means the user may already have a live seat here, and releasing it out
+// from under them on an unrelated Sit failure would let a concurrent join
+// steal their spot at another table.
+func (h *PokerHub) claimSeat(userID, tableID string) (fresh, ok, live bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if _, tableLive := h.tables[tableID]; !tableLive {
+		return false, false, false
+	}
 	if existing, exists := h.seatedAt[userID]; exists {
-		return false, existing == tableID
+		return false, existing == tableID, true
 	}
 	h.seatedAt[userID] = tableID
-	return true, true
+	return true, true, true
 }
 
 // releaseSeatClaim drops userID's hub-wide seat claim, but only if it still
@@ -552,7 +563,15 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	userID := fmt.Sprintf("%d", uid)
 	name := resolveTarget(firstName, username)
 
-	fresh, ok := h.claimSeat(userID, tbl.ID)
+	fresh, ok, live := h.claimSeat(userID, tbl.ID)
+	if !live {
+		// The sweeper reclaimed this table in the window between Register's
+		// existence check and here — same response an unknown table
+		// already produces, since as far as the hub's bookkeeping is
+		// concerned that's exactly what this now is.
+		http.Error(w, "Стіл закрито", http.StatusNotFound)
+		return
+	}
 	if !ok {
 		http.Error(w, "Ти вже за іншим столом", http.StatusConflict)
 		return
@@ -669,17 +688,25 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 		return
 	}
 	userID := fmt.Sprintf("%d", uid)
+
+	// Registered — and its liveness checked — before any SSE-specific
+	// header is written, so a table the sweeper already reclaimed (the same
+	// TOCTOU window claimSeat/touch guard against: this handler resolved
+	// tbl via Register's existence check before the reclaim) can still
+	// cleanly 404 instead of resurrecting a h.subs entry the sweeper will
+	// never see again.
+	sub := &subscriber{userID: userID, ch: make(chan poker.TableView, 4), done: make(chan struct{})}
+	if !h.registerSubscriber(tbl.ID, sub) {
+		http.Error(w, "Стіл закрито", http.StatusNotFound)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	// Tells Fly.io's proxy (nginx-compatible) not to buffer this response;
 	// without it an idle stream can sit in the proxy's buffer indefinitely.
 	w.Header().Set("X-Accel-Buffering", "no")
-
-	sub := &subscriber{userID: userID, ch: make(chan poker.TableView, 4), done: make(chan struct{})}
-	h.mu.Lock()
-	h.subs[tbl.ID] = append(h.subs[tbl.ID], sub)
-	h.mu.Unlock()
 
 	defer func() {
 		h.mu.Lock()
@@ -777,12 +804,25 @@ const sweepInterval = 5 * time.Second
 // of being reclaimed mid-hand.
 const idleTableTimeout = 30 * time.Minute
 
-// touch records activity on tableID now. Guarded by h.mu; safe to call
-// either standalone or while holding a table's own lock, since h.mu is
-// always the inner lock relative to a table lock.
+// touch records activity on tableID now — but only if tableID is still
+// present in h.tables. Without that guard, a handler that resolved its
+// *poker.Table pointer before the sweeper reclaimed the table (the same
+// TOCTOU window claimSeat guards against) would silently resurrect a
+// h.lastActivity entry for a dead table id: the sweeper only ever iterates
+// the current h.tables, so that entry would never be cleaned up again —
+// the exact unbounded growth item 4 exists to bound. A no-op here is
+// intentionally silent (not an error the caller need act on): by the time
+// touch runs, the real mutation (Sit/Act) already succeeded against the
+// table object itself, which stays valid even once orphaned from the hub.
+//
+// Guarded by h.mu; safe to call either standalone or while holding a
+// table's own lock, since h.mu is always the inner lock relative to a
+// table lock.
 func (h *PokerHub) touch(tableID string) {
 	h.mu.Lock()
-	h.lastActivity[tableID] = time.Now()
+	if _, live := h.tables[tableID]; live {
+		h.lastActivity[tableID] = time.Now()
+	}
 	h.mu.Unlock()
 }
 
@@ -797,6 +837,20 @@ func (h *PokerHub) activitySince(tableID string) time.Duration {
 		return idleTableTimeout + 1
 	}
 	return time.Since(last)
+}
+
+// registerSubscriber appends sub to tableID's subscriber list, but only if
+// tableID is still present in h.tables — the same TOCTOU guard as
+// claimSeat's live check, applied to h.subs instead of h.seatedAt. Reports
+// whether it registered. Guarded by h.mu.
+func (h *PokerHub) registerSubscriber(tableID string, sub *subscriber) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, live := h.tables[tableID]; !live {
+		return false
+	}
+	h.subs[tableID] = append(h.subs[tableID], sub)
+	return true
 }
 
 // StartSweeper starts the background goroutine that enforces turn deadlines,

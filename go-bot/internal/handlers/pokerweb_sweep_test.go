@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -446,4 +449,200 @@ func TestSweepOnceReclaimsTableWhoseOnlyEventsAreForcedTimeouts(t *testing.T) {
 			t.Errorf("%s join to a new table after reclaim status = %d, want 200, body=%s", u.name, rec.Code, rec.Body.String())
 		}
 	}
+}
+
+// --- regression guard: sweeper reclaim racing an in-flight request (C1) ---
+
+// checkNoOrphanedHubState asserts the invariant C1 exists to protect: no
+// entry in h.seatedAt, h.lastActivity, or h.subs may reference a tableID
+// absent from h.tables. Such an entry is permanently unreachable — the
+// sweeper only ever iterates the current h.tables, so it can never clean up
+// bookkeeping for a table id that has already been removed from it. For
+// seatedAt specifically, an orphaned entry means the claimed user can never
+// join any table again (item 3's exact failure mode); for lastActivity it
+// is the unbounded growth item 4 exists to bound; for subs it is a
+// subscriber list nothing will ever flush.
+func checkNoOrphanedHubState(t *testing.T, h *PokerHub) {
+	t.Helper()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for uid, tid := range h.seatedAt {
+		if _, live := h.tables[tid]; !live {
+			t.Errorf("orphaned seatedAt claim: user %s -> dead table %s (user is now locked out of every table)", uid, tid)
+		}
+	}
+	for tid := range h.lastActivity {
+		if _, live := h.tables[tid]; !live {
+			t.Errorf("orphaned lastActivity entry for dead table %s (unbounded growth)", tid)
+		}
+	}
+	for tid := range h.subs {
+		if _, live := h.tables[tid]; !live {
+			t.Errorf("orphaned subs entry for dead table %s (subscriber list nothing will ever flush)", tid)
+		}
+	}
+}
+
+// TestConcurrentJoinAndSweepNeverOrphanHubState is the regression guard for
+// C1: a request handler resolves tbl := h.table(id) and releases h.mu
+// before doing any further work (Register's existence check, at the top of
+// the /api/poker/ mux handler). If the sweeper reclaims that same table in
+// the window between that check and the handler's own h.mu-touching calls
+// (claimSeat, touch, the subs append in handleStream), those calls must
+// refuse to resurrect hub-map entries for a table id no longer in
+// h.tables — otherwise the claim/activity-entry/subscriber-list becomes
+// permanently orphaned, since the sweeper only ever iterates h.tables.
+//
+// This races many concurrent joins against a concurrently-running sweeper
+// over many tables that are ALL already idle at the moment the race starts,
+// maximizing the chance that at least some joins land in the exact TOCTOU
+// window: the outer existence check (h.table(id) via Register) succeeds,
+// then the sweeper's reclaim runs before the join's own claimSeat/touch.
+func TestConcurrentJoinAndSweepNeverOrphanHubState(t *testing.T) {
+	const numTables = 200
+
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	type joiner struct {
+		tbl *poker.Table
+		uid int64
+	}
+	joiners := make([]joiner, numTables)
+	for i := 0; i < numTables; i++ {
+		tbl := h.Create(int64(i))
+		uid := int64(200000 + i)
+		userID := fmt.Sprintf("%d", uid)
+		db.UpdateBalance(userID, fmt.Sprintf("U%d", i), 5000-100)
+		joiners[i] = joiner{tbl: tbl, uid: uid}
+
+		// Idle from the moment it's created: the very first sweep pass is
+		// eligible to reclaim it, so it can race a join that starts at any
+		// point during the fan-out below.
+		h.mu.Lock()
+		h.lastActivity[tbl.ID] = time.Now().Add(-(idleTableTimeout + time.Minute))
+		h.mu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+
+	// One goroutine plays the sweeper, running many passes concurrently
+	// with the joins below — exactly like StartSweeper's real ticker loop,
+	// just driven directly (no goroutine leak: it's bounded and this test
+	// waits for it via wg).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 30; i++ {
+			h.sweepOnce()
+		}
+	}()
+
+	// Many goroutines join concurrently, each racing the sweeper's reclaim
+	// of its own table. Either outcome (200 joined before reclaim, or 404
+	// table closed) is a legitimate result — this test only cares about the
+	// invariant checked below, not which side "wins" any individual race.
+	for _, j := range joiners {
+		wg.Add(1)
+		go func(j joiner) {
+			defer wg.Done()
+			initData := userInitData(t, "test-token", j.uid, fmt.Sprintf("U%d", j.uid), "")
+			req := httptest.NewRequest("POST", "/api/poker/"+j.tbl.ID+"/join", nil)
+			req.Header.Set("X-Telegram-Init-Data", initData)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound {
+				t.Errorf("join uid=%d status = %d, want 200 (joined before reclaim) or 404 (table closed), body=%s", j.uid, rec.Code, rec.Body.String())
+			}
+		}(j)
+	}
+	wg.Wait()
+
+	// Drain whatever is left idle (some sweeps above may have run before
+	// every join even started).
+	for i := 0; i < 5; i++ {
+		h.sweepOnce()
+	}
+
+	checkNoOrphanedHubState(t, h)
+}
+
+// TestConcurrentActionAndSweepNeverOrphanHubState is the action-path
+// counterpart: each table already has a hand in progress (two seated
+// players), and a real player action races the sweeper's reclaim of that
+// same idle-since-creation table. handleAction's only h.mu-touching call is
+// h.touch — this pins that it, too, must not resurrect a hub-map entry for
+// a table the sweeper has already reclaimed.
+func TestConcurrentActionAndSweepNeverOrphanHubState(t *testing.T) {
+	const numTables = 100
+
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	type actor struct {
+		tbl *poker.Table
+		uid int64
+	}
+	actors := make([]actor, numTables)
+	for i := 0; i < numTables; i++ {
+		tbl := h.Create(int64(i))
+		if err := tbl.Sit("111", "Alice", 2000); err != nil {
+			t.Fatalf("Sit: %v", err)
+		}
+		if err := tbl.Sit("222", "Bob", 2000); err != nil {
+			t.Fatalf("Sit: %v", err)
+		}
+		if err := tbl.StartHand(); err != nil {
+			t.Fatalf("StartHand: %v", err)
+		}
+		toActUserID := tbl.Seats[tbl.ToAct].UserID
+		uid := mustParseInt64(t, toActUserID)
+		actors[i] = actor{tbl: tbl, uid: uid}
+
+		h.mu.Lock()
+		h.lastActivity[tbl.ID] = time.Now().Add(-(idleTableTimeout + time.Minute))
+		h.mu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 30; i++ {
+			h.sweepOnce()
+		}
+	}()
+
+	for _, a := range actors {
+		wg.Add(1)
+		go func(a actor) {
+			defer wg.Done()
+			initData := userInitData(t, "test-token", a.uid, "P", "")
+			body := fmt.Sprintf(`{"action":"fold","seq":%d}`, a.tbl.Seq)
+			req := httptest.NewRequest("POST", "/api/poker/"+a.tbl.ID+"/action", strings.NewReader(body))
+			req.Header.Set("X-Telegram-Init-Data", initData)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			// 200 (acted before reclaim), 404 (table closed by the
+			// sweeper first), or 409 (a sweeper-fired ForceTimeout already
+			// consumed this seq first) are all legitimate outcomes here.
+			if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound && rec.Code != http.StatusConflict {
+				t.Errorf("action uid=%d status = %d, want 200/404/409, body=%s", a.uid, rec.Code, rec.Body.String())
+			}
+		}(a)
+	}
+	wg.Wait()
+
+	for i := 0; i < 5; i++ {
+		h.sweepOnce()
+	}
+
+	checkNoOrphanedHubState(t, h)
 }
