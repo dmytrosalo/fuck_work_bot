@@ -10,7 +10,7 @@ import (
 func TestMiniAppName(t *testing.T) {
 	t.Run("defaults when unset", func(t *testing.T) {
 		t.Setenv("POKER_MINIAPP", "")
-		if got, want := miniAppName(), "poker"; got != want {
+		if got, want := miniAppName(), "finikultramatcha"; got != want {
 			t.Errorf("miniAppName() = %q, want %q", got, want)
 		}
 	})
@@ -27,9 +27,9 @@ func TestMiniAppName(t *testing.T) {
 // thing that makes /poker work in a group — a regression here silences the
 // command with no error visible to players.
 func TestMiniAppLink(t *testing.T) {
-	t.Setenv("POKER_MINIAPP", "poker")
+	t.Setenv("POKER_MINIAPP", "")
 	got := miniAppLink("fuuck_work_bot", "a1b2c3d4e5f60718")
-	want := "https://t.me/fuuck_work_bot/poker?startapp=a1b2c3d4e5f60718"
+	want := "https://t.me/fuuck_work_bot/finikultramatcha?startapp=a1b2c3d4e5f60718"
 	if got != want {
 		t.Errorf("miniAppLink() = %q, want %q", got, want)
 	}

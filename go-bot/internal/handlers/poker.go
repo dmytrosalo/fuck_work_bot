@@ -8,8 +8,11 @@ import (
 )
 
 // defaultMiniAppName is the @BotFather Mini App short name assumed when
-// POKER_MINIAPP is unset. It must match the short name given to /newapp.
-const defaultMiniAppName = "poker"
+// POKER_MINIAPP is unset. It MUST match the short name registered with
+// /newapp for @fuuck_work_bot — BotFather assigns the name, it is not
+// chosen here, and a mismatch makes the group button open a dead t.me link
+// with no server-side error to notice.
+const defaultMiniAppName = "finikultramatcha"
 
 // miniAppName returns the Mini App short name registered with @BotFather.
 func miniAppName() string {
