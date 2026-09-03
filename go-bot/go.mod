@@ -3,6 +3,7 @@ module github.com/dmytrosalo/fuck-work-bot
 go 1.25.0
 
 require (
+	github.com/chehsunliu/poker v0.1.0 // indirect
 	github.com/daulet/tokenizers v1.26.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
