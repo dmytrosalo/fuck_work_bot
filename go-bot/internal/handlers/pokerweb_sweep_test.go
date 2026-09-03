@@ -488,7 +488,7 @@ func TestSweepOnceReclaimsIdleTableReleasesClaimsAndDropsSubscribers(t *testing.
 	// (same package) rather than opening a real streaming connection —
 	// sweepOnce must close its done channel so the (real, in production)
 	// goroutine blocked in handleStream's select exits.
-	sub := &subscriber{userID: "111", ch: make(chan poker.TableView, 1), done: make(chan struct{})}
+	sub := &subscriber{userID: "111", ch: make(chan tableEnvelope, 1), done: make(chan struct{})}
 	h.mu.Lock()
 	h.subs[tbl.ID] = append(h.subs[tbl.ID], sub)
 	h.lastActivity[tbl.ID] = time.Now().Add(-(idleTableTimeout + time.Minute))

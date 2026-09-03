@@ -39,7 +39,7 @@ var pokerTmpl = template.Must(template.New("poker").Parse(`<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI",sans-serif}
 #bar{display:flex;justify-content:space-between;padding:6px 12px;background:#151c2b;color:#7d8aa3;font-size:11px}
-#felt{position:relative;height:52vh;min-height:280px;
+#felt{position:relative;height:40vh;min-height:220px;
  background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
 .seat{position:absolute;width:74px;margin-left:-37px;margin-top:-20px;text-align:center;font-size:11px;
  transition:opacity .2s}
@@ -70,6 +70,22 @@ button.pri{background:#e8a33d;color:#2b1d05}
 button.dng{background:#3a2029;color:#e08a9a}
 button:disabled{opacity:.35}
 #msg{text-align:center;padding:8px;color:#9fb0c9;font-size:12px;min-height:18px}
+/* Pre-action row. Occupies the same slot as #acts and only one of the two is
+   ever displayed, so the controls never move under the player's thumb. */
+#pre{display:none;gap:6px;padding:10px;background:#121927}
+#pre.on{display:flex}
+#pre button{background:#1b2536;color:#8fa1bd}
+#pre button.armed{background:#2f4462;color:#ffd166;outline:2px solid #ffd166}
+/* Table chat */
+#chat{background:#0d1220;border-top:1px solid #1a2233}
+#chatlog{height:74px;overflow-y:auto;padding:6px 10px;font-size:12px;line-height:1.45}
+.cline{margin:1px 0;word-break:break-word}
+.cwho{color:#7ddba5;font-weight:700}
+#chatrow{display:flex;gap:6px;padding:6px 8px 8px}
+#chatinput{flex:1;min-width:0;padding:9px 10px;border:0;border-radius:8px;
+ background:#1b2536;color:#e6edf7;font-size:13px}
+#chatinput::placeholder{color:#5d6b83}
+#chatsend{flex:0 0 52px;padding:9px 0}
 /* Raise controls. window.prompt() is unavailable inside Telegram's webview —
    it returns null without ever showing a dialog — so the raise amount has to
    be chosen with real in-page controls. */
@@ -116,7 +132,19 @@ button:disabled{opacity:.35}
     <button id="raise-ok" class="pri">Підтвердити</button>
   </div>
 </div>
+<div id="pre">
+  <button data-pre="fold">Пас</button>
+  <button data-pre="checkfold">Чек/Пас</button>
+  <button data-pre="call">Колл</button>
+</div>
 <div id="msg"></div>
+<div id="chat">
+  <div id="chatlog"></div>
+  <div id="chatrow">
+    <input id="chatinput" type="text" maxlength="200" placeholder="Напиши…" autocomplete="off">
+    <button id="chatsend">→</button>
+  </div>
+</div>
 <script>
 const tg=(window.Telegram&&window.Telegram.WebApp)||null;
 if(tg){tg.ready();tg.expand()}
@@ -175,6 +203,37 @@ let lastStage=null;
 // Latch so the win banner plays once per hand — see render().
 let winShown=false;
 
+// Queued action to play the moment it becomes our turn: null | "fold" |
+// "checkfold" | "call". preAmt records the call price AT ARM TIME so a raise
+// arriving in between cancels the call instead of silently committing to a
+// bigger number than the player agreed to.
+let pre=null,preAmt=0;
+function clearPre(){
+  pre=null;preAmt=0;
+  document.querySelectorAll("#pre button").forEach(b=>b.classList.remove("armed"));
+}
+
+// Renders the chat log. Every message part goes in via textContent — names
+// and text are player-controlled, so this must never touch innerHTML.
+function renderChat(msgs){
+  const box=document.getElementById("chatlog");
+  // Only auto-scroll when already pinned to the bottom, so reading back
+  // through the log is not yanked away by someone else's message.
+  const pinned=box.scrollTop+box.clientHeight>=box.scrollHeight-8;
+  box.textContent="";
+  (msgs||[]).forEach(m=>{
+    const line=document.createElement("div");
+    line.className="cline";
+    const who=document.createElement("span");
+    who.className="cwho";
+    who.textContent=(m.name||"?")+": ";
+    line.appendChild(who);
+    line.appendChild(document.createTextNode(m.text||""));
+    box.appendChild(line);
+  });
+  if(pinned)box.scrollTop=box.scrollHeight;
+}
+
 // Replays the CSS animation from the start: removing the class alone is not
 // enough, the reflow between remove and add is what restarts it.
 function showWin(n){
@@ -207,9 +266,51 @@ function applyButtons(){
   // built from are stale the moment the street or the high bet moves, and
   // confirming from a stale panel just earns an ErrRaiseTooLow.
   if(!myTurn)closeRaise();
+
+  // Pre-action row is offered only while we are in a live hand and it is
+  // someone else's turn. A folded or all-in seat has nothing left to queue.
+  const canQueue=live&&!!me&&!myTurn&&!me.folded&&!me.all_in;
+  document.getElementById("pre").classList.toggle("on",canQueue);
+  document.getElementById("acts").style.display=canQueue?"none":"flex";
+  if(!canQueue&&!myTurn)clearPre();
+  const preCall=document.querySelector('#pre button[data-pre="call"]');
+  preCall.textContent=toCall>0?("Колл "+toCall):"Колл";
+  // Nothing to call yet: arming it would be meaningless, and Чек/Пас
+  // already covers the free-to-check case.
+  preCall.disabled=toCall<=0;
+}
+
+// Plays a queued action once it is genuinely our turn. The intent is
+// re-evaluated against the CURRENT state, never the state it was armed in:
+// «Чек/Пас» folds if a bet appeared, and «Колл» cancels outright if the
+// price moved, so a pre-action can never commit more chips than the player
+// saw when they tapped it.
+function maybeFirePre(){
+  if(!pre||!state)return;
+  const seats=state.seats||[];
+  const me=state.you_seat>=0?seats[state.you_seat]:null;
+  const live=state.stage!=="waiting"&&state.stage!=="showdown";
+  if(!live||!me||me.folded){clearPre();return}
+  if(!me.to_act)return;
+  const toCall=Math.max(0,(state.high_bet||0)-(me.bet||0));
+  const choice=pre,armed=preAmt;
+  clearPre(); // clear BEFORE acting: act() renders again, and a still-armed
+              // pre would re-enter this function from that render.
+  if(choice==="fold")act("fold");
+  else if(choice==="checkfold")act(toCall>0?"fold":"check");
+  else if(choice==="call"){
+    if(toCall===armed)act("call");
+    else setError("Ставка змінилась — колл скасовано");
+  }
 }
 
 function render(v){
+  // Chat first, and NOT behind the seq gate below. A chat message does not
+  // mutate the table, so it never bumps seq — gating it would mean chat
+  // only ever appeared alongside an unrelated game action. Bumping seq on
+  // chat instead was rejected: seq is the action-ordering token, and moving
+  // it would 409 every player's pending action each time someone typed.
+  renderChat(v.chat);
   if(v.seq<=highestSeq)return;
   highestSeq=v.seq;
   state=v;
@@ -312,6 +413,8 @@ function render(v){
 
   applyButtons();
   tick();
+  // Last, so it acts on a fully rendered, current snapshot.
+  maybeFirePre();
 }
 
 function tick(){
@@ -417,6 +520,40 @@ document.getElementById("raise-ok").onclick=()=>{
 };
 document.getElementById("btn-raise").onclick=openRaise;
 
+document.querySelectorAll("#pre button").forEach(btn=>{
+  btn.onclick=()=>{
+    const choice=btn.getAttribute("data-pre");
+    const armed=(pre===choice);
+    clearPre();
+    if(armed)return; // second tap on the armed option cancels it
+    pre=choice;
+    if(choice==="call"){
+      const seats=state?(state.seats||[]):[];
+      const me=state&&state.you_seat>=0?seats[state.you_seat]:null;
+      preAmt=me?Math.max(0,(state.high_bet||0)-(me.bet||0)):0;
+    }
+    btn.classList.add("armed");
+  };
+});
+
+const chatInput=document.getElementById("chatinput");
+async function sendChat(){
+  const text=chatInput.value.trim();
+  if(!text)return;
+  chatInput.value="";
+  try{
+    const r=await fetch("/api/poker/"+TABLE+"/chat",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
+      body:JSON.stringify({text:text})
+    });
+    if(!r.ok){setError(await r.text());return}
+    render(await r.json());
+  }catch(e){setError("Зʼєднання втрачено…")}
+}
+document.getElementById("chatsend").onclick=sendChat;
+chatInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();sendChat()}};
+
 (async()=>{
   if(!tg){setMsg("Відкрий через кнопку в чаті Telegram");return}
   let j;
@@ -446,7 +583,7 @@ const sseKeepaliveInterval = 20 * time.Second
 // subscriber is one open SSE connection watching a table.
 type subscriber struct {
 	userID string
-	ch     chan poker.TableView
+	ch     chan tableEnvelope
 	// done is closed by sweepOnce when its table is reclaimed for being
 	// idle, so a still-connected SSE goroutine watching a now-deleted table
 	// exits instead of idling forever on a channel nothing will ever send
@@ -520,6 +657,16 @@ type PokerHub struct {
 	// here, so an unknown or currently-failing user can never be admitted
 	// from a stale entry. Guarded by h.mu, same as the other hub maps.
 	membershipCache map[membershipKey]time.Time
+
+	// chat holds each table's recent messages, newest last, capped at
+	// chatHistory. Ephemeral by design: it shares the table's lifetime and
+	// is dropped when the sweeper reclaims one. Guarded by h.mu.
+	chat map[string][]chatMsg
+
+	// lastChatAt is the per-user cooldown clock for chat. Keyed by userID
+	// rather than (table, user) so a spammer cannot dodge it by opening a
+	// second table. Guarded by h.mu.
+	lastChatAt map[string]time.Time
 }
 
 // membershipKey identifies one (chat, user) pair for membershipCache.
@@ -548,6 +695,8 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		lastActivity:    map[string]time.Time{},
 		showdownAt:      map[string]time.Time{},
 		membershipCache: map[membershipKey]time.Time{},
+		chat:            map[string][]chatMsg{},
+		lastChatAt:      map[string]time.Time{},
 	}
 }
 
@@ -756,6 +905,8 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			h.handleStream(w, r, tbl, uid)
 		case "action":
 			h.handleAction(w, r, tbl, uid)
+		case "chat":
+			h.handleChat(w, r, tbl, uid, firstName, username)
 		default:
 			http.NotFound(w, r)
 		}
@@ -816,7 +967,7 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 
 	tbl.Lock()
 	if tbl.SeatIndexOf(userID) >= 0 {
-		view := tbl.ViewFor(userID)
+		view := h.envelope(tbl, userID)
 		tbl.Unlock()
 		h.touch(tbl.ID) // reconnecting is real player-initiated activity
 		writeJSON(w, view)
@@ -881,7 +1032,7 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 			_ = tbl.StartHand()
 		}
 	}
-	view := tbl.ViewFor(userID)
+	view := h.envelope(tbl, userID)
 	h.broadcast(tbl) // called with the table lock held, per lock ordering
 	tbl.Unlock()
 	h.touch(tbl.ID)
@@ -969,7 +1120,7 @@ func (h *PokerHub) handleAction(w http.ResponseWriter, r *http.Request, tbl *pok
 		h.settle(tbl)
 	}
 
-	view := tbl.ViewFor(userID)
+	view := h.envelope(tbl, userID)
 	h.broadcast(tbl)
 	tbl.Unlock()
 	h.touch(tbl.ID)
@@ -1067,7 +1218,7 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	// tbl via Register's existence check before the reclaim) can still
 	// cleanly 404 instead of resurrecting a h.subs entry the sweeper will
 	// never see again.
-	sub := &subscriber{userID: userID, ch: make(chan poker.TableView, 4), done: make(chan struct{})}
+	sub := &subscriber{userID: userID, ch: make(chan tableEnvelope, 4), done: make(chan struct{})}
 	if !h.registerSubscriber(tbl.ID, sub) {
 		http.Error(w, "Стіл закрито", http.StatusNotFound)
 		return
@@ -1097,7 +1248,7 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	// initial snapshot. Nesting them the other way risks deadlock against
 	// broadcast(), which takes h.mu while holding the table lock.
 	tbl.Lock()
-	initial := tbl.ViewFor(userID)
+	initial := h.envelope(tbl, userID)
 	tbl.Unlock()
 	sendView(w, flusher, initial)
 
@@ -1124,7 +1275,7 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	}
 }
 
-func sendView(w http.ResponseWriter, f http.Flusher, v poker.TableView) {
+func sendView(w http.ResponseWriter, f http.Flusher, v tableEnvelope) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return
@@ -1142,9 +1293,14 @@ func sendView(w http.ResponseWriter, f http.Flusher, v poker.TableView) {
 func (h *PokerHub) broadcast(tbl *poker.Table) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	// Read the chat log once, under the lock we already hold. Calling
+	// chatSnapshot here would try to take h.mu a second time and deadlock;
+	// sync.Mutex is not reentrant. One read serves every subscriber because
+	// chat, unlike the table view, is not redacted per viewer.
+	msgs := h.chatLocked(tbl.ID)
 	for _, s := range h.subs[tbl.ID] {
 		select {
-		case s.ch <- tbl.ViewFor(s.userID):
+		case s.ch <- tableEnvelope{TableView: tbl.ViewFor(s.userID), Chat: msgs}:
 		default: // slow consumer: drop, the next snapshot repairs it
 		}
 	}
@@ -1363,6 +1519,7 @@ func (h *PokerHub) sweepOnce() {
 		delete(h.tables, id)
 		delete(h.lastActivity, id)
 		delete(h.showdownAt, id)
+		h.dropChat(id) // chat shares the table's lifetime; don't leak the log
 		for _, sub := range h.subs[id] {
 			close(sub.done)
 		}
