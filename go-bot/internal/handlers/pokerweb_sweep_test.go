@@ -116,11 +116,12 @@ func TestSweepOnceForcesExpiredTimeoutAndSettlesOnce(t *testing.T) {
 		t.Fatalf("balances unchanged (%d/%d) — sweeper did not settle the hand", aliceAfter, bobAfter)
 	}
 
-	// A second sweep pass must not settle again: the hand is over and
-	// ForceTimeout is a no-op once in showdown (guarded by Stage), and the
-	// table has 2 seated players with chips so this pass instead starts the
-	// next hand — balances must stay exactly where the first settle left
-	// them.
+	// A second sweep pass, run immediately with no time gap, must not
+	// settle again: the hand is over and ForceTimeout is a no-op once in
+	// showdown (guarded by Stage), and the showdown-pause gate (FIX 5)
+	// means the table also does NOT auto-start the next hand on this
+	// immediate second pass — either way, balances must stay exactly where
+	// the first settle left them.
 	h.sweepOnce()
 	if got := db.GetBalance("111", ""); got != aliceAfter {
 		t.Errorf("alice balance after second sweep = %d, want unchanged %d (no double-settle)", got, aliceAfter)
@@ -130,13 +131,17 @@ func TestSweepOnceForcesExpiredTimeoutAndSettlesOnce(t *testing.T) {
 	}
 }
 
-// --- sweepOnce: next hand after showdown (item 2) --------------------------
+// --- sweepOnce: next hand after showdown (item 2 / FIX 5) ------------------
 
-// TestSweepOnceStartsNextHandAfterShowdownPause proves a table does not play
-// exactly one hand and stop: once a hand has settled into showdown (from a
-// PRIOR pass — see the "short pause" note below) and 2+ players still have
-// chips, the next sweep pass deals a new hand.
-func TestSweepOnceStartsNextHandAfterShowdownPause(t *testing.T) {
+// TestSweepOnceDoesNotStartNextHandBeforeShowdownPauseElapses is the
+// regression guard for FIX 5: the showdown reveal must actually be visible
+// for at least one sweep interval. A hand settled a moment ago (showdownAt
+// only microseconds old) must NOT have its next hand auto-started by the
+// very next sweep pass — checking merely "the table happens to be in
+// StageShowdown right now" is true equally a millisecond after settling and
+// a full sweepInterval after settling, so that alone cannot gate the pause;
+// only an actual elapsed-time check (showdownAt/showdownReady) can.
+func TestSweepOnceDoesNotStartNextHandBeforeShowdownPauseElapses(t *testing.T) {
 	db := setupTestDB(t)
 	db.UpdateBalance("111", "Alice", 900)
 	db.UpdateBalance("222", "Bob", 900)
@@ -153,11 +158,10 @@ func TestSweepOnceStartsNextHandAfterShowdownPause(t *testing.T) {
 		t.Fatalf("StartHand: %v", err)
 	}
 
-	// Drive the hand to showdown and settle it exactly the way handleAction
-	// would, WITHOUT going through the sweeper — this puts the table into
-	// "showdown, already settled, from a previous pass" so the very first
-	// sweepOnce call below is the "later pass" that must deal the next hand,
-	// not the same tick that caused the transition.
+	// Settle the hand exactly as handleAction would, WITHOUT going through
+	// the sweeper, moments before the sweep pass below — showdownAt is
+	// therefore only microseconds old when sweepOnce runs, exactly the case
+	// that must NOT auto-deal the next hand.
 	actor := tbl.Seats[tbl.ToAct].UserID
 	tbl.Lock()
 	prevStage := tbl.Stage
@@ -176,6 +180,64 @@ func TestSweepOnceStartsNextHandAfterShowdownPause(t *testing.T) {
 	if stage != poker.StageShowdown {
 		t.Fatalf("stage before sweep = %v, want StageShowdown", stage)
 	}
+
+	h.sweepOnce()
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if tbl.Stage != poker.StageShowdown {
+		t.Fatalf("stage after sweep = %v, want still StageShowdown — the next hand must not deal before players get at least one sweep interval to see the reveal", tbl.Stage)
+	}
+}
+
+// TestSweepOnceStartsNextHandAfterShowdownPauseElapses proves a table does
+// not play exactly one hand and stop: once a hand has settled into showdown
+// AND at least one full sweepInterval has genuinely elapsed since (not
+// merely "the table happens to still be in showdown when this pass
+// begins" — see the sibling test above for why that alone is insufficient)
+// and 2+ players still have chips, the next sweep pass deals a new hand.
+func TestSweepOnceStartsNextHandAfterShowdownPauseElapses(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("111", "Alice", 900)
+	db.UpdateBalance("222", "Bob", 900)
+
+	h := NewPokerHub(db, nil, "test-token")
+	tbl := h.Create(7)
+	if err := tbl.Sit("111", "Alice", 2000); err != nil {
+		t.Fatalf("Sit: %v", err)
+	}
+	if err := tbl.Sit("222", "Bob", 2000); err != nil {
+		t.Fatalf("Sit: %v", err)
+	}
+	if err := tbl.StartHand(); err != nil {
+		t.Fatalf("StartHand: %v", err)
+	}
+
+	actor := tbl.Seats[tbl.ToAct].UserID
+	tbl.Lock()
+	prevStage := tbl.Stage
+	if err := tbl.Act(actor, poker.ActFold, 0); err != nil {
+		tbl.Unlock()
+		t.Fatalf("Act: %v", err)
+	}
+	if tbl.Stage == poker.StageShowdown && prevStage != poker.StageShowdown {
+		h.settle(tbl)
+	}
+	tbl.Unlock()
+
+	tbl.Lock()
+	stage := tbl.Stage
+	tbl.Unlock()
+	if stage != poker.StageShowdown {
+		t.Fatalf("stage before sweep = %v, want StageShowdown", stage)
+	}
+
+	// Simulate real time having passed since the hand settled, well beyond
+	// one sweepInterval — exactly what a real deployment reaches one tick
+	// (5s) after showdown.
+	h.mu.Lock()
+	h.showdownAt[tbl.ID] = time.Now().Add(-(sweepInterval + time.Second))
+	h.mu.Unlock()
 
 	h.sweepOnce()
 
@@ -220,6 +282,87 @@ func TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers(t *testing.T) {
 	defer tbl.Unlock()
 	if tbl.Stage != poker.StageShowdown {
 		t.Errorf("stage = %v, want unchanged StageShowdown — only one player has chips left", tbl.Stage)
+	}
+}
+
+// --- regression guard: a busted player must not be locked out hub-wide
+// until their table goes idle (FIX 4) ---------------------------------------
+
+// TestSettleReleasesSeatClaimForBustedPlayer is the merge-blocker test for
+// FIX 4: a player whose seat reaches 0 chips at settlement must be free to
+// join a DIFFERENT table immediately, not remain locked out hub-wide until
+// THIS table goes a full 30 idle minutes without activity — which never
+// happens while the winner keeps playing. A still-funded player at the same
+// table must keep their own claim untouched.
+func TestSettleReleasesSeatClaimForBustedPlayer(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("111", "Alice", 5000-100)
+	// Bob's real balance is well above poker.MaxBuyIn, so his buy-in at
+	// table 1 is clamped to MaxBuyIn and losing that ENTIRE at-table stack
+	// still leaves real balance behind for a fresh buy-in elsewhere —
+	// exactly the realistic case FIX 4 is about. (A player who genuinely
+	// brings their whole bankroll to one table and loses all of it has, in
+	// fact, nothing left to rebuy with anywhere — that is not a bug.)
+	db.UpdateBalance("222", "Bob", 20000-100)
+
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	join := func(uid int64, name string) {
+		t.Helper()
+		initData := userInitData(t, "test-token", uid, name, "")
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req.Header.Set("X-Telegram-Init-Data", initData)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("join uid=%d status = %d, want 200, body=%s", uid, rec.Code, rec.Body.String())
+		}
+	}
+	join(111, "Alice")
+	join(222, "Bob") // second join auto-starts the hand
+
+	// Simulate Bob busting his entire stack in this hand: park the table in
+	// showdown with Bob at 0 chips and folded (same manual-override pattern
+	// as TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers above).
+	// Committed is zeroed on both seats so Showdown() has no pot left to
+	// award — otherwise it would happily hand Bob's real (randomly dealt)
+	// winning hand a share of the blinds pot and put his stack back above
+	// 0, making the very thing this test checks nondeterministic.
+	tbl.Lock()
+	tbl.Stage = poker.StageShowdown
+	tbl.Seats[0].Stack = 4000
+	tbl.Seats[0].Committed = 0
+	tbl.Seats[1].Stack = 0
+	tbl.Seats[1].Committed = 0
+	tbl.Seats[1].Folded = true
+	h.settle(tbl)
+	tbl.Unlock()
+
+	h.mu.Lock()
+	_, bobStillClaimed := h.seatedAt["222"]
+	aliceTable, aliceStillClaimed := h.seatedAt["111"]
+	h.mu.Unlock()
+	if bobStillClaimed {
+		t.Error("Bob's seatedAt claim not released after busting to 0 chips — he is now locked out of every other table")
+	}
+	if !aliceStillClaimed || aliceTable != tbl.ID {
+		t.Errorf("Alice's seatedAt claim changed after settlement even though she still has chips: claimed=%v table=%q, want tbl.ID=%q", aliceStillClaimed, aliceTable, tbl.ID)
+	}
+
+	// End-to-end, not just an inspected map: Bob must actually be able to
+	// join a DIFFERENT table now.
+	tbl2 := h.Create(2)
+	initData := userInitData(t, "test-token", 222, "Bob", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("busted player join to a different table status = %d, want 200, body=%s", rec.Code, rec.Body.String())
 	}
 }
 

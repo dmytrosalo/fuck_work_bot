@@ -85,6 +85,21 @@ func (t *Table) Sit(userID, name string, buyIn int) error {
 	return nil
 }
 
+// SeatIndexOf returns the seat index currently held by userID at this
+// table, or -1 if userID has no seat here. Exposed so callers outside this
+// package can distinguish "already seated" from "not seated" BEFORE
+// deciding whether to call Sit at all, rather than depending on Sit's own
+// error precedence (buy-in-too-low vs. table-full vs. already-sat) to infer
+// it after the fact — see handleJoin's reconnect fast path.
+func (t *Table) SeatIndexOf(userID string) int {
+	for i, s := range t.Seats {
+		if s.UserID == userID {
+			return i
+		}
+	}
+	return -1
+}
+
 func (t *Table) SeatedCount() int {
 	n := 0
 	for _, s := range t.Seats {

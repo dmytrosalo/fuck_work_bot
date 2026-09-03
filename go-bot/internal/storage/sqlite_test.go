@@ -72,6 +72,121 @@ func TestTrackChat(t *testing.T) {
 	}
 }
 
+// --- SettlePoker (poker settlement atomicity, FIX 3) -----------------------
+
+// TestSettlePokerAppliesAllDeltasInOneCall proves a multi-player settlement
+// applies every entry: balances move by exactly their delta and a
+// transaction row is logged for each, matching what the previous
+// per-player UpdateBalance+LogTransaction loop did.
+func TestSettlePokerAppliesAllDeltasInOneCall(t *testing.T) {
+	db := newTestDB(t)
+	db.UpdateBalance("u1", "Alice", 900) // seeds a new row at 100, +900 -> 1000
+	db.UpdateBalance("u2", "Bob", 900)
+
+	if err := db.SettlePoker([]PokerDelta{
+		{UserID: "u1", Name: "Alice", Amount: 200},
+		{UserID: "u2", Name: "Bob", Amount: -200},
+	}); err != nil {
+		t.Fatalf("SettlePoker: %v", err)
+	}
+
+	if got := db.GetBalance("u1", ""); got != 1200 {
+		t.Errorf("u1 balance = %d, want 1200", got)
+	}
+	if got := db.GetBalance("u2", ""); got != 800 {
+		t.Errorf("u2 balance = %d, want 800", got)
+	}
+
+	var txCount int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE activity = 'poker'`).Scan(&txCount); err != nil {
+		t.Fatalf("count transactions: %v", err)
+	}
+	if txCount != 2 {
+		t.Errorf("poker transaction rows = %d, want 2 (one per delta)", txCount)
+	}
+}
+
+// TestSettlePokerPreservesDisplayNameButLogsItOnTransactions pins the exact
+// semantics SettlePoker replaces: the balances upsert must ALWAYS preserve
+// the player's existing stored display name (never overwrite it with
+// whatever name happened to be on the Seat at settlement time — that name
+// can be stale, e.g. after a Telegram display-name change mid-session),
+// while the transactions audit row DOES record the name passed in, exactly
+// as the old UpdateBalance(userID, "", d) / LogTransaction(userID, s.Name,
+// "poker", d) pairing did.
+func TestSettlePokerPreservesDisplayNameButLogsItOnTransactions(t *testing.T) {
+	db := newTestDB(t)
+	db.GetBalance("u1", "OriginalName") // seeds balances.name = "OriginalName"
+
+	if err := db.SettlePoker([]PokerDelta{
+		{UserID: "u1", Name: "StaleSeatName", Amount: 50},
+	}); err != nil {
+		t.Fatalf("SettlePoker: %v", err)
+	}
+
+	var storedName string
+	if err := db.db.QueryRow(`SELECT name FROM balances WHERE user_id = 'u1'`).Scan(&storedName); err != nil {
+		t.Fatalf("query balances.name: %v", err)
+	}
+	if storedName != "OriginalName" {
+		t.Errorf("balances.name = %q, want unchanged %q (settlement must never overwrite the stored display name)", storedName, "OriginalName")
+	}
+
+	var txName string
+	if err := db.db.QueryRow(`SELECT name FROM transactions WHERE user_id = 'u1' AND activity = 'poker'`).Scan(&txName); err != nil {
+		t.Fatalf("query transactions.name: %v", err)
+	}
+	if txName != "StaleSeatName" {
+		t.Errorf("transactions.name = %q, want %q (audit row records the name as of settlement time)", txName, "StaleSeatName")
+	}
+}
+
+// TestSettlePokerRollsBackAllEntriesOnMidTransactionFailure is the
+// discriminating test for FIX 3: a hand's settlement writes must be
+// all-or-nothing. A trigger local to this test DB (never touching the
+// production schema in sqlite.go) forces the SECOND delta's transaction-log
+// insert to fail, simulating the kind of mid-write error a crash or SIGTERM
+// could also produce. Without the transaction wrapper, the FIRST delta's
+// balance update — which runs and would succeed before the failure — would
+// stick around uncommitted-but-visible; with it, the whole call must roll
+// back cleanly, leaving both balances untouched.
+func TestSettlePokerRollsBackAllEntriesOnMidTransactionFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.UpdateBalance("u1", "Alice", 900) // -> 1000
+	db.UpdateBalance("u2", "Bob", 900)   // -> 1000
+
+	const sentinelAmount = -999999
+	if _, err := db.db.Exec(`CREATE TRIGGER settle_test_fail BEFORE INSERT ON transactions
+		WHEN NEW.amount = -999999 BEGIN SELECT RAISE(ABORT, 'forced failure for atomicity test'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	err := db.SettlePoker([]PokerDelta{
+		{UserID: "u1", Name: "Alice", Amount: 500},          // would succeed if applied in isolation
+		{UserID: "u2", Name: "Bob", Amount: sentinelAmount}, // forced failure
+	})
+	if err == nil {
+		t.Fatal("SettlePoker: want an error from the forced trigger failure, got nil")
+	}
+
+	if got := db.GetBalance("u1", ""); got != 1000 {
+		t.Errorf("u1 balance = %d after a failed settlement, want unchanged 1000 (a partial write leaked past the failed transaction)", got)
+	}
+	if got := db.GetBalance("u2", ""); got != 1000 {
+		t.Errorf("u2 balance = %d after a failed settlement, want unchanged 1000", got)
+	}
+}
+
+// TestSettlePokerEmptyIsNoop proves SettlePoker tolerates a hand where every
+// delta is zero (already filtered out by the caller) without touching the
+// database or erroring.
+func TestSettlePokerEmptyIsNoop(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SettlePoker(nil); err != nil {
+		t.Fatalf("SettlePoker(nil): %v", err)
+	}
+}
+
 func TestDailyStats(t *testing.T) {
 	db := newTestDB(t)
 

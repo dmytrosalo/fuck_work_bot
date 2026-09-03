@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -370,18 +371,54 @@ type PokerHub struct {
 	// is reclaimed by the sweeper — see sweepOnce. Guarded by h.mu, same as
 	// tables/subs/seatedAt.
 	lastActivity map[string]time.Time
+
+	// showdownAt records, per table id, the wall-clock time settle() last
+	// transitioned that table into StageShowdown. sweepOnce's auto-deal
+	// branch requires at least one full sweepInterval to have elapsed since
+	// this timestamp before dealing the next hand — without it, a hand that
+	// settled a millisecond before a sweep pass began would deal instantly,
+	// giving players ~0 seconds to see the showdown reveal (the only moment
+	// it exists for). Guarded by h.mu, same as lastActivity/seatedAt/subs.
+	showdownAt map[string]time.Time
+
+	// membershipCache maps a (chatID, userID) pair to the wall-clock time
+	// its last POSITIVE Telegram chat-membership check succeeded. auth()
+	// consults it before ever calling isMember again, so a network blip or
+	// a Telegram rate-limit cannot strand an already-verified player
+	// mid-hand by forcing a fresh Telegram round-trip on literally every
+	// fold/call/raise and every SSE reconnect. Only positive results are
+	// ever cached (see auth) — a negative or errored check leaves no trace
+	// here, so an unknown or currently-failing user can never be admitted
+	// from a stale entry. Guarded by h.mu, same as the other hub maps.
+	membershipCache map[membershipKey]time.Time
 }
+
+// membershipKey identifies one (chat, user) pair for membershipCache.
+type membershipKey struct {
+	chatID int64
+	userID int64
+}
+
+// membershipCacheTTL is how long a positive membership check stays cached
+// before auth() will re-verify with Telegram. Named as a constant per the
+// review: long enough that ordinary in-hand fold/call/raise traffic and SSE
+// reconnects never re-hit Telegram, short enough that someone who is
+// actually removed from the chat is re-checked on a human timescale rather
+// than never.
+const membershipCacheTTL = 5 * time.Minute
 
 func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 	return &PokerHub{
-		db:           db,
-		bot:          bot,
-		token:        token,
-		isMember:     defaultIsMember(bot),
-		tables:       map[string]*poker.Table{},
-		subs:         map[string][]*subscriber{},
-		seatedAt:     map[string]string{},
-		lastActivity: map[string]time.Time{},
+		db:              db,
+		bot:             bot,
+		token:           token,
+		isMember:        defaultIsMember(bot),
+		tables:          map[string]*poker.Table{},
+		subs:            map[string][]*subscriber{},
+		seatedAt:        map[string]string{},
+		lastActivity:    map[string]time.Time{},
+		showdownAt:      map[string]time.Time{},
+		membershipCache: map[membershipKey]time.Time{},
 	}
 }
 
@@ -489,6 +526,19 @@ func tableIDFrom(path string) (id, action string) {
 // with different duplicate-key semantics is the only way a known,
 // currently-unexploitable duplicate-key issue in initData parsing becomes
 // an actual auth bypass.
+//
+// Membership is re-verified with Telegram on every join/action/SSE
+// reconnect, so it distinguishes two very different failures rather than
+// collapsing both into 403: a DEFINITIVE "not a member" (isMember returned
+// ok=false with no error) still returns 403, but a checker ERROR — a
+// network blip, a Telegram rate-limit — must never read as "you're not in
+// this chat" (that discards whatever the player was mid-hand and the
+// sweeper folds them 90s later), so it returns 503 instead and admits
+// nothing. A successful positive check is cached for membershipCacheTTL
+// (see cachedMember/cacheMember) so ordinary in-hand traffic isn't gated on
+// a Telegram round-trip every time; failures are never cached, keeping the
+// fail-closed property — an unknown or currently-failing user is never
+// admitted from a stale cache entry.
 func (h *PokerHub) auth(r *http.Request, tbl *poker.Table) (uid int64, firstName, username string, status int) {
 	initData := r.Header.Get("X-Telegram-Init-Data")
 	if initData == "" {
@@ -501,11 +551,47 @@ func (h *PokerHub) auth(r *http.Request, tbl *poker.Table) (uid int64, firstName
 	if err != nil {
 		return 0, "", "", http.StatusUnauthorized
 	}
+
+	if h.cachedMember(tbl.ChatID, uid) {
+		return uid, firstName, username, 0
+	}
 	ok, err := h.isMember(tbl.ChatID, uid)
-	if err != nil || !ok {
+	if err != nil {
+		return 0, "", "", http.StatusServiceUnavailable
+	}
+	if !ok {
 		return 0, "", "", http.StatusForbidden
 	}
+	h.cacheMember(tbl.ChatID, uid)
 	return uid, firstName, username, 0
+}
+
+// cachedMember reports whether (chatID, userID) has a still-fresh positive
+// membership result cached. A stale entry is evicted on read rather than
+// left to leak forever.
+func (h *PokerHub) cachedMember(chatID, userID int64) bool {
+	key := membershipKey{chatID: chatID, userID: userID}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	at, ok := h.membershipCache[key]
+	if !ok {
+		return false
+	}
+	if time.Since(at) > membershipCacheTTL {
+		delete(h.membershipCache, key)
+		return false
+	}
+	return true
+}
+
+// cacheMember records a fresh positive membership result for (chatID,
+// userID). Only ever called after isMember has returned ok=true with no
+// error — see auth.
+func (h *PokerHub) cacheMember(chatID, userID int64) {
+	key := membershipKey{chatID: chatID, userID: userID}
+	h.mu.Lock()
+	h.membershipCache[key] = time.Now()
+	h.mu.Unlock()
 }
 
 // Register wires the poker HTTP surface into mux: the join/stream/action
@@ -522,8 +608,14 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 		uid, firstName, username, status := h.auth(r, tbl)
 		if status != 0 {
 			msg := "Відкрий через кнопку в чаті"
-			if status == http.StatusForbidden {
+			switch status {
+			case http.StatusForbidden:
 				msg = "Ти не з цього чату"
+			case http.StatusServiceUnavailable:
+				// A transient Telegram error, not a definitive membership
+				// answer — see auth's doc comment. Never say "not a
+				// member" for this.
+				msg = "Телеграм не відповідає, спробуй ще раз"
 			}
 			http.Error(w, msg, status)
 			return
@@ -559,9 +651,36 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 // Sit() then fails) rather than debited from the balance, because
 // settlement happens per hand precisely so a mid-hand redeploy can't eat a
 // real buy-in; escrowing chips at sit-down would undo that.
+//
+// A player who ALREADY occupies a seat at THIS table is reconnecting — the
+// Mini App was closed and reopened, an iOS webview got backgrounded, they
+// switched device — not joining fresh. Sit() would always fail for them
+// (ErrAlreadySat, or an unrelated ErrBuyInTooLow/ErrTableFull depending on
+// Sit's own error precedence — none of which describes their situation),
+// stranding them at a dead-end error screen that never opens the SSE
+// stream while their chips stay seated and the sweeper bleeds their blinds
+// every 90s until the 30-minute reclaim. So this is checked FIRST, directly
+// against tbl.Seats, and short-circuits straight to success: no re-seating,
+// no re-reading their balance, no resetting their stack. Checked against
+// tbl.Seats rather than h.seatedAt deliberately: a player busted to 0 chips
+// has their h.seatedAt claim released at settlement (see settle) so they
+// can join a DIFFERENT table, but they still occupy a Seat row here, so
+// h.seatedAt alone would wrongly treat their reconnect to THIS table as a
+// fresh join (and then wrongly 409 them as "already at another table" once
+// they've claimed elsewhere).
 func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64, firstName, username string) {
 	userID := fmt.Sprintf("%d", uid)
 	name := resolveTarget(firstName, username)
+
+	tbl.Lock()
+	if tbl.SeatIndexOf(userID) >= 0 {
+		view := tbl.ViewFor(userID)
+		tbl.Unlock()
+		h.touch(tbl.ID) // reconnecting is real player-initiated activity
+		writeJSON(w, view)
+		return
+	}
+	tbl.Unlock()
 
 	fresh, ok, live := h.claimSeat(userID, tbl.ID)
 	if !live {
@@ -662,23 +781,65 @@ func (h *PokerHub) handleAction(w http.ResponseWriter, r *http.Request, tbl *pok
 	writeJSON(w, view)
 }
 
-// settle writes each player's showdown delta to the currency database. The
-// caller must already hold tbl.Lock().
+// settle writes each player's showdown delta to the currency database in
+// one atomic transaction, records when this hand settled (so the sweeper
+// can guarantee at least one full sweep interval before dealing the next
+// hand — see showdownAt/showdownReady), and releases the hub-wide seatedAt
+// claim of any seat busted to 0 chips so they are not locked out of every
+// OTHER table until this table itself goes 30 minutes idle. The caller
+// must already hold tbl.Lock().
 func (h *PokerHub) settle(tbl *poker.Table) {
 	deltas := tbl.Showdown()
-	if h.db == nil {
-		return
-	}
-	for _, s := range tbl.Seats {
-		d, ok := deltas[s.UserID]
-		if !ok || d == 0 {
-			continue
+
+	h.mu.Lock()
+	h.showdownAt[tbl.ID] = time.Now()
+	h.mu.Unlock()
+
+	if h.db != nil {
+		entries := make([]storage.PokerDelta, 0, len(tbl.Seats))
+		for _, s := range tbl.Seats {
+			d, ok := deltas[s.UserID]
+			if !ok || d == 0 {
+				continue
+			}
+			entries = append(entries, storage.PokerDelta{UserID: s.UserID, Name: s.Name, Amount: d})
 		}
-		// The empty name is required: it preserves the player's existing
-		// display name rather than overwriting it with a stale one.
-		h.db.UpdateBalance(s.UserID, "", d)
-		h.db.LogTransaction(s.UserID, s.Name, "poker", d)
+		// A crash or SIGTERM mid-settlement is the only place in the system
+		// that could otherwise break the zero-sum invariant across players
+		// (some credited, some not) — SettlePoker wraps every entry in one
+		// database transaction so it commits all-or-nothing. See
+		// internal/storage/sqlite.go.
+		if err := h.db.SettlePoker(entries); err != nil {
+			log.Printf("[poker] settle tx failed for table %s: %v", tbl.ID, err)
+		}
 	}
+
+	// A seat busted to 0 chips in this hand must not stay locked out of
+	// every OTHER table hub-wide until this table itself goes 30 minutes
+	// idle (idleTableTimeout). releaseSeatClaim takes h.mu, the INNER lock
+	// relative to the table lock the caller already holds — the correct
+	// direction per the lock-ordering rule.
+	for _, s := range tbl.Seats {
+		if s.Stack <= 0 {
+			h.releaseSeatClaim(s.UserID, tbl.ID)
+		}
+	}
+}
+
+// showdownReady reports whether at least one full sweepInterval has passed
+// since tableID's hand last settled into showdown, per h.showdownAt. A
+// table with no recorded showdown time is treated as ready — this should
+// not happen via any production code path (settle() always records one on
+// every transition into StageShowdown), so a missing timestamp must never
+// wedge a table in showdown forever.
+func (h *PokerHub) showdownReady(tableID string) bool {
+	h.mu.Lock()
+	at, ok := h.showdownAt[tableID]
+	h.mu.Unlock()
+	if !ok {
+		return true
+	}
+	return time.Since(at) >= sweepInterval
 }
 
 func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *poker.Table, uid int64) {
@@ -909,18 +1070,25 @@ func (h *PokerHub) sweepOnce() {
 			// their seatedAt claims exactly as item 3 was written to fix.
 			// Only a real join or a real player action (handleJoin,
 			// handleAction) may refresh idleness.
-		case prevStage == poker.StageShowdown && tbl.SeatedCount() >= 2:
-			// The table was already sitting in showdown at the START of
-			// this pass (not a fresh transition this tick, which gives
-			// players at least one sweep interval to see the result before
-			// the next hand deals) and still has 2+ players with chips —
-			// deal the next hand rather than leaving the table stuck after
-			// exactly one hand.
+		case tbl.Stage == poker.StageShowdown && tbl.SeatedCount() >= 2 && h.showdownReady(id):
+			// At least one full sweepInterval has passed since settle()
+			// transitioned this table into showdown (see
+			// showdownAt/showdownReady) — checking merely "prevStage was
+			// already StageShowdown at the top of THIS pass" is NOT the
+			// same thing and was the bug here: prevStage is captured fresh
+			// on every call, so it is equally true one tick after a real
+			// prior-pass showdown and one MILLISECOND after this same
+			// settle() call above finished (e.g. via the ForceTimeout case
+			// on some earlier pass, or a player action moments ago) —
+			// either way giving players ~0 seconds to see the showdown
+			// reveal, the only moment it exists for. The table still has
+			// 2+ players with chips, so deal the next hand rather than
+			// leaving it stuck after exactly one hand.
 			//
 			// Also deliberately NOT h.touch(id): an auto-started hand with
 			// nobody acting is still just the sweeper auto-folding forever,
-			// same reasoning as above — it must not keep an abandoned table
-			// alive.
+			// same reasoning as the ForceTimeout case above — it must not
+			// keep an abandoned table alive.
 			if err := tbl.StartHand(); err == nil {
 				h.broadcast(tbl)
 			}
@@ -940,6 +1108,7 @@ func (h *PokerHub) sweepOnce() {
 	for _, id := range idleIDs {
 		delete(h.tables, id)
 		delete(h.lastActivity, id)
+		delete(h.showdownAt, id)
 		for _, sub := range h.subs[id] {
 			close(sub.done)
 		}

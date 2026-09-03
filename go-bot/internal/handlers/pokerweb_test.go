@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -246,6 +247,224 @@ func TestJoinAllowsChatMember(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 for chat member, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- reconnect (FIX 1: CRITICAL — an already-seated player must not be
+// locked out of their own seat on reload) ------------------------------------
+
+// TestJoinReconnectsAlreadySeatedPlayer is the merge-blocker test for FIX 1:
+// a second join by the SAME user at the SAME table — exactly what happens
+// when the Mini App is closed and reopened, an iOS webview gets
+// backgrounded, or the player switches device mid-hand — must return 200
+// with their existing seat and UNCHANGED stack, not propagate Sit's own
+// error (which, for an already-seated player, is always wrong: it reads as
+// "table full" or "buy-in too low" depending on Sit's internal error
+// precedence, neither of which describes their actual situation).
+func TestJoinReconnectsAlreadySeatedPlayer(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("111", "Alice", 3000-100)
+
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	initData := userInitData(t, "test-token", 111, "Alice", "")
+	join := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req.Header.Set("X-Telegram-Init-Data", initData)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := join()
+	if first.Code != http.StatusOK {
+		t.Fatalf("first join status = %d, want 200, body=%s", first.Code, first.Body.String())
+	}
+	firstView := decodeView(t, first)
+	if firstView.YouSeat < 0 {
+		t.Fatalf("first join: you_seat = %d, want a real seat", firstView.YouSeat)
+	}
+	firstStack := firstView.Seats[firstView.YouSeat].Stack
+
+	// Simulate a reload: the client re-runs join with the same, still-valid
+	// initData, exactly what the page's own bootstrap script does on every
+	// load. Sit() alone would reject this outright (ErrAlreadySat).
+	second := join()
+	if second.Code != http.StatusOK {
+		t.Fatalf("reconnect join status = %d, want 200 (must not lock the player out of their own seat), body=%s", second.Code, second.Body.String())
+	}
+	secondView := decodeView(t, second)
+	if secondView.YouSeat != firstView.YouSeat {
+		t.Errorf("reconnect you_seat = %d, want unchanged %d", secondView.YouSeat, firstView.YouSeat)
+	}
+	if len(secondView.Seats) != 1 {
+		t.Errorf("reconnect seats = %d, want still 1 (must not re-seat or duplicate)", len(secondView.Seats))
+	}
+	if secondView.Seats[secondView.YouSeat].Stack != firstStack {
+		t.Errorf("reconnect stack = %d, want unchanged %d (must not re-read balance or reset stack)", secondView.Seats[secondView.YouSeat].Stack, firstStack)
+	}
+
+	tbl.Lock()
+	seatCount := len(tbl.Seats)
+	tbl.Unlock()
+	if seatCount != 1 {
+		t.Errorf("table has %d seats after reconnect, want still 1", seatCount)
+	}
+}
+
+// TestJoinReconnectsAlreadySeatedPlayerAtFullTable is the exact symptom from
+// the bug report: at a FULL table, every seated player reloading would see
+// "стіл заповнений" (table full) from Sit's own error precedence, even
+// though they already have a seat and chips in play. This proves the
+// reconnect fast-path is checked BEFORE the table-full rejection would ever
+// apply.
+func TestJoinReconnectsAlreadySeatedPlayerAtFullTable(t *testing.T) {
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	// Fill the table to capacity directly against the engine (equivalent to
+	// MaxSeats players having already joined over HTTP).
+	for i := 0; i < poker.MaxSeats; i++ {
+		userID := fmt.Sprintf("%d", 1000+i)
+		if err := tbl.Sit(userID, fmt.Sprintf("U%d", i), 2000); err != nil {
+			t.Fatalf("Sit seat %d: %v", i, err)
+		}
+	}
+
+	// Seat 0's player reloads the Mini App at their now-full table.
+	initData := userInitData(t, "test-token", 1000, "U0", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reconnect at a full table status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	v := decodeView(t, rec)
+	if v.YouSeat != 0 {
+		t.Errorf("you_seat = %d, want 0 (existing seat)", v.YouSeat)
+	}
+	if v.Seats[0].Stack != 2000 {
+		t.Errorf("stack = %d, want unchanged 2000", v.Seats[0].Stack)
+	}
+}
+
+// --- membership check: transient errors and caching (FIX 2) ----------------
+
+// TestAuthReturns503OnTransientMembershipCheckError proves a checker ERROR
+// (network blip, Telegram rate-limit) never reads as "you're not in this
+// chat": only a DEFINITIVE ok=false gets 403. An error must get 503 with a
+// Ukrainian retry message instead, so the client's own retry/reconnect
+// logic can recover once Telegram answers again, rather than the request
+// being ejected outright mid-hand.
+func TestAuthReturns503OnTransientMembershipCheckError(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	h.isMember = func(chatID, userID int64) (bool, error) {
+		return false, errors.New("telegram: rate limited")
+	}
+	tbl := h.Create(999)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	initData := userInitData(t, "test-token", 333, "Carl", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 for a checker error (not 403 — that would read as \"not a member\"), body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Телеграм не відповідає") {
+		t.Errorf("body = %q, want the Ukrainian retry message, not the non-member message", rec.Body.String())
+	}
+}
+
+// TestAuthCachesPositiveMembershipAcrossRequests proves a successful
+// membership check is cached: a fold/call/raise or SSE reconnect within
+// membershipCacheTTL must not re-hit Telegram at all, so a later transient
+// error from isMember cannot strand an already-verified player mid-hand.
+func TestAuthCachesPositiveMembershipAcrossRequests(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("333", "Carl", 5000-100)
+	h := NewPokerHub(db, nil, "test-token")
+	var calls int32
+	h.isMember = func(chatID, userID int64) (bool, error) {
+		atomic.AddInt32(&calls, 1)
+		return true, nil
+	}
+	tbl := h.Create(999)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	initData := userInitData(t, "test-token", 333, "Carl", "")
+	req1 := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req1.Header.Set("X-Telegram-Init-Data", initData)
+	rec1 := httptest.NewRecorder()
+	mux.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first join status = %d, want 200, body=%s", rec1.Code, rec1.Body.String())
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("isMember calls after first join = %d, want exactly 1", got)
+	}
+
+	// Now make isMember fail outright. If caching is working, this must not
+	// matter: the cached positive result from the first join covers this
+	// reconnect within membershipCacheTTL, so isMember is never called
+	// again.
+	h.isMember = func(chatID, userID int64) (bool, error) {
+		atomic.AddInt32(&calls, 1)
+		return false, errors.New("should never be called: cached")
+	}
+	req2 := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req2.Header.Set("X-Telegram-Init-Data", initData)
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("cached reconnect join status = %d, want 200 (membership must be served from cache, not re-checked), body=%s", rec2.Code, rec2.Body.String())
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("isMember calls after cached reconnect = %d, want still 1 (cache should have short-circuited the second check)", got)
+	}
+}
+
+// TestAuthDoesNotCacheFailedMembershipCheck proves a NEGATIVE membership
+// result is never cached — an unknown or currently-failing user must be
+// re-checked every time, never accidentally admitted from a stale cache
+// entry. This is the fail-closed property FIX 2 must preserve.
+func TestAuthDoesNotCacheFailedMembershipCheck(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	var calls int32
+	h.isMember = func(chatID, userID int64) (bool, error) {
+		atomic.AddInt32(&calls, 1)
+		return false, nil // definitive non-member
+	}
+	tbl := h.Create(999)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	initData := userInitData(t, "test-token", 333, "Carl", "")
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req.Header.Set("X-Telegram-Init-Data", initData)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("attempt %d: status = %d, want 403", i, rec.Code)
+		}
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Errorf("isMember calls after 3 rejected attempts = %d, want 3 (a negative result must never be cached)", got)
 	}
 }
 

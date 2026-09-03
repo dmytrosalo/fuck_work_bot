@@ -24,6 +24,22 @@ func New(path string) (*DB, error) {
 		return nil, err
 	}
 
+	// SQLite allows exactly one writer at a time. database/sql's default
+	// pool happily opens several concurrent connections, and each one is a
+	// separate SQLite connection contending for the same file lock — fine
+	// for the single, fast, auto-committing Exec calls used everywhere
+	// else, but poker settlement (SettlePoker) now holds an explicit
+	// transaction open across two statements per player, widening the
+	// window in which a second concurrent writer collides. Per-connection
+	// PRAGMAs like busy_timeout don't help here because database/sql can
+	// hand any pooled connection to any caller — busy_timeout set on one
+	// connection says nothing about another. Capping the pool at a single
+	// connection instead serializes every writer through database/sql's
+	// own connection-wait queue, so a second concurrent transaction blocks
+	// until the first commits rather than failing immediately with
+	// SQLITE_BUSY ("database is locked").
+	db.SetMaxOpenConns(1)
+
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, err
@@ -596,6 +612,57 @@ func (d *DB) UpdateBalance(userID, name string, amount int) int {
 	d.db.Exec(`INSERT INTO balances (user_id, name, coins) VALUES (?, ?, 100 + ?) ON CONFLICT(user_id) DO UPDATE SET coins = coins + ?, name = CASE WHEN ? != '' THEN ? ELSE name END`,
 		userID, name, amount, amount, name, name)
 	return d.GetBalance(userID, "")
+}
+
+// PokerDelta is one player's balance change from a settled poker hand, as
+// applied by SettlePoker. Name is the player's current display name, used
+// ONLY for the transactions audit row — the balances upsert itself always
+// preserves the existing stored name (see SettlePoker), matching the prior
+// per-call UpdateBalance(userID, "", amount) / LogTransaction(userID, name,
+// "poker", amount) pairing exactly.
+type PokerDelta struct {
+	UserID string
+	Name   string
+	Amount int
+}
+
+// SettlePoker applies every player's balance delta from one settled poker
+// hand in a single database transaction, so a crash or SIGTERM between
+// per-player writes cannot leave some players credited and others not. This
+// is the only place in the system where an interrupted write could break
+// the zero-sum invariant across players (every push to main SIGTERMs this
+// process), which is why it lives here as one atomic unit rather than as a
+// loop of individual UpdateBalance/LogTransaction calls in the handlers
+// package.
+//
+// Semantics match the two calls this replaces exactly: the balances upsert
+// always passes an empty name (preserving the player's existing display
+// name rather than overwriting it with a possibly-stale one carried on the
+// Seat), while the transactions audit row records delta.Name as it was at
+// settlement time. Zero-amount deltas are expected to already be filtered
+// out by the caller, same as the previous loop did — SettlePoker does not
+// re-filter them itself.
+func (d *DB) SettlePoker(deltas []PokerDelta) error {
+	if len(deltas) == 0 {
+		return nil
+	}
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, delta := range deltas {
+		if _, err := tx.Exec(`INSERT INTO balances (user_id, name, coins) VALUES (?, ?, 100 + ?) ON CONFLICT(user_id) DO UPDATE SET coins = coins + ?, name = CASE WHEN ? != '' THEN ? ELSE name END`,
+			delta.UserID, "", delta.Amount, delta.Amount, "", ""); err != nil {
+			return fmt.Errorf("poker settle: update balance for %s: %w", delta.UserID, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO transactions (user_id, name, activity, amount) VALUES (?, ?, ?, ?)`,
+			delta.UserID, delta.Name, "poker", delta.Amount); err != nil {
+			return fmt.Errorf("poker settle: log transaction for %s: %w", delta.UserID, err)
+		}
+	}
+	return tx.Commit()
 }
 
 type BalanceEntry struct {
