@@ -35,12 +35,14 @@ const worstRank = 7462
 
 // handStrength scores a holding from 0.0 (hopeless) to 1.0 (nuts).
 //
-// pk.Evaluate panics on fewer than five cards, so a preflop hand (two cards,
-// empty board) cannot go through the evaluator. Preflop therefore uses a
-// tier heuristic; once there are at least three board cards the real
-// evaluator is used and its rank is normalised.
+// pk.Evaluate panics unless the card count is exactly 5, 6, or 7. A preflop
+// hand (two cards, empty board) cannot go through the evaluator, nor can any
+// holding with fewer than two hole cards. Preflop and incomplete holdings
+// therefore use a tier heuristic; once there are at least three board cards
+// AND at least two hole cards the real evaluator is used and its rank is
+// normalised.
 func handStrength(hole, board []pk.Card) float64 {
-	if len(board) < 3 {
+	if len(board) < 3 || len(hole) < 2 {
 		return preflopStrength(hole)
 	}
 	rank := Best(hole, board)

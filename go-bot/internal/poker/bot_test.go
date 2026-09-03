@@ -13,17 +13,38 @@ func TestHandStrengthPreflopOrdersHands(t *testing.T) {
 	if aces > 1.0 || trash < 0.0 {
 		t.Errorf("strength out of range: AA=%.2f 72o=%.2f", aces, trash)
 	}
+	// Sanity band: premium holdings should be well above 0.8
+	if aces < 0.8 {
+		t.Errorf("AA preflop=%.2f, expected > 0.8", aces)
+	}
+	// Sanity band: trash should be well below 0.2
+	if trash > 0.2 {
+		t.Errorf("72o preflop=%.2f, expected < 0.2", trash)
+	}
 }
 
 func TestHandStrengthPostflopOrdersHands(t *testing.T) {
-	board := cards("Ah", "Kh", "7d", "2c", "9s")
-	twoPair := handStrength(cards("Ad", "Kd"), board)
-	highCard := handStrength(cards("3c", "4s"), board)
+	// Hands that DIVERGE between preflop and postflop:
+	// A-6 offsuit is weak preflop (~0.22) but makes a wheel straight on 2-3-4-5 board
+	// K-K is strong preflop (~0.85) but only has a pair on the wheel board
+	// The postflop evaluator must run for wheel to beat KK; preflop heuristic alone
+	// would order them wrong (KK > A6).
+	board := cards("2h", "3h", "4h", "5h", "9d")
+	wheel := handStrength(cards("Ah", "6d"), board)     // makes A-2-3-4-5 straight
+	pairKings := handStrength(cards("Kc", "Kd"), board) // just has pair of Kings
 
-	if twoPair <= highCard {
-		t.Fatalf("postflop ordering wrong: two pair=%.2f high card=%.2f", twoPair, highCard)
+	if wheel <= pairKings {
+		t.Fatalf("postflop ordering wrong: wheel=%.2f KK=%.2f (wheel must beat pair)", wheel, pairKings)
 	}
-	if twoPair > 1.0 || highCard < 0.0 {
-		t.Errorf("strength out of range: %.2f %.2f", twoPair, highCard)
+	if wheel > 1.0 || pairKings < 0.0 {
+		t.Errorf("strength out of range: wheel=%.2f KK=%.2f", wheel, pairKings)
+	}
+	// Sanity band: wheel (straight) should be premium, well above 0.8
+	if wheel < 0.8 {
+		t.Errorf("wheel straight=%.2f, expected > 0.8", wheel)
+	}
+	// Sanity band: pair of kings with no improvement should be moderate, below 0.6
+	if pairKings > 0.6 {
+		t.Errorf("KK on wheel board=%.2f, expected < 0.6", pairKings)
 	}
 }

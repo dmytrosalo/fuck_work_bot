@@ -8,12 +8,13 @@ import (
 )
 
 const (
-	MaxSeats    = 6
-	SmallBlind  = 50
-	BigBlind    = 100
-	MinBuyIn    = 1000
-	MaxBuyIn    = 10000
-	TurnTimeout = 90 * time.Second
+	BotUserPrefix = "bot:"
+	MaxSeats      = 6
+	SmallBlind    = 50
+	BigBlind      = 100
+	MinBuyIn      = 1000
+	MaxBuyIn      = 10000
+	TurnTimeout   = 90 * time.Second
 )
 
 var allRanks = []string{"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}

@@ -175,3 +175,17 @@ func TestSitBotStillEnforcesSeatsAndDuplicates(t *testing.T) {
 		t.Error("expected ErrAlreadySat for a duplicate bot")
 	}
 }
+
+func TestSitBotRejectsNonBotUserID(t *testing.T) {
+	tbl := NewTable("t1", 1)
+	// Plain numeric Telegram-style userID should be rejected
+	if err := tbl.SitBot("123456789", "Hacker", 5000); err == nil {
+		t.Error("expected ErrNotABot for non-prefixed userID")
+	} else if err != ErrNotABot {
+		t.Errorf("got error %v, want ErrNotABot", err)
+	}
+	// No seats should be created
+	if len(tbl.Seats) != 0 {
+		t.Errorf("seats created despite ErrNotABot: %d seats", len(tbl.Seats))
+	}
+}
