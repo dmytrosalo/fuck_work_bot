@@ -58,8 +58,8 @@ func TestDecideChecksWhenFree(t *testing.T) {
 	in := BotInput{Hole: cards("2c", "7d"), Board: cards("Ah", "Kd", "9s"),
 		ToCall: 0, Pot: 300, Stack: 5000, MinRaise: BigBlind}
 	a, _ := Decide(in, fixedRNG())
-	if a == ActFold {
-		t.Error("must never fold when checking is free")
+	if a != ActCheck {
+		t.Errorf("got %v, want ActCheck with trash and nothing to call", a)
 	}
 }
 
@@ -84,13 +84,29 @@ func TestDecideNeverExceedsStack(t *testing.T) {
 func TestDecideRaisesWithAStrongHand(t *testing.T) {
 	in := BotInput{Hole: cards("Ah", "Ad"), Board: cards("As", "Kd", "9s"),
 		ToCall: 100, Pot: 600, Stack: 5000, MinRaise: BigBlind, Bet: 0}
-	sawRaise := false
-	for seed := int64(0); seed < 20 && !sawRaise; seed++ {
-		if a, _ := Decide(in, rand.New(rand.NewSource(seed))); a == ActRaise {
-			sawRaise = true
-		}
+	a, _ := Decide(in, fixedRNG())
+	if a != ActRaise {
+		t.Errorf("got %v, want ActRaise with trips facing a bet", a)
 	}
-	if !sawRaise {
-		t.Error("trips should raise at least sometimes across 20 seeds")
+}
+
+func TestDecideDoesNotRaiseTrashFacingBet(t *testing.T) {
+	in := BotInput{Hole: cards("2c", "7d"), Board: cards("Ah", "Kd", "9s"),
+		ToCall: 100, Pot: 600, Stack: 5000, MinRaise: BigBlind, Bet: 0}
+	a, _ := Decide(in, fixedRNG())
+	if a == ActRaise {
+		t.Errorf("got %v, want not ActRaise with trash facing a bet", a)
+	}
+}
+
+func TestDecideShortStackAllIn(t *testing.T) {
+	in := BotInput{Hole: cards("Ah", "Ad"), Board: cards("As", "Kd", "9s"),
+		ToCall: 100, Pot: 5000, Stack: 50, MinRaise: BigBlind, Bet: 0}
+	a, amount := Decide(in, fixedRNG())
+	if a != ActRaise {
+		t.Errorf("got %v, want ActRaise for short-stack shove with monster", a)
+	}
+	if amount != 50 {
+		t.Errorf("got amount %d, want 50 (full stack)", amount)
 	}
 }

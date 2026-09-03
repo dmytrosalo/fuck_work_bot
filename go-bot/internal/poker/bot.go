@@ -118,12 +118,16 @@ const raiseThreshold = 0.75
 // for ActRaise, where it is the total this seat should have committed on the
 // current street. The engine validates every action regardless, so a bad
 // return here can only produce a rejected action, never an illegal one.
+// Decide chooses an action for a bot. The returned amount is meaningful only
+// for ActRaise, where it is the total this seat should have committed on the
+// current street. The engine validates every action regardless, so a bad
+// return here can only produce a rejected action, never an illegal one.
 func Decide(in BotInput, rng *rand.Rand) (Action, int) {
 	strength := handStrength(in.Hole, in.Board)
 
 	// Free to see the next card: never fold.
 	if in.ToCall <= 0 {
-		if strength > 0.75 || rng.Float64() < bluffFrequency {
+		if strength > raiseThreshold || rng.Float64() < bluffFrequency {
 			return raiseOrAllIn(in, strength, rng)
 		}
 		return ActCheck, 0
@@ -145,8 +149,10 @@ func Decide(in BotInput, rng *rand.Rand) (Action, int) {
 }
 
 // raiseOrAllIn sizes a raise as a fraction of the pot, clamped to what the
-// bot can actually put in. If the raise would not clear the minimum, it
-// calls instead rather than returning an action the engine will reject.
+// bot can actually put in. If the raise would not clear the minimum but
+// equals the full stack, it is a legal all-in and returned as ActRaise.
+// Otherwise, it calls or checks rather than returning an action the engine
+// will reject.
 func raiseOrAllIn(in BotInput, strength float64, rng *rand.Rand) (Action, int) {
 	target := in.Bet + in.ToCall + int(float64(in.Pot)*(0.4+0.4*strength))
 	max := in.Bet + in.Stack
@@ -154,6 +160,10 @@ func raiseOrAllIn(in BotInput, strength float64, rng *rand.Rand) (Action, int) {
 		target = max
 	}
 	if target < in.Bet+in.ToCall+in.MinRaise {
+		// A shove (target == max) is always legal even if it doesn't clear the min-raise.
+		if target == max {
+			return ActRaise, target
+		}
 		if in.ToCall <= 0 {
 			return ActCheck, 0
 		}
