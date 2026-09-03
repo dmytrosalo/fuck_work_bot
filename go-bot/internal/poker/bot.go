@@ -1,6 +1,8 @@
 package poker
 
 import (
+	"math/rand"
+
 	pk "github.com/chehsunliu/poker"
 )
 
@@ -88,4 +90,70 @@ func preflopStrength(hole []pk.Card) float64 {
 		return 1
 	}
 	return s
+}
+
+// BotInput is everything a bot needs to choose an action. It is a plain
+// value: the decision function reads no table state and takes no locks, so
+// it can be tested in isolation and called safely under the table lock.
+type BotInput struct {
+	Hole     []pk.Card
+	Board    []pk.Card
+	ToCall   int // chips needed to call; 0 means checking is free
+	Pot      int // chips already in the pot this hand
+	Stack    int // the bot's remaining chips
+	MinRaise int // the smallest legal raise increment
+	Bet      int // the bot's own contribution on this street
+}
+
+// bluffFrequency is how often a bot bets a weak hand. It keeps bots from
+// being trivially readable without meaningfully changing their expected
+// value, which the self-play simulation guards.
+const bluffFrequency = 0.10
+
+// Decide chooses an action for a bot. The returned amount is meaningful only
+// for ActRaise, where it is the total this seat should have committed on the
+// current street. The engine validates every action regardless, so a bad
+// return here can only produce a rejected action, never an illegal one.
+func Decide(in BotInput, rng *rand.Rand) (Action, int) {
+	strength := handStrength(in.Hole, in.Board)
+
+	// Free to see the next card: never fold.
+	if in.ToCall <= 0 {
+		if strength > 0.75 || rng.Float64() < bluffFrequency {
+			return raiseOrAllIn(in, strength, rng)
+		}
+		return ActCheck, 0
+	}
+
+	// Facing a bet: compare hand strength against the price being offered.
+	potOdds := float64(in.ToCall) / float64(in.Pot+in.ToCall)
+
+	switch {
+	case strength > 0.80:
+		return raiseOrAllIn(in, strength, rng)
+	case strength > potOdds+0.10:
+		return ActCall, 0
+	case rng.Float64() < bluffFrequency && in.ToCall < in.Stack/4:
+		return ActCall, 0
+	default:
+		return ActFold, 0
+	}
+}
+
+// raiseOrAllIn sizes a raise as a fraction of the pot, clamped to what the
+// bot can actually put in. If the raise would not clear the minimum, it
+// calls instead rather than returning an action the engine will reject.
+func raiseOrAllIn(in BotInput, strength float64, rng *rand.Rand) (Action, int) {
+	target := in.Bet + in.ToCall + int(float64(in.Pot)*(0.4+0.4*strength))
+	max := in.Bet + in.Stack
+	if target > max {
+		target = max
+	}
+	if target < in.Bet+in.ToCall+in.MinRaise {
+		if in.ToCall <= 0 {
+			return ActCheck, 0
+		}
+		return ActCall, 0
+	}
+	return ActRaise, target
 }

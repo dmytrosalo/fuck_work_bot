@@ -1,6 +1,9 @@
 package poker
 
-import "testing"
+import (
+	"math/rand"
+	"testing"
+)
 
 func TestHandStrengthPreflopOrdersHands(t *testing.T) {
 	aces := handStrength(cards("Ah", "As"), nil)
@@ -46,5 +49,48 @@ func TestHandStrengthPostflopOrdersHands(t *testing.T) {
 	// Sanity band: pair of kings with no improvement should be moderate, below 0.6
 	if pairKings > 0.6 {
 		t.Errorf("KK on wheel board=%.2f, expected < 0.6", pairKings)
+	}
+}
+
+func fixedRNG() *rand.Rand { return rand.New(rand.NewSource(1)) }
+
+func TestDecideChecksWhenFree(t *testing.T) {
+	in := BotInput{Hole: cards("2c", "7d"), Board: cards("Ah", "Kd", "9s"),
+		ToCall: 0, Pot: 300, Stack: 5000, MinRaise: BigBlind}
+	a, _ := Decide(in, fixedRNG())
+	if a == ActFold {
+		t.Error("must never fold when checking is free")
+	}
+}
+
+func TestDecideFoldsTrashFacingBigBet(t *testing.T) {
+	in := BotInput{Hole: cards("2c", "7d"), Board: cards("Ah", "Kd", "9s"),
+		ToCall: 4000, Pot: 300, Stack: 5000, MinRaise: BigBlind}
+	a, _ := Decide(in, fixedRNG())
+	if a != ActFold {
+		t.Errorf("got %v, want fold with trash facing a huge bet", a)
+	}
+}
+
+func TestDecideNeverExceedsStack(t *testing.T) {
+	in := BotInput{Hole: cards("Ah", "As"), Board: cards("Ad", "Kd", "9s"),
+		ToCall: 100, Pot: 5000, Stack: 250, MinRaise: BigBlind, Bet: 0}
+	_, amount := Decide(in, fixedRNG())
+	if amount > 250 {
+		t.Errorf("amount %d exceeds stack 250", amount)
+	}
+}
+
+func TestDecideRaisesWithAStrongHand(t *testing.T) {
+	in := BotInput{Hole: cards("Ah", "Ad"), Board: cards("As", "Kd", "9s"),
+		ToCall: 100, Pot: 600, Stack: 5000, MinRaise: BigBlind, Bet: 0}
+	sawRaise := false
+	for seed := int64(0); seed < 20 && !sawRaise; seed++ {
+		if a, _ := Decide(in, rand.New(rand.NewSource(seed))); a == ActRaise {
+			sawRaise = true
+		}
+	}
+	if !sawRaise {
+		t.Error("trips should raise at least sometimes across 20 seeds")
 	}
 }
