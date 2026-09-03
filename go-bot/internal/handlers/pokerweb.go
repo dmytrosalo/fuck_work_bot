@@ -16,10 +16,211 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-// pokerTmpl is a placeholder page. A later task replaces this with the real
-// mini-app UI; this stub only exists so the tree builds and /poker/{id}
-// resolves to something.
-var pokerTmpl = template.Must(template.New("poker").Parse(`<!doctype html><meta charset="utf-8"><title>Покер</title>`))
+// pokerTmpl renders the Mini App page served at GET /poker/{id}. It is
+// deliberately state-free: the page is served unauthenticated (anyone with
+// the URL can request it), so the only thing templated in is the table id —
+// every bit of table state (seats, board, pot, hole cards, ...) reaches the
+// client only after it authenticates via /api/poker/{id}/join with Telegram
+// initData. {{.TableID}} sits inside a <script> block as a bare JS value
+// (`const TABLE={{.TableID}};`, no surrounding quotes in the template
+// source); html/template's contextual autoescaper recognizes that position
+// as a JS value context and emits a fully quoted, escaped JS string literal
+// for it, which is the reason this must be html/template and not
+// text/template.
+var pokerTmpl = template.Must(template.New("poker").Parse(`<!doctype html>
+<html lang="uk"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Покер</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI",sans-serif}
+#bar{display:flex;justify-content:space-between;padding:6px 12px;background:#151c2b;color:#7d8aa3;font-size:11px}
+#felt{position:relative;height:52vh;min-height:280px;
+ background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
+.seat{position:absolute;width:74px;margin-left:-37px;margin-top:-20px;text-align:center;font-size:11px;
+ transition:opacity .2s}
+.seat .nm{font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat .st{color:#7ddba5}
+.seat.folded{opacity:.35}
+.seat.act{outline:2px solid #ffd166;border-radius:8px;padding:2px;background:#1d2740}
+.seat.act .nm{color:#ffd166}
+.cd{display:block;margin-top:2px;background:#ffd166;color:#2b1d05;border-radius:8px;
+ padding:0 5px;font-size:10px;font-weight:700}
+.chip{display:inline-block;background:#e8a33d;color:#3a2708;border-radius:8px;padding:0 5px;
+ font-size:10px;font-weight:700;margin-top:1px}
+#centre{position:absolute;top:44%;left:0;right:0;text-align:center}
+.card{display:inline-block;background:#fff;border-radius:4px;width:26px;height:36px;line-height:36px;
+ text-align:center;font-size:14px;font-weight:700;margin:0 2px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.card.red{color:#d62828}
+#pot{color:#ffd166;font-weight:700;margin-top:8px}
+#mine{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0d1220}
+#me{font-weight:700;color:#fff}
+#stack{color:#7ddba5;font-size:12px;margin-left:6px}
+#acts{display:flex;gap:6px;padding:10px;background:#121927}
+button{flex:1;padding:12px 0;border:0;border-radius:8px;font-weight:700;font-size:13px;
+ background:#243147;color:#c9d5e8}
+button.pri{background:#e8a33d;color:#2b1d05}
+button.dng{background:#3a2029;color:#e08a9a}
+button:disabled{opacity:.35}
+#msg{text-align:center;padding:8px;color:#9fb0c9;font-size:12px;min-height:18px}
+</style></head><body>
+<div id="bar"><span>♠ Покер</span><span id="stage"></span></div>
+<div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div></div>
+<div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
+<div id="acts">
+  <button id="btn-fold" class="dng" disabled>Пас</button>
+  <button id="btn-check" disabled>Чек</button>
+  <button id="btn-call" disabled>Колл</button>
+  <button id="btn-raise" class="pri" disabled>Рейз</button>
+</div>
+<div id="msg"></div>
+<script>
+const TABLE={{.TableID}};
+const tg=(window.Telegram&&window.Telegram.WebApp)||null;
+if(tg){tg.ready();tg.expand()}
+const INIT=(tg&&tg.initData)||"";
+
+const msgEl=document.getElementById("msg");
+function setMsg(t){msgEl.textContent=t||""}
+
+const SUITS={h:"♥",d:"♦",c:"♣",s:"♠"};
+const STAGE_UA={waiting:"Очікування",preflop:"Префлоп",flop:"Флоп",turn:"Терн",river:"Рівер",showdown:"Шоудаун"};
+
+// Card strings from the server are rank+suit-letter, e.g. "Ah","Td" — never
+// suit symbols, so this is purely a display transform.
+function card(s){
+  if(!s)return "";
+  const suitLetter=s.slice(-1);
+  const rank=s.slice(0,-1).replace("T","10");
+  const red=suitLetter==="h"||suitLetter==="d";
+  return '<span class="card'+(red?' red':'')+'">'+rank+(SUITS[suitLetter]||suitLetter)+'</span>';
+}
+function clip(n){n=n||"";return n.length>10?n.slice(0,10)+"…":n}
+
+let state=null;
+// Highest seq rendered so far. A broadcast can land between SSE subscriber
+// registration and its own initial snapshot fetch, arriving with a LOWER
+// seq than what's already on screen — anything not strictly greater than
+// this is dropped so the table never flickers backwards.
+let highestSeq=-1;
+// The server computes pot by summing seats' committed chips and settlement
+// zeroes them, so at showdown pot arrives as 0 — exactly when it's most
+// wanted on screen. Remembered here and shown in its place until a new hand
+// (stage transitions into "preflop") starts.
+let lastPot=0;
+let lastStage=null;
+
+function render(v){
+  if(v.seq<=highestSeq)return;
+  highestSeq=v.seq;
+  state=v;
+
+  // t.ToAct defaults to seat 0 before any hand is ever dealt and is never
+  // reset between hands, so a seat can carry to_act=true while the table is
+  // merely "waiting" or sitting at "showdown". Only trust to_act while a
+  // hand is actually live.
+  const live=v.stage!=="waiting"&&v.stage!=="showdown";
+
+  if(v.stage==="preflop"&&lastStage!=="preflop")lastPot=0;
+  lastStage=v.stage;
+  if(v.pot>0)lastPot=v.pot;
+  const potShown=v.pot>0?v.pot:lastPot;
+
+  document.getElementById("stage").textContent=STAGE_UA[v.stage]||v.stage;
+  document.getElementById("board").innerHTML=v.board.map(card).join("");
+  document.getElementById("pot").textContent="🪙 Банк "+potShown;
+
+  const felt=document.getElementById("felt");
+  felt.querySelectorAll(".seat").forEach(e=>e.remove());
+  const n=v.seats.length,cx=50,cy=42,rx=38,ry=30;
+  const left=Math.max(0,v.deadline-Math.floor(Date.now()/1000));
+  v.seats.forEach((s,i)=>{
+    const ang=(-Math.PI/2)+(2*Math.PI*i/n);
+    const isActive=live&&s.to_act;
+    const d=document.createElement("div");
+    // Never reads s.hole here — another player's hole cards are only ever
+    // taken from state.you_seat's own entry below, so this loop structurally
+    // cannot leak them even though the server legitimately reveals them for
+    // non-folded seats at showdown.
+    d.className="seat"+(s.folded?" folded":"")+(isActive?" act":"");
+    d.style.left=(cx+rx*Math.cos(ang))+"%";
+    d.style.top=(cy+ry*Math.sin(ang))+"%";
+    d.innerHTML='<div class="nm">'+clip(s.name)+'</div><div class="st">'+s.stack+'</div>'+
+      (s.bet?'<span class="chip">'+s.bet+'</span>':'')+
+      (isActive?'<div class="cd">'+left+'с</div>':'');
+    felt.appendChild(d);
+  });
+
+  const me=v.you_seat>=0?v.seats[v.you_seat]:null;
+  document.getElementById("me").textContent=me?clip(me.name):"";
+  document.getElementById("stack").textContent=me?me.stack:"";
+  document.getElementById("hole").innerHTML=me&&me.hole?me.hole.map(card).join(""):"";
+
+  const myTurn=live&&!!(me&&me.to_act);
+  const highBet=Math.max(0,...v.seats.map(s=>s.bet||0));
+  const toCall=me?Math.max(0,highBet-(me.bet||0)):0;
+  document.getElementById("btn-call").textContent=toCall>0?("Колл "+toCall):"Колл";
+  document.getElementById("btn-fold").disabled=!myTurn;
+  document.getElementById("btn-check").disabled=!myTurn||toCall>0;
+  document.getElementById("btn-call").disabled=!myTurn||toCall<=0;
+  document.getElementById("btn-raise").disabled=!myTurn;
+
+  tick();
+}
+
+function tick(){
+  if(!state)return;
+  const live=state.stage!=="waiting"&&state.stage!=="showdown";
+  const left=Math.max(0,state.deadline-Math.floor(Date.now()/1000));
+  const cd=document.querySelector(".seat.act .cd");
+  if(cd)cd.textContent=left+"с";
+  const me=state.you_seat>=0?state.seats[state.you_seat]:null;
+  setMsg(live&&me&&me.to_act?("Твій хід · "+left+"с"):"");
+}
+setInterval(tick,1000);
+
+async function act(a,amount){
+  try{
+    const r=await fetch("/api/poker/"+TABLE+"/action",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
+      body:JSON.stringify({action:a,amount:amount||0,seq:state?state.seq:0})
+    });
+    if(r.status===409){setMsg("Хід уже пройшов, оновлюю…");return}
+    if(!r.ok){setMsg(await r.text());return}
+    render(await r.json());
+  }catch(e){setMsg("Зʼєднання втрачено…")}
+}
+
+document.getElementById("btn-fold").onclick=()=>act("fold");
+document.getElementById("btn-check").onclick=()=>act("check");
+document.getElementById("btn-call").onclick=()=>act("call");
+document.getElementById("btn-raise").onclick=()=>{
+  const highBet=state?Math.max(0,...state.seats.map(s=>s.bet||0)):0;
+  const input=window.prompt("Сума рейзу (всього на цій вулиці):",String(highBet+100));
+  if(input===null)return;
+  const amt=parseInt(input,10);
+  if(!Number.isFinite(amt))return;
+  act("raise",amt);
+};
+
+(async()=>{
+  if(!tg){setMsg("Відкрий через кнопку в чаті Telegram");return}
+  let j;
+  try{
+    j=await fetch("/api/poker/"+TABLE+"/join",{method:"POST",headers:{"X-Telegram-Init-Data":INIT}});
+  }catch(e){setMsg("Зʼєднання втрачено…");return}
+  if(!j.ok){setMsg(await j.text());return}
+  render(await j.json());
+
+  const es=new EventSource("/api/poker/"+TABLE+"/stream?init_data="+encodeURIComponent(INIT));
+  es.onmessage=e=>{try{render(JSON.parse(e.data))}catch(err){}};
+  es.onerror=()=>setMsg("Зʼєднання втрачено…");
+})();
+</script></body></html>`))
 
 // sseKeepaliveInterval is how often an idle SSE stream sends a comment-only
 // ping frame. Fly.io's proxy (and some browsers/corporate proxies) can
