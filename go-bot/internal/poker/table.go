@@ -85,6 +85,25 @@ func (t *Table) Sit(userID, name string, buyIn int) error {
 	return nil
 }
 
+// SitBot seats a bot with an exact stack, bypassing the human buy-in rules.
+// Bots are funded by the house rather than a balance, so MinBuyIn/MaxBuyIn
+// do not apply — a bot matches the top human's stack, which may exceed
+// MaxBuyIn once that player has been winning. Seat limits and the
+// duplicate-user check still apply.
+func (t *Table) SitBot(userID, name string, stack int) error {
+	if len(t.Seats) >= MaxSeats {
+		return ErrTableFull
+	}
+	for _, s := range t.Seats {
+		if s.UserID == userID {
+			return ErrAlreadySat
+		}
+	}
+	t.Seats = append(t.Seats, &Seat{UserID: userID, Name: name, Stack: stack})
+	t.Seq++
+	return nil
+}
+
 // SeatIndexOf returns the seat index currently held by userID at this
 // table, or -1 if userID has no seat here. Exposed so callers outside this
 // package can distinguish "already seated" from "not seated" BEFORE
