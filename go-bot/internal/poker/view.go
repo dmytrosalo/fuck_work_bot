@@ -37,6 +37,18 @@ type TableView struct {
 	// HighBet is the largest bet committed on the current street, so the
 	// client does not have to re-derive it from Seats to size a raise.
 	HighBet int `json:"high_bet"`
+	// Hands is how many hands this table has dealt.
+	Hands int `json:"hands"`
+	// Elapsed is the session clock in seconds. Sent as a duration rather
+	// than a start timestamp so a client whose device clock is wrong still
+	// shows the right elapsed time.
+	Elapsed int `json:"elapsed"`
+	// SmallBlind/BigBlind are the blinds in force for the current hand.
+	SmallBlind int `json:"small_blind"`
+	BigBlind   int `json:"big_blind"`
+	// NextBlindIn is seconds until the blinds next double, or -1 once the
+	// schedule has reached its cap and they never move again.
+	NextBlindIn int `json:"next_blind_in"`
 }
 
 var stageNames = map[Stage]string{
@@ -64,6 +76,10 @@ func (t *Table) ViewFor(userID string) TableView {
 		Board: strs(t.Board), Pot: pot, YouSeat: -1,
 		Deadline: t.Deadline.Unix(),
 		MinRaise: t.MinRaise, HighBet: t.highBet(),
+		Hands:      t.Hands,
+		Elapsed:    int(t.Elapsed().Seconds()),
+		SmallBlind: t.SmallBlind, BigBlind: t.BigBlind,
+		NextBlindIn: nextBlindSeconds(t),
 	}
 	for i, s := range t.Seats {
 		sv := SeatView{
@@ -82,4 +98,14 @@ func (t *Table) ViewFor(userID string) TableView {
 		v.Seats = append(v.Seats, sv)
 	}
 	return v
+}
+
+// nextBlindSeconds is NextBlindRaise rendered for the wire: seconds until
+// the next level, or -1 once capped.
+func nextBlindSeconds(t *Table) int {
+	d, more := NextBlindRaise(t.Elapsed())
+	if !more {
+		return -1
+	}
+	return int(d.Seconds())
 }

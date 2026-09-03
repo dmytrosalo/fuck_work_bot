@@ -123,7 +123,7 @@ func (t *Table) advance() {
 			s.Bet = 0
 			s.actedThisStreet = false
 		}
-		t.MinRaise = BigBlind
+		t.MinRaise = t.BigBlind
 
 		switch t.Stage {
 		case StagePreflop:

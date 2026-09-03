@@ -52,8 +52,20 @@ type Table struct {
 	MinRaise int
 	Deadline time.Time
 	Seq      uint64
-	settled  bool // true after Showdown() to prevent re-settlement
-	mu       sync.Mutex
+	// CreatedAt anchors both the session clock and the blind schedule, so
+	// what the player sees counting up is the same clock the blinds move
+	// on. Set by NewTable; a zero value degrades to the base blind level
+	// rather than to the cap (see BlindsAt).
+	CreatedAt time.Time
+	// Hands counts dealt hands, incremented by StartHand.
+	Hands int
+	// SmallBlind/BigBlind are the blinds for the hand in progress. Fixed at
+	// StartHand from the elapsed time so a level change can never move the
+	// stakes underneath a hand that is already being played.
+	SmallBlind int
+	BigBlind   int
+	settled    bool // true after Showdown() to prevent re-settlement
+	mu         sync.Mutex
 }
 
 var (
@@ -67,7 +79,20 @@ var (
 )
 
 func NewTable(id string, chatID int64) *Table {
-	return &Table{ID: id, ChatID: chatID, Stage: StageWaiting, Button: -1}
+	return &Table{
+		ID: id, ChatID: chatID, Stage: StageWaiting, Button: -1,
+		CreatedAt:  time.Now(),
+		SmallBlind: SmallBlind, BigBlind: BigBlind,
+	}
+}
+
+// Elapsed is how long this table has been running — the session clock, and
+// the input to the blind schedule.
+func (t *Table) Elapsed() time.Duration {
+	if t.CreatedAt.IsZero() {
+		return 0
+	}
+	return time.Since(t.CreatedAt)
 }
 
 func (t *Table) Sit(userID, name string, buyIn int) error {
@@ -160,7 +185,11 @@ func (t *Table) StartHand() error {
 	t.Deck = NewShuffledDeck()
 	t.Board = nil
 	t.Stage = StagePreflop
-	t.MinRaise = BigBlind
+	// Blinds are locked in for the whole hand here, at the level the clock
+	// says right now — never re-read mid-hand.
+	t.SmallBlind, t.BigBlind = BlindsAt(t.Elapsed())
+	t.MinRaise = t.BigBlind
+	t.Hands++
 	t.settled = false
 
 	for _, s := range t.Seats {
@@ -183,8 +212,8 @@ func (t *Table) StartHand() error {
 		sb = t.nextOccupied(t.Button)
 		bb = t.nextOccupied(sb)
 	}
-	t.post(t.Seats[sb], SmallBlind)
-	t.post(t.Seats[bb], BigBlind)
+	t.post(t.Seats[sb], t.SmallBlind)
+	t.post(t.Seats[bb], t.BigBlind)
 
 	for i := 0; i < 2; i++ {
 		for _, s := range t.Seats {

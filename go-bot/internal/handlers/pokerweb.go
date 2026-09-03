@@ -38,7 +38,11 @@ var pokerTmpl = template.Must(template.New("poker").Parse(`<!doctype html>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI",sans-serif}
-#bar{display:flex;justify-content:space-between;padding:6px 12px;background:#151c2b;color:#7d8aa3;font-size:11px}
+#bar{display:flex;justify-content:space-between;align-items:center;gap:8px;
+ padding:6px 10px;background:#151c2b;color:#7d8aa3;font-size:11px}
+#bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#blinds{color:#c9a25a;font-weight:700}
+#blinds.rising{color:#ffd166}
 #felt{position:relative;height:40vh;min-height:220px;
  background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
 .seat{position:absolute;width:74px;margin-left:-37px;margin-top:-20px;text-align:center;font-size:11px;
@@ -109,7 +113,7 @@ button:disabled{opacity:.35}
  78%{opacity:1;transform:scale(1)}
  100%{opacity:0;transform:scale(1.02)}}
 </style></head><body>
-<div id="bar"><span>♠ Покер</span><span id="stage"></span></div>
+<div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span><span id="stage"></span></div>
 <div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="acts">
@@ -184,6 +188,50 @@ const CARD_BACK='<span class="card back"></span>';
 const CARD_BACKS=CARD_BACK+CARD_BACK;
 
 function clip(n){n=n||"";return n.length>10?n.slice(0,10)+"…":n}
+
+function mmss(total){
+  total=Math.max(0,Math.floor(total));
+  const m=Math.floor(total/60),sec=total%60;
+  return m+":"+(sec<10?"0":"")+sec;
+}
+// Ukrainian needs three plural forms, not two: 1 роздача, 2 роздачі,
+// 5 роздач. Picking one and appending "s"-style would read as broken.
+function plural(n,one,few,many){
+  const m10=n%10,m100=n%100;
+  if(m10===1&&m100!==11)return one;
+  if(m10>=2&&m10<=4&&(m100<12||m100>14))return few;
+  return many;
+}
+
+// The bar's two clocks tick locally between snapshots. The server sends
+// DURATIONS (elapsed, next_blind_in) rather than timestamps, so a device
+// with a wrong clock still counts correctly; these anchors convert them
+// back into something tickable.
+let clockBase=0,clockAnchor=0,blindBase=-1,handsSeen=0;
+function renderBar(v){
+  clockBase=v.elapsed||0;
+  clockAnchor=Date.now();
+  blindBase=(typeof v.next_blind_in==="number")?v.next_blind_in:-1;
+  handsSeen=v.hands||0;
+  document.getElementById("blinds").textContent=
+    "Блайнди "+(v.small_blind||0)+"/"+(v.big_blind||0);
+  paintBar();
+}
+function paintBar(){
+  const drift=Math.floor((Date.now()-clockAnchor)/1000);
+  const secs=clockBase+(clockAnchor?drift:0);
+  document.getElementById("session").textContent=
+    "♠ "+mmss(secs)+" · "+handsSeen+" "+plural(handsSeen,"роздача","роздачі","роздач");
+  const el=document.getElementById("blinds");
+  if(blindBase<0){
+    el.classList.remove("rising");
+    return;
+  }
+  const left=Math.max(0,blindBase-drift);
+  el.textContent=el.textContent.split(" ↑")[0]+" ↑"+mmss(left);
+  // Highlight the last minute before the stakes double.
+  el.classList.toggle("rising",left<=60);
+}
 
 const actionBtns=["btn-fold","btn-check","btn-call","btn-raise"].map(id=>document.getElementById(id));
 function setActsBusy(busy){actionBtns.forEach(b=>b.disabled=busy)}
@@ -311,6 +359,9 @@ function render(v){
   // chat instead was rejected: seq is the action-ordering token, and moving
   // it would 409 every player's pending action each time someone typed.
   renderChat(v.chat);
+  // Also outside the gate: a chat-only broadcast carries no new seq, and
+  // the bar should still re-anchor its clocks from it.
+  renderBar(v);
   if(v.seq<=highestSeq)return;
   highestSeq=v.seq;
   state=v;
@@ -418,6 +469,7 @@ function render(v){
 }
 
 function tick(){
+  paintBar(); // the session clock keeps running even between hands
   if(!state)return;
   if(errorMsg){setMsg(errorMsg);return} // a pending error outranks the countdown/turn line
   const live=state.stage!=="waiting"&&state.stage!=="showdown";
