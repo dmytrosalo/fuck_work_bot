@@ -277,3 +277,26 @@ func TestRemoveCardsByRarityDoesNotDeadlockAndRemovesCorrectCount(t *testing.T) 
 		t.Errorf("decoy card 4 (different rarity) should be untouched, got count=%d", counts[4])
 	}
 }
+
+func TestGetTopBalancesExcludesBotsAndBank(t *testing.T) {
+	db := newTestDB(t)
+
+	db.UpdateBalance("460670583", "Danya", 5000)
+	db.UpdateBalance("bank:house", "Bank", 99999)
+	db.UpdateBalance("bot:1", "Вася", 88888)
+
+	for _, e := range db.GetTopBalances(10) {
+		if e.UserID == "bank:house" || e.UserID == "bot:1" {
+			t.Errorf("leaderboard leaked a non-player row: %s (%s)", e.UserID, e.Name)
+		}
+	}
+	found := false
+	for _, e := range db.GetTopBalances(10) {
+		if e.UserID == "460670583" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("real player missing from leaderboard")
+	}
+}

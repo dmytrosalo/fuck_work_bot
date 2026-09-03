@@ -691,7 +691,9 @@ type BalanceEntry struct {
 }
 
 func (d *DB) GetTopBalances(limit int) []BalanceEntry {
-	rows, err := d.db.Query(`SELECT user_id, name, coins FROM balances ORDER BY coins DESC LIMIT ?`, limit)
+	rows, err := d.db.Query(`SELECT user_id, name, coins FROM balances
+		WHERE user_id NOT LIKE 'bot:%' AND user_id NOT LIKE 'bank:%'
+		ORDER BY coins DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil
 	}
