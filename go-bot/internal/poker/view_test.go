@@ -249,3 +249,51 @@ func TestViewReportsHandResultAtShowdown(t *testing.T) {
 		t.Errorf("aces full winner reported won=%d, want > 0", v.Seats[0].Won)
 	}
 }
+
+// TestViewMarksMidHandJoinerAsNotInHand covers the case that made a player
+// think the app was broken: sitting down after the deal leaves you seated
+// with no hole cards until the next hand. The client needs in_hand to tell
+// that apart from an active player, or it draws face-down cards for a hand
+// that does not exist.
+func TestViewMarksMidHandJoinerAsNotInHand(t *testing.T) {
+	tbl := NewTable("t", 1)
+	_ = tbl.Sit("a", "A", 10000)
+	_ = tbl.Sit("b", "B", 10000)
+	if err := tbl.StartHand(); err != nil {
+		t.Fatal(err)
+	}
+	// Danya walks up mid-hand.
+	if err := tbl.Sit("late", "Danya", 10000); err != nil {
+		t.Fatal(err)
+	}
+
+	v := tbl.ViewFor("late")
+	if v.YouSeat < 0 {
+		t.Fatal("late joiner has no seat in their own view")
+	}
+	me := v.Seats[v.YouSeat]
+	if me.InHand {
+		t.Error("late joiner reported in_hand — the client would draw cards they do not hold")
+	}
+	if len(me.Hole) != 0 {
+		t.Errorf("late joiner was dealt %d cards", len(me.Hole))
+	}
+	if me.Folded {
+		t.Error("late joiner reported folded — they have not folded, they are waiting")
+	}
+	// The players actually in the hand must still report in_hand.
+	for _, sv := range v.Seats {
+		if sv.UserID != "late" && !sv.InHand {
+			t.Errorf("seat %s dealt into the hand but reports in_hand=false", sv.UserID)
+		}
+	}
+
+	// Next hand deals them in.
+	tbl.Stage = StageShowdown
+	if err := tbl.StartHand(); err != nil {
+		t.Fatal(err)
+	}
+	if me := tbl.ViewFor("late").Seats[tbl.SeatIndexOf("late")]; !me.InHand || len(me.Hole) != 2 {
+		t.Errorf("next hand: in_hand=%v cards=%d, want true and 2", me.InHand, len(me.Hole))
+	}
+}

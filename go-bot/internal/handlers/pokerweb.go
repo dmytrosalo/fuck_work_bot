@@ -76,10 +76,18 @@ button:disabled{opacity:.35}
 #msg{text-align:center;padding:8px;color:#9fb0c9;font-size:12px;min-height:18px}
 /* Pre-action row. Occupies the same slot as #acts and only one of the two is
    ever displayed, so the controls never move under the player's thumb. */
-#pre{display:none;gap:6px;padding:10px;background:#121927}
-#pre.on{display:flex}
-#pre button{background:#1b2536;color:#8fa1bd}
-#pre button.armed{background:#2f4462;color:#ffd166;outline:2px solid #ffd166}
+/* Deliberately NOT styled like #acts. The first version looked identical to
+   the live action row, so players read the missing Рейз as buttons
+   disappearing rather than as a different row doing a different job. */
+#prewrap{display:none;padding:6px 10px 10px;background:#121927}
+#prewrap.on{display:block}
+#prehint{color:#6f7f99;font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+ padding:0 2px 5px}
+#pre{display:flex;gap:6px}
+#pre button{background:transparent;color:#8fa1bd;border:1px dashed #34435c;padding:10px 0}
+#pre button.armed{background:#2f4462;color:#ffd166;border:1px solid #ffd166}
+#pre button:disabled{opacity:.3}
+.waitTag{display:block;margin-top:2px;color:#8fa1bd;font-size:9px;font-style:italic}
 /* Table chat */
 #chat{background:#0d1220;border-top:1px solid #1a2233}
 #chatlog{height:74px;overflow-y:auto;padding:6px 10px;font-size:12px;line-height:1.45}
@@ -136,10 +144,13 @@ button:disabled{opacity:.35}
     <button id="raise-ok" class="pri">Підтвердити</button>
   </div>
 </div>
-<div id="pre">
-  <button data-pre="fold">Пас</button>
-  <button data-pre="checkfold">Чек/Пас</button>
-  <button data-pre="call">Колл</button>
+<div id="prewrap">
+  <div id="prehint">Ходить інший гравець · обери дію наперед</div>
+  <div id="pre">
+    <button data-pre="fold">Пас</button>
+    <button data-pre="checkfold">Чек/Пас</button>
+    <button data-pre="call">Колл</button>
+  </div>
 </div>
 <div id="msg"></div>
 <div id="chat">
@@ -317,8 +328,10 @@ function applyButtons(){
 
   // Pre-action row is offered only while we are in a live hand and it is
   // someone else's turn. A folded or all-in seat has nothing left to queue.
-  const canQueue=live&&!!me&&!myTurn&&!me.folded&&!me.all_in;
-  document.getElementById("pre").classList.toggle("on",canQueue);
+  // Not dealt in means nothing to pre-select: the queued action could only
+  // fire on a LATER hand, against a price that no longer exists.
+  const canQueue=live&&!!me&&me.in_hand&&!myTurn&&!me.folded&&!me.all_in;
+  document.getElementById("prewrap").classList.toggle("on",canQueue);
   document.getElementById("acts").style.display=canQueue?"none":"flex";
   if(!canQueue&&!myTurn)clearPre();
   const preCall=document.querySelector('#pre button[data-pre="call"]');
@@ -418,11 +431,20 @@ function render(v){
     // for anyone still holding cards. The back markup is the fixed
     // CARD_BACKS constant, never anything derived from s, so this loop
     // structurally cannot leak another player's hand.
-    if(!s.folded&&v.stage!=="waiting"){
+    // Face-down backs belong ONLY to a seat actually holding cards. A
+    // player who sat down mid-hand has in_hand=false and no hole cards;
+    // drawing backs for them showed cards that do not exist and made the
+    // empty hand look like a bug rather than a wait.
+    if(s.in_hand&&!s.folded&&v.stage!=="waiting"){
       const hole=document.createElement("div");
       hole.className="oppHole";
       hole.innerHTML=s.hole?s.hole.map(card).join(""):CARD_BACKS;
       d.appendChild(hole);
+    }else if(!s.in_hand&&v.stage!=="waiting"){
+      const wait=document.createElement("div");
+      wait.className="waitTag";
+      wait.textContent="чекає";
+      d.appendChild(wait);
     }
 
     // Stack/bet/countdown are Go ints and JS numbers, not player-controlled
@@ -460,7 +482,17 @@ function render(v){
   }
   document.getElementById("me").textContent=me?clip(me.name):"";
   document.getElementById("stack").textContent=me?me.stack:"";
-  document.getElementById("hole").innerHTML=me&&me.hole?me.hole.map(card).join(""):"";
+  const holeEl=document.getElementById("hole");
+  if(me&&me.hole&&me.hole.length){
+    holeEl.innerHTML=me.hole.map(card).join("");
+  }else if(me&&!me.in_hand&&live){
+    // Sat down after the deal: explain the empty hand instead of leaving a
+    // blank space that reads as a failure to load.
+    holeEl.innerHTML="";
+    holeEl.textContent="Чекаєш наступної роздачі";
+  }else{
+    holeEl.innerHTML="";
+  }
 
   applyButtons();
   tick();

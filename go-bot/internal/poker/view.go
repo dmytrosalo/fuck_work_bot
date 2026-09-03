@@ -5,12 +5,18 @@ import (
 )
 
 type SeatView struct {
-	UserID string   `json:"user_id"`
-	Name   string   `json:"name"`
-	Stack  int      `json:"stack"`
-	Bet    int      `json:"bet"`
-	Folded bool     `json:"folded"`
-	AllIn  bool     `json:"all_in"`
+	UserID string `json:"user_id"`
+	Name   string `json:"name"`
+	Stack  int    `json:"stack"`
+	Bet    int    `json:"bet"`
+	Folded bool   `json:"folded"`
+	AllIn  bool   `json:"all_in"`
+	// InHand is false for a seat that is NOT part of the hand in progress —
+	// most often someone who sat down after the cards were dealt, who has
+	// no hole cards and will be dealt in next hand. Without it the client
+	// cannot tell them apart from an active player and renders them
+	// holding face-down cards they do not have.
+	InHand bool     `json:"in_hand"`
 	Hole   []string `json:"hole,omitempty"` // populated only for the viewer
 	ToAct  bool     `json:"to_act"`
 	// Won is this seat's NET result for the hand just finished — winnings
@@ -84,7 +90,7 @@ func (t *Table) ViewFor(userID string) TableView {
 	for i, s := range t.Seats {
 		sv := SeatView{
 			UserID: s.UserID, Name: s.Name, Stack: s.Stack, Bet: s.Bet,
-			Folded: s.Folded, AllIn: s.AllIn, ToAct: i == t.ToAct,
+			Folded: s.Folded, AllIn: s.AllIn, InHand: s.InHand, ToAct: i == t.ToAct,
 		}
 		if t.Stage == StageShowdown && s.InHand {
 			sv.Won = s.Stack - s.startStack
