@@ -23,7 +23,7 @@ import (
 // every bit of table state (seats, board, pot, hole cards, ...) reaches the
 // client only after it authenticates via /api/poker/{id}/join with Telegram
 // initData. {{.TableID}} sits inside a <script> block as a bare JS value
-// (`const TABLE={{.TableID}};`, no surrounding quotes in the template
+// (`const TABLE={{.TableID}}||...`, no surrounding quotes in the template
 // source); html/template's contextual autoescaper recognizes that position
 // as a JS value context and emits a fully quoted, escaped JS string literal
 // for it, which is the reason this must be html/template and not
@@ -82,10 +82,13 @@ button:disabled{opacity:.35}
 </div>
 <div id="msg"></div>
 <script>
-const TABLE={{.TableID}};
 const tg=(window.Telegram&&window.Telegram.WebApp)||null;
 if(tg){tg.ready();tg.expand()}
 const INIT=(tg&&tg.initData)||"";
+// Two ways in. Opened from a group, Telegram serves the fixed @BotFather URL
+// with no id in the path and carries the table in startapp, so start_param
+// is the only source. Opened at /poker/{id} directly, the templated id wins.
+const TABLE={{.TableID}}||((tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param)||"");
 
 const msgEl=document.getElementById("msg");
 function setMsg(t){msgEl.textContent=t||""}
@@ -631,15 +634,28 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			http.NotFound(w, r)
 		}
 	})
-	mux.HandleFunc("/poker/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/poker/")
-		if h.table(id) == nil {
+	// Registered under both spellings so the URL configured with @BotFather
+	// works with or without its trailing slash. With only the "/poker/"
+	// subtree pattern, a request to "/poker" gets a 301 from the mux — and a
+	// redirect can drop the "#tgWebAppData=..." fragment that carries
+	// initData, leaving the app unauthenticated for a reason nothing logs.
+	page := func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/poker"), "/")
+		// An empty id is the normal case for a Mini App opened from a
+		// group: Telegram serves the fixed URL registered with @BotFather
+		// and delivers the table id as initDataUnsafe.start_param instead,
+		// which only the client can read. Serve the shell and let it
+		// resolve the id — every /api/poker route still authorizes the id
+		// the client ends up using, so this is not a way in.
+		if id != "" && h.table(id) == nil {
 			http.Error(w, "Стіл закрито", http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_ = pokerTmpl.Execute(w, map[string]string{"TableID": id})
-	})
+	}
+	mux.HandleFunc("/poker", page)
+	mux.HandleFunc("/poker/", page)
 }
 
 // handleJoin seats the authenticated user with min(balance, MaxBuyIn) chips.

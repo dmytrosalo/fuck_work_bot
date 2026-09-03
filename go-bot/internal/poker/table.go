@@ -2,6 +2,7 @@ package poker
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -56,9 +57,11 @@ type Table struct {
 }
 
 var (
-	ErrTableFull   = errors.New("стіл заповнений")
-	ErrAlreadySat  = errors.New("ти вже за столом")
-	ErrBuyInTooLow = errors.New("замало богдудіків")
+	ErrTableFull  = errors.New("стіл заповнений")
+	ErrAlreadySat = errors.New("ти вже за столом")
+	// ErrBuyInTooLow reaches the player verbatim as the join error, so it
+	// names the threshold rather than making them guess it.
+	ErrBuyInTooLow = fmt.Errorf("замало богдудіків — треба щонайменше %d 🪙", MinBuyIn)
 	ErrNeedPlayers = errors.New("потрібно щонайменше 2 гравці")
 	ErrNotABot     = errors.New("userID must start with " + BotUserPrefix)
 )
