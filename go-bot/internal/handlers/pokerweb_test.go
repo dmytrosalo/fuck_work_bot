@@ -136,11 +136,16 @@ func TestJoinSucceedsWithBuyInClampedToMaxBuyIn(t *testing.T) {
 		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
 	}
 	v := decodeView(t, rec)
-	if len(v.Seats) != 1 {
-		t.Fatalf("seats = %d, want 1", len(v.Seats))
+	// 3 seats, not 1: a solo human now brings bot company (see ensureBots),
+	// so Alice's join also seats 2 bots and auto-starts a hand.
+	if len(v.Seats) != 3 {
+		t.Fatalf("seats = %d, want 3 (Alice + 2 bots)", len(v.Seats))
 	}
-	if v.Seats[0].Stack != poker.MaxBuyIn {
-		t.Errorf("stack = %d, want buy-in clamped to MaxBuyIn=%d", v.Seats[0].Stack, poker.MaxBuyIn)
+	if v.YouSeat < 0 || v.YouSeat >= len(v.Seats) {
+		t.Fatalf("you_seat = %d, want a real seat among %d", v.YouSeat, len(v.Seats))
+	}
+	if v.Seats[v.YouSeat].Stack != poker.MaxBuyIn {
+		t.Errorf("stack = %d, want buy-in clamped to MaxBuyIn=%d", v.Seats[v.YouSeat].Stack, poker.MaxBuyIn)
 	}
 }
 
@@ -301,8 +306,12 @@ func TestJoinReconnectsAlreadySeatedPlayer(t *testing.T) {
 	if secondView.YouSeat != firstView.YouSeat {
 		t.Errorf("reconnect you_seat = %d, want unchanged %d", secondView.YouSeat, firstView.YouSeat)
 	}
-	if len(secondView.Seats) != 1 {
-		t.Errorf("reconnect seats = %d, want still 1 (must not re-seat or duplicate)", len(secondView.Seats))
+	// 3 seats, not 1: Alice's first join also seated 2 bots (see
+	// ensureBots). The point of this test — reconnecting must not re-seat
+	// or duplicate Alice's OWN seat — still holds; only the total table
+	// population changed with this task.
+	if len(secondView.Seats) != 3 {
+		t.Errorf("reconnect seats = %d, want still 3 (Alice + 2 bots, must not re-seat or duplicate)", len(secondView.Seats))
 	}
 	if secondView.Seats[secondView.YouSeat].Stack != firstStack {
 		t.Errorf("reconnect stack = %d, want unchanged %d (must not re-read balance or reset stack)", secondView.Seats[secondView.YouSeat].Stack, firstStack)
@@ -311,8 +320,8 @@ func TestJoinReconnectsAlreadySeatedPlayer(t *testing.T) {
 	tbl.Lock()
 	seatCount := len(tbl.Seats)
 	tbl.Unlock()
-	if seatCount != 1 {
-		t.Errorf("table has %d seats after reconnect, want still 1", seatCount)
+	if seatCount != 3 {
+		t.Errorf("table has %d seats after reconnect, want still 3", seatCount)
 	}
 }
 
@@ -356,6 +365,171 @@ func TestJoinReconnectsAlreadySeatedPlayerAtFullTable(t *testing.T) {
 	if v.Seats[0].Stack != 2000 {
 		t.Errorf("stack = %d, want unchanged 2000", v.Seats[0].Stack)
 	}
+}
+
+// TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable is the regression
+// guard for Ruling 3: a full table (4 humans + 2 bots, exactly what
+// ensureBots seats for 4 humans) must not silently reject a fifth,
+// genuinely new human with "table full" just because bots are squatting on
+// the remaining seats — that would defeat "humans get priority" without any
+// visible error. handleJoin must evict one bot to make room BEFORE
+// attempting Sit.
+func TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("2000", "NewGuy", 5000-100) // GetBalance seeds new rows at 100
+
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	// Seat 4 humans directly against the engine, then let ensureBots fill
+	// the remaining 2 seats — the exact full-table shape Ruling 3 describes.
+	// The table is left in StageWaiting (no hand ever started), so this
+	// exercises handleJoin's bot-eviction path without needing to drive a
+	// full hand to reach a safe between-hands window.
+	for i := 0; i < 4; i++ {
+		userID := fmt.Sprintf("%d", 1000+i)
+		if err := tbl.Sit(userID, fmt.Sprintf("U%d", i), 2000); err != nil {
+			t.Fatalf("Sit seat %d: %v", i, err)
+		}
+	}
+	tbl.Lock()
+	h.ensureBots(tbl)
+	seatCount := len(tbl.Seats)
+	botsBefore := countBots(tbl)
+	tbl.Unlock()
+	if seatCount != poker.MaxSeats {
+		t.Fatalf("setup: table has %d seats, want full %d", seatCount, poker.MaxSeats)
+	}
+	if botsBefore != 2 {
+		t.Fatalf("setup: table has %d bots, want 2", botsBefore)
+	}
+
+	// A fifth, genuinely new human tries to join the full table.
+	initData := userInitData(t, "test-token", 2000, "NewGuy", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("join at a full table with bots status = %d, want 200 (a bot must be evicted to make room), body=%s", rec.Code, rec.Body.String())
+	}
+	v := decodeView(t, rec)
+	if v.YouSeat < 0 {
+		t.Fatalf("you_seat = %d, want a real seat", v.YouSeat)
+	}
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if got := len(tbl.Seats); got != poker.MaxSeats {
+		t.Errorf("seats = %d, want still %d (one bot evicted, one human added)", got, poker.MaxSeats)
+	}
+	if got := countBots(tbl); got != 1 {
+		t.Errorf("bots = %d, want 1 (bot count must drop by one)", got)
+	}
+	if idx := tbl.SeatIndexOf("2000"); idx < 0 {
+		t.Error("new human was not actually seated")
+	}
+}
+
+// TestJoinReconnectAtFullBotTableDoesNotEvictABot is the regression guard
+// for the OTHER half of Ruling 3: eviction is for a genuinely NEW human
+// only. TestJoinReconnectsAlreadySeatedPlayerAtFullTable (above) fills all
+// MaxSeats with humans, so it cannot catch a bug here — evictOneBot would
+// be a no-op there regardless of where it sits in handleJoin's flow, since
+// there is no bot to evict either way. This test seats bots too (4 humans +
+// 2 bots, same full-table shape as the eviction test above) so that placing
+// the eviction block ahead of the reconnect early-return — exactly the
+// mistake Ruling 3 forbids — is actually observable: an ALREADY-SEATED
+// human reloading the page must never cost a bot its seat.
+func TestJoinReconnectAtFullBotTableDoesNotEvictABot(t *testing.T) {
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	// Same full-table setup as TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable:
+	// 4 humans seated directly, then ensureBots fills the remaining 2 seats.
+	for i := 0; i < 4; i++ {
+		userID := fmt.Sprintf("%d", 1000+i)
+		if err := tbl.Sit(userID, fmt.Sprintf("U%d", i), 2000); err != nil {
+			t.Fatalf("Sit seat %d: %v", i, err)
+		}
+	}
+	tbl.Lock()
+	h.ensureBots(tbl)
+	seatCount := len(tbl.Seats)
+	botsBefore := countBots(tbl)
+	tbl.Unlock()
+	if seatCount != poker.MaxSeats {
+		t.Fatalf("setup: table has %d seats, want full %d", seatCount, poker.MaxSeats)
+	}
+	if botsBefore != 2 {
+		t.Fatalf("setup: table has %d bots, want 2", botsBefore)
+	}
+
+	// Seat 0's player reloads the Mini App at their own already-full table —
+	// exactly what TestJoinReconnectsAlreadySeatedPlayerAtFullTable does,
+	// just with bots also present this time.
+	initData := userInitData(t, "test-token", 1000, "U0", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reconnect at a full bot table status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	v := decodeView(t, rec)
+	if v.YouSeat != 0 {
+		t.Errorf("you_seat = %d, want 0 (existing seat)", v.YouSeat)
+	}
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if got := len(tbl.Seats); got != poker.MaxSeats {
+		t.Errorf("seats = %d, want unchanged %d", got, poker.MaxSeats)
+	}
+	if got := countBots(tbl); got != 2 {
+		t.Errorf("bots = %d, want unchanged 2 — a reconnecting player must not cost a bot its seat", got)
+	}
+}
+
+// TestEvictOneBotEvictsSeatAtStaleToAct proves evictOneBot can remove a bot
+// even when that bot sits at the stale tbl.ToAct index left over from the
+// just-finished hand, and that it resets ToAct to -1 rather than leaving it
+// pointing at a seat that no longer exists (or, worse, at the wrong seat
+// once the slice shifts). Before the fix, evictOneBot unconditionally
+// skipped the seat at i == tbl.ToAct, so a lone evictable bot sitting there
+// could never be evicted — silently rejecting a 6th human with "стіл
+// заповнений" even though a seat was free to take. This never risks money:
+// eviction only ever runs at StageWaiting/StageShowdown (see handleJoin),
+// the only stages where ToAct is not read by Act/ForceTimeout.
+func TestEvictOneBotEvictsSeatAtStaleToAct(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 5000)
+	_ = tbl.SitBot("bot:1", "Вася", 5000)
+	botIdx := tbl.SeatIndexOf("bot:1")
+	tbl.ToAct = botIdx // stale index left over from the just-finished hand
+	tbl.Stage = poker.StageShowdown
+
+	if !h.evictOneBot(tbl) {
+		t.Fatal("evictOneBot returned false — the bot at the stale ToAct index was not evicted")
+	}
+	if tbl.SeatIndexOf("bot:1") >= 0 {
+		t.Error("bot:1 is still seated after eviction")
+	}
+	if tbl.ToAct != -1 {
+		t.Errorf("ToAct = %d, want -1 after evicting the seat it pointed at", tbl.ToAct)
+	}
+	tbl.Unlock()
 }
 
 // --- membership check: transient errors and caching (FIX 2) ----------------
@@ -684,8 +858,10 @@ func TestStreamSendsInitialSnapshotThenBroadcastsJoin(t *testing.T) {
 	if err := json.Unmarshal([]byte(updated), &updatedView); err != nil {
 		t.Fatalf("decode updated view: %v, raw=%s", err, updated)
 	}
-	if len(updatedView.Seats) != 1 {
-		t.Fatalf("seats after join broadcast = %d, want 1", len(updatedView.Seats))
+	// 3 seats, not 1: a solo human now brings bot company (see ensureBots),
+	// so Eve's join also seats 2 bots and auto-starts a hand.
+	if len(updatedView.Seats) != 3 {
+		t.Fatalf("seats after join broadcast = %d, want 3 (Eve + 2 bots)", len(updatedView.Seats))
 	}
 }
 
@@ -789,10 +965,19 @@ func TestStreamRejectsNonChatMember(t *testing.T) {
 
 // TestConcurrentJoinsRespectCapacityAndDontRace hammers the join endpoint
 // from many goroutines at once. Under the required lock discipline (every
-// Sit/ViewFor call happens under tbl.Lock()), exactly poker.MaxSeats joins
-// must succeed and the rest must be rejected with 409 — never more seats
-// than capacity, and no corrupted/duplicate seats. Run with -race to prove
-// there's no data race on the shared table.
+// Sit/ViewFor call happens under tbl.Lock()), the table must never exceed
+// poker.MaxSeats and must never contain a corrupted/duplicate seat. Run with
+// -race to prove there's no data race on the shared table.
+//
+// Before bots existed, exactly poker.MaxSeats of these humans succeeded and
+// the rest were rejected with 409. That is no longer guaranteed: whichever
+// goroutine's join happens to land first (a race with no fixed winner) seats
+// 2 bots and auto-starts a hand (Ruling 1 — ensureBots now runs for a solo
+// human too), permanently claiming up to 2 of the MaxSeats slots for the
+// rest of that hand. So this test now checks the invariant that actually
+// matters under concurrency — capacity respected, no duplicates, and the
+// HTTP success count matches the humans really seated — rather than a fixed
+// human count that bots make nondeterministic.
 func TestConcurrentJoinsRespectCapacityAndDontRace(t *testing.T) {
 	db := setupTestDB(t)
 	const attempts = 20
@@ -826,23 +1011,31 @@ func TestConcurrentJoinsRespectCapacityAndDontRace(t *testing.T) {
 	}
 	wg.Wait()
 
-	if int(successes) != poker.MaxSeats {
-		t.Errorf("successful joins = %d, want exactly poker.MaxSeats=%d", successes, poker.MaxSeats)
-	}
-
 	tbl.Lock()
 	seatCount := len(tbl.Seats)
+	humanSeats, botSeats := 0, 0
 	seen := map[string]bool{}
 	for _, s := range tbl.Seats {
 		if seen[s.UserID] {
 			t.Errorf("duplicate seat for user %s", s.UserID)
 		}
 		seen[s.UserID] = true
+		if isBotUser(s.UserID) {
+			botSeats++
+		} else {
+			humanSeats++
+		}
 	}
 	tbl.Unlock()
 
-	if seatCount != poker.MaxSeats {
-		t.Errorf("tbl.Seats has %d entries, want poker.MaxSeats=%d", seatCount, poker.MaxSeats)
+	if seatCount > poker.MaxSeats {
+		t.Errorf("tbl.Seats has %d entries, want at most poker.MaxSeats=%d", seatCount, poker.MaxSeats)
+	}
+	if humanSeats+botSeats != seatCount {
+		t.Errorf("bookkeeping mismatch: %d human + %d bot seats != %d total", humanSeats, botSeats, seatCount)
+	}
+	if int(successes) != humanSeats {
+		t.Errorf("successful joins = %d, want to match the %d human seats actually seated", successes, humanSeats)
 	}
 }
 
@@ -853,4 +1046,49 @@ func mustParseInt64(t *testing.T, s string) int64 {
 		t.Fatalf("parse int64 from %q: %v", s, err)
 	}
 	return v
+}
+
+// --- sweeper: bot-only tables -----------------------------------------------
+
+// TestSweepDoesNotStartHandWhenOnlyHumanIsBusted is the regression guard for
+// the "bots play each other forever" non-goal: a solo human plus two bots,
+// where the human has busted to 0 chips but still occupies a seat.
+// ensureBots counts them as a human (so it makes no changes — topStack stays
+// 0), but the two bots still hold their chips, so SeatedCount() alone stays
+// >= 2. Before the fix, the sweeper's next-hand branch dealt a bot-only hand
+// every sweep interval until the 30-minute idle reclaim, purely off
+// SeatedCount(). It was always money-safe (the busted human is excluded from
+// settlement and the two bots' deltas cancel) — this test is about the
+// pointless churn, not correctness of the money path.
+func TestSweepDoesNotStartHandWhenOnlyHumanIsBusted(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+
+	tbl.Lock()
+	if err := tbl.Sit("u1", "Danya", 5000); err != nil {
+		t.Fatalf("Sit: %v", err)
+	}
+	h.ensureBots(tbl) // seats bots while the human still has chips
+	if countBots(tbl) == 0 {
+		tbl.Unlock()
+		t.Fatal("setup: ensureBots did not seat any bots")
+	}
+	// Bust the human, as if they just lost their last hand, and simulate
+	// that hand having just settled into showdown.
+	for _, s := range tbl.Seats {
+		if s.UserID == "u1" {
+			s.Stack = 0
+		}
+	}
+	tbl.Stage = poker.StageShowdown
+	tbl.Unlock()
+
+	h.sweepOnce()
+
+	tbl.Lock()
+	stage := tbl.Stage
+	tbl.Unlock()
+	if stage != poker.StageShowdown {
+		t.Errorf("stage = %v after sweepOnce, want it to stay StageShowdown — the sweeper must not start a bot-only hand when the only human is busted", stage)
+	}
 }

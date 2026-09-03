@@ -17,6 +17,15 @@ import (
 // TestHandleJoinAutoStartsHandOnSecondPlayer proves a table that fills to
 // two seats actually deals a hand, rather than sitting forever in
 // StageWaiting with nothing to ever call StartHand.
+//
+// Before bots existed, this took two HUMAN joins: the first left the table
+// in StageWaiting, the second pushed SeatedCount() to 2 and auto-started the
+// hand. That first assertion is no longer true: ensureBots now runs on
+// Alice's solo join too (Ruling 1 — a lone human must not be stranded
+// waiting for a second human when bots exist to fill in), so her join alone
+// already seats 2 bots and auto-starts the hand. This test now proves that
+// directly, then checks a second HUMAN can still join the table already in
+// progress without disturbing it.
 func TestHandleJoinAutoStartsHandOnSecondPlayer(t *testing.T) {
 	db := setupTestDB(t)
 	db.UpdateBalance("111", "Alice", 5000-100)
@@ -43,9 +52,13 @@ func TestHandleJoinAutoStartsHandOnSecondPlayer(t *testing.T) {
 	}
 	tbl.Lock()
 	stage := tbl.Stage
+	bots := countBots(tbl)
 	tbl.Unlock()
-	if stage != poker.StageWaiting {
-		t.Fatalf("stage after first join = %v, want StageWaiting (need 2 players)", stage)
+	if stage != poker.StagePreflop {
+		t.Fatalf("stage after Alice's solo join = %v, want StagePreflop (bots must seat and the hand must auto-start for a lone human)", stage)
+	}
+	if bots != 2 {
+		t.Fatalf("bots after Alice's solo join = %d, want 2", bots)
 	}
 
 	rec2 := join(222, "Bob")
@@ -56,12 +69,23 @@ func TestHandleJoinAutoStartsHandOnSecondPlayer(t *testing.T) {
 	tbl.Lock()
 	defer tbl.Unlock()
 	if tbl.Stage != poker.StagePreflop {
-		t.Fatalf("stage after second join = %v, want StagePreflop (hand must auto-start)", tbl.Stage)
+		t.Fatalf("stage after second join = %v, want still StagePreflop (Bob joins the hand already in progress)", tbl.Stage)
 	}
 	if tbl.ToAct < 0 {
 		t.Error("ToAct not set after auto-started hand")
 	}
+	if idx := tbl.SeatIndexOf("222"); idx < 0 {
+		t.Fatal("Bob was not actually seated")
+	} else if tbl.Seats[idx].InHand {
+		// Bob joined a hand already dealt; the engine correctly leaves him
+		// out of THIS hand (InHand is set fresh only at StartHand) and folds
+		// him in on the next one.
+		t.Error("Bob should not be marked InHand for a hand dealt before he joined")
+	}
 	for _, s := range tbl.Seats {
+		if s.UserID == "222" {
+			continue // Bob joined after the deal; see the InHand check above
+		}
 		if len(s.Hole) != 2 {
 			t.Errorf("seat %s has %d hole cards, want 2 after auto-started hand", s.UserID, len(s.Hole))
 		}
@@ -251,9 +275,17 @@ func TestSweepOnceStartsNextHandAfterShowdownPauseElapses(t *testing.T) {
 	}
 }
 
-// TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers proves a busted
-// player (0 chips) correctly stops the auto-deal loop instead of trying to
-// start a hand that StartHand itself would reject.
+// TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers proves that when
+// EVERY human is busted (0 chips), the auto-deal loop correctly stops
+// instead of trying to start a hand that StartHand itself would reject.
+//
+// Before bots existed, "only one funded player is left" was itself enough
+// to stop the loop. It no longer is: since Task 7 wires ensureBots into this
+// exact code path, a lone funded human now gets bots seated to keep playing
+// against (see TestSweepOnceSeatsBotsAndStartsNextHandForASoloFundedHuman
+// below) — that is the feature working as intended, not a bug. The one
+// scenario that must still stop the loop is nobody at the table having any
+// chips at all, which is what this test now exercises.
 func TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers(t *testing.T) {
 	db := setupTestDB(t)
 	h := NewPokerHub(db, nil, "test-token")
@@ -268,8 +300,52 @@ func TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers(t *testing.T) {
 		t.Fatalf("StartHand: %v", err)
 	}
 
-	// Manually park the table in showdown with one seat already busted, as
-	// if Bob lost his whole stack in the settled hand.
+	// Manually park the table in showdown with BOTH seats busted, as if the
+	// settled hand left nobody with chips to keep playing — the one case
+	// ensureBots itself refuses to paper over (it needs a funded human to
+	// match bot stacks against).
+	tbl.Lock()
+	tbl.Stage = poker.StageShowdown
+	tbl.Seats[0].Stack = 0
+	tbl.Seats[1].Stack = 0
+	tbl.Unlock()
+
+	h.sweepOnce()
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if tbl.Stage != poker.StageShowdown {
+		t.Errorf("stage = %v, want unchanged StageShowdown — nobody at the table has chips left", tbl.Stage)
+	}
+	if got := countBots(tbl); got != 0 {
+		t.Errorf("bots seated = %d, want 0 — ensureBots must not seat bots when every human is busted", got)
+	}
+}
+
+// TestSweepOnceSeatsBotsAndStartsNextHandForASoloFundedHuman is the
+// regression guard for Ruling 1: a lone funded human left after their
+// opponent busts must not strand the table in StageShowdown forever.
+// ensureBots must run BEFORE the SeatedCount() >= 2 check gates entry to the
+// next-hand branch, not as part of that same guard — otherwise SeatedCount()
+// being 1 (the lone human) blocks ensureBots from ever running to seat the
+// bots that would push it back to 2+.
+func TestSweepOnceSeatsBotsAndStartsNextHandForASoloFundedHuman(t *testing.T) {
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "test-token")
+	tbl := h.Create(7)
+	if err := tbl.Sit("111", "Alice", 2000); err != nil {
+		t.Fatalf("Sit: %v", err)
+	}
+	if err := tbl.Sit("222", "Bob", 2000); err != nil {
+		t.Fatalf("Sit: %v", err)
+	}
+	if err := tbl.StartHand(); err != nil {
+		t.Fatalf("StartHand: %v", err)
+	}
+
+	// Manually park the table in showdown with Bob busted out entirely,
+	// leaving Alice the lone funded human — SeatedCount() is 1 here, exactly
+	// the state Ruling 1 says must not block ensureBots.
 	tbl.Lock()
 	tbl.Stage = poker.StageShowdown
 	tbl.Seats[0].Stack = 4000
@@ -280,8 +356,11 @@ func TestSweepOnceDoesNotStartNextHandWithoutTwoFundedPlayers(t *testing.T) {
 
 	tbl.Lock()
 	defer tbl.Unlock()
-	if tbl.Stage != poker.StageShowdown {
-		t.Errorf("stage = %v, want unchanged StageShowdown — only one player has chips left", tbl.Stage)
+	if tbl.Stage != poker.StagePreflop {
+		t.Fatalf("stage = %v, want StagePreflop — bots must be seated so the solo funded human keeps playing", tbl.Stage)
+	}
+	if got := countBots(tbl); got != 2 {
+		t.Errorf("bots seated = %d, want 2", got)
 	}
 }
 
@@ -322,8 +401,8 @@ func TestSettleReleasesSeatClaimForBustedPlayer(t *testing.T) {
 			t.Fatalf("join uid=%d status = %d, want 200, body=%s", uid, rec.Code, rec.Body.String())
 		}
 	}
-	join(111, "Alice")
-	join(222, "Bob") // second join auto-starts the hand
+	join(111, "Alice") // Alice's solo join already seats 2 bots and auto-starts a hand
+	join(222, "Bob")   // joins the table already in progress, as a 4th seat
 
 	// Simulate Bob busting his entire stack in this hand: park the table in
 	// showdown with Bob at 0 chips and folded (same manual-override pattern
@@ -332,13 +411,23 @@ func TestSettleReleasesSeatClaimForBustedPlayer(t *testing.T) {
 	// award — otherwise it would happily hand Bob's real (randomly dealt)
 	// winning hand a share of the blinds pot and put his stack back above
 	// 0, making the very thing this test checks nondeterministic.
+	//
+	// Seats are located by UserID, not by index: Alice's own join already
+	// seated 2 bots between her and Bob (see ensureBots), so tbl.Seats[1]
+	// is a bot's seat now, not Bob's.
 	tbl.Lock()
 	tbl.Stage = poker.StageShowdown
-	tbl.Seats[0].Stack = 4000
-	tbl.Seats[0].Committed = 0
-	tbl.Seats[1].Stack = 0
-	tbl.Seats[1].Committed = 0
-	tbl.Seats[1].Folded = true
+	aliceIdx := tbl.SeatIndexOf("111")
+	bobIdx := tbl.SeatIndexOf("222")
+	if aliceIdx < 0 || bobIdx < 0 {
+		tbl.Unlock()
+		t.Fatalf("setup: aliceIdx=%d bobIdx=%d, want both seated", aliceIdx, bobIdx)
+	}
+	tbl.Seats[aliceIdx].Stack = 4000
+	tbl.Seats[aliceIdx].Committed = 0
+	tbl.Seats[bobIdx].Stack = 0
+	tbl.Seats[bobIdx].Committed = 0
+	tbl.Seats[bobIdx].Folded = true
 	h.settle(tbl)
 	tbl.Unlock()
 
@@ -788,4 +877,208 @@ func TestConcurrentActionAndSweepNeverOrphanHubState(t *testing.T) {
 	}
 
 	checkNoOrphanedHubState(t, h)
+}
+
+// --- sweepOnce: actBots wiring (Task 7) -------------------------------------
+
+// TestSweepOnceDrivesBotsToShowdownAndSettlesOnce is the regression guard
+// for Ruling 2 as applied to the sweeper's actBots call: once the human
+// steps out, only the sweeper's repeated ticks (never a direct call to
+// h.settle, never an HTTP action) drive the two bots to showdown, and the
+// settle-on-transition condition must fire exactly once.
+//
+// This must prove BOTH halves, or it's vacuous: (1) settle actually ran at
+// all — Alice's own balance and the bank's balance changed, and their
+// deltas cancel and are nonzero — not just (2) that it didn't run TWICE.
+// Reading balances only after showdown and asserting they don't move on
+// further passes (the original, insufficient version of this test) is
+// satisfied identically by a table that never settles at all: with
+// h.settle deleted from the sweeper's bot path, showdown is still reached,
+// showdownAt is never recorded so showdownReady stays permanently true,
+// hands keep auto-restarting, and no balance ever moves anywhere at all —
+// both reads stay equal and a "not settled twice" check passes for
+// entirely the wrong reason.
+//
+// Alice goes all-in as her one action (rather than folding) so her own
+// money is genuinely at risk: a human who folds before ever committing a
+// chip — the button/UTG seat in a 3-handed hand, acting first, owing
+// nothing yet — has a real balance delta of exactly zero regardless of
+// whether settle ran at all, which would make an assertion on her delta
+// meaningless. Going all-in guarantees a nonzero delta except in the
+// vanishingly rare exact three-way chop (retried below, same pattern as
+// TestSettleRoutesBotDeltasToBank).
+func TestSweepOnceDrivesBotsToShowdownAndSettlesOnce(t *testing.T) {
+	const aliceBuyIn = 5000
+
+	db := setupTestDB(t)
+
+	for attempt := 0; attempt < 20; attempt++ {
+		db.UpdateBalance("111", "Alice", aliceBuyIn-db.GetBalance("111", "Alice"))
+
+		// A fresh hub per attempt, not just a fresh table: sweepOnce sweeps
+		// every table a hub knows about, so reusing one hub across retries
+		// would mean a later attempt's sweep passes also drive stale tables
+		// left behind by an earlier chopped-pot retry — corrupting exactly
+		// the before/after balance snapshot this test depends on.
+		h := NewPokerHub(db, nil, "test-token")
+		tbl := h.Create(int64(attempt))
+		tbl.Lock()
+		if err := tbl.Sit("111", "Alice", aliceBuyIn); err != nil {
+			tbl.Unlock()
+			t.Fatalf("Sit: %v", err)
+		}
+		h.ensureBots(tbl)
+		if err := tbl.StartHand(); err != nil {
+			tbl.Unlock()
+			t.Fatalf("StartHand: %v", err)
+		}
+		// Let bots act (directly, not via the sweeper — this setup phase is
+		// not what's under test) until it's genuinely Alice's turn, then
+		// shove her whole stack all-in. AllIn seats are skipped by
+		// nextActive, so this is her only action all hand: everything after
+		// this must be driven purely by the sweeper's actBots calls below.
+		for i := 0; i < 10 && tbl.Seats[tbl.ToAct].UserID != "111"; i++ {
+			if !h.actBots(tbl) {
+				tbl.Unlock()
+				t.Fatalf("attempt %d: no bot to act and it is not Alice's turn either", attempt)
+			}
+		}
+		alice := tbl.Seats[tbl.SeatIndexOf("111")]
+		if err := tbl.Act("111", poker.ActRaise, alice.Bet+alice.Stack); err != nil {
+			tbl.Unlock()
+			t.Fatalf("attempt %d: Alice's all-in shove rejected: %v", attempt, err)
+		}
+		tbl.Unlock()
+
+		aliceBefore := db.GetBalance("111", "")
+		bankBefore := db.GetBalance(bankUserID, "")
+
+		const maxPasses = 500
+		reached := false
+		for i := 0; i < maxPasses; i++ {
+			h.sweepOnce()
+			tbl.Lock()
+			stage := tbl.Stage
+			tbl.Unlock()
+			if stage == poker.StageShowdown {
+				reached = true
+				break
+			}
+		}
+		if !reached {
+			t.Fatalf("attempt %d: the sweeper's actBots calls did not drive the hand to showdown within maxPasses", attempt)
+		}
+
+		aliceAfterFirst := db.GetBalance("111", "")
+		bankAfterFirst := db.GetBalance(bankUserID, "")
+		aliceDelta := aliceAfterFirst - aliceBefore
+		bankDelta := bankAfterFirst - bankBefore
+
+		if aliceDelta+bankDelta != 0 {
+			t.Errorf("attempt %d: alice %+d and bank %+d do not cancel — zero-sum broken", attempt, aliceDelta, bankDelta)
+		}
+
+		if aliceDelta == 0 {
+			// Exact chop: try again with a fresh deal rather than asserting
+			// on a hand that happens to prove nothing either way.
+			continue
+		}
+
+		// Half 1 confirmed: settle actually ran (a real, nonzero,
+		// zero-sum-respecting balance change happened). Half 2: further
+		// sweep passes, well past showdown, must not settle again.
+		for i := 0; i < 10; i++ {
+			h.sweepOnce()
+		}
+		if got := db.GetBalance("111", ""); got != aliceAfterFirst {
+			t.Errorf("alice balance changed after extra sweep passes: %d -> %d (double-settle?)", aliceAfterFirst, got)
+		}
+		if got := db.GetBalance(bankUserID, ""); got != bankAfterFirst {
+			t.Errorf("bank balance changed after extra sweep passes: %d -> %d (double-settle?)", bankAfterFirst, got)
+		}
+		return // test passed
+	}
+
+	t.Error("could not produce a non-zero hand delta after 20 attempts (exact three-way chop each time is astronomically unlikely)")
+}
+
+// TestSweepOnceActsAtMostOneBotPerPass is the regression guard for Ruling 4:
+// one bot action per sweep tick, never a loop to completion inside one
+// h.actBots call. A loop-to-completion implementation would pass every
+// other test touched by this task — TestSweepOnceDrivesBotsToShowdownAndSettlesOnce
+// allows up to 500 passes and would simply finish in one — so this pins the
+// per-pass behavior directly via tbl.Seq, which Act() bumps by exactly 1 per
+// call and Showdown() (reached via h.settle, wired by Ruling 2) also bumps
+// by 1 when a hand concludes.
+//
+// The human deliberately CALLS rather than folding, so all three seats
+// (human + 2 bots) are still live when the bot below takes its turn. This
+// is the difference between a correct and a flaky version of this test: an
+// earlier draft folded the human first, leaving exactly 2 live bots — and a
+// bot's own fold is a very common decision (see bluffFrequency/foldpreflop
+// in poker.Decide), which would immediately end the hand in ONE legitimate
+// action, correctly bumping Seq by 2 (Act + Showdown) and making a hard-coded
+// "+1" assertion fail roughly as often as a bot folds, for no bug at all.
+// With three still-live players and this the first action of the street,
+// bettingClosed() cannot yet be true (only 2 of 3 seats will have acted) and
+// liveCount() cannot drop below 2 from a single fold — so Stage provably
+// cannot reach StageShowdown from this one action, and Seq increasing by
+// anything other than exactly 1 can only mean more than one Act() call
+// happened inside a single sweepOnce pass.
+func TestSweepOnceActsAtMostOneBotPerPass(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	if err := tbl.Sit("u1", "Danya", 5000); err != nil {
+		tbl.Unlock()
+		t.Fatalf("Sit: %v", err)
+	}
+	h.ensureBots(tbl)
+	if err := tbl.StartHand(); err != nil {
+		tbl.Unlock()
+		t.Fatalf("StartHand: %v", err)
+	}
+	if tbl.Seats[tbl.ToAct].UserID == "u1" {
+		high := 0
+		for _, o := range tbl.Seats {
+			if o.Bet > high {
+				high = o.Bet
+			}
+		}
+		act := poker.ActCheck
+		if tbl.Seats[tbl.ToAct].Bet < high {
+			act = poker.ActCall
+		}
+		if err := tbl.Act("u1", act, 0); err != nil {
+			tbl.Unlock()
+			t.Fatalf("Act: %v", err)
+		}
+	}
+	if !isBotUser(tbl.Seats[tbl.ToAct].UserID) {
+		tbl.Unlock()
+		t.Fatal("expected a bot to be to act once the human has acted")
+	}
+	live := 0
+	for _, s := range tbl.Seats {
+		if s.InHand && !s.Folded {
+			live++
+		}
+	}
+	if live != 3 {
+		tbl.Unlock()
+		t.Fatalf("live players = %d, want 3 (human called/checked rather than folding)", live)
+	}
+	seqBefore := tbl.Seq
+	tbl.Unlock()
+
+	h.sweepOnce()
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if got := tbl.Seq; got != seqBefore+1 {
+		t.Errorf("Seq went from %d to %d across one sweepOnce pass, want exactly %d (one bot action) — actBots must resolve one action per pass, not loop to completion", seqBefore, got, seqBefore+1)
+	}
+	if tbl.Stage == poker.StageShowdown {
+		t.Error("hand reached showdown after a single bot action with 3 players still live at the start of the street — this should be structurally impossible; investigate before trusting the Seq check above")
+	}
 }

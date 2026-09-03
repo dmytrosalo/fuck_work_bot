@@ -494,8 +494,21 @@ func (d *DB) EvolveCard(userID string, cardID int) bool {
 	return true
 }
 
+// FindUserByName looks up a player's user_id by their stored display name.
+// An empty name is rejected outright rather than run through the query: the
+// bank/bot upserts (see SettlePoker) intentionally store an empty name to
+// preserve a player's existing display name, so an unguarded empty-string
+// lookup would resolve to whichever bank or bot row happens to have an
+// empty stored name — e.g. bank:house. The NOT LIKE filters below are a
+// second, independent guard against the same class of row for any FUTURE
+// bank/bot name that happens to be non-empty, mirroring the filter already
+// on GetTopBalances.
 func (d *DB) FindUserByName(name string) (userID string, found bool) {
-	err := d.db.QueryRow(`SELECT user_id FROM balances WHERE name = ? LIMIT 1`, name).Scan(&userID)
+	if name == "" {
+		return "", false
+	}
+	err := d.db.QueryRow(`SELECT user_id FROM balances
+		WHERE name = ? AND user_id NOT LIKE 'bot:%' AND user_id NOT LIKE 'bank:%' LIMIT 1`, name).Scan(&userID)
 	return userID, err == nil
 }
 
@@ -691,7 +704,9 @@ type BalanceEntry struct {
 }
 
 func (d *DB) GetTopBalances(limit int) []BalanceEntry {
-	rows, err := d.db.Query(`SELECT user_id, name, coins FROM balances ORDER BY coins DESC LIMIT ?`, limit)
+	rows, err := d.db.Query(`SELECT user_id, name, coins FROM balances
+		WHERE user_id NOT LIKE 'bot:%' AND user_id NOT LIKE 'bank:%'
+		ORDER BY coins DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil
 	}
@@ -960,6 +975,20 @@ func (d *DB) EnsureUser(userID, name string) {
 
 func (d *DB) ClearCards() {
 	d.db.Exec(`DELETE FROM cards`)
+}
+
+// CountPokerTransactions is an audit query: it counts transaction rows with
+// activity='poker', so a caller can verify per-hand settlement wrote the
+// expected number of rows (e.g. that bot deltas were summed into a single
+// bank entry rather than written per-bot, see SettlePoker). It is exported
+// package API, not internal test scaffolding — do not delete it as unused
+// just because its only current caller lives in a _test.go file.
+func (d *DB) CountPokerTransactions() (int, error) {
+	var count int
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE activity = 'poker'`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func scanStats(rows *sql.Rows) ([]ClassifierStats, error) {

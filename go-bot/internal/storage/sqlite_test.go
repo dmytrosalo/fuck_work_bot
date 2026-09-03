@@ -277,3 +277,53 @@ func TestRemoveCardsByRarityDoesNotDeadlockAndRemovesCorrectCount(t *testing.T) 
 		t.Errorf("decoy card 4 (different rarity) should be untouched, got count=%d", counts[4])
 	}
 }
+
+// TestFindUserByNameRejectsEmptyAndNonPlayerRows guards the /rob-@-style
+// exploit: /rob @, /gift @ N, /duel @, /steal, and /war @ all resolve an
+// empty target name, and SettlePoker deliberately upserts the house bank
+// row (and any bot row) with an empty stored name to preserve existing
+// display names. An unguarded FindUserByName("") therefore matched
+// bank:house. This test
+// asserts both halves of the fix: the empty-name path is rejected outright,
+// and the NOT LIKE filter independently keeps bank/bot rows unreachable
+// even if one is ever given a non-empty name.
+func TestFindUserByNameRejectsEmptyAndNonPlayerRows(t *testing.T) {
+	db := newTestDB(t)
+
+	db.UpdateBalance("bank:house", "", 5000)     // matches SettlePoker's empty-name upsert exactly
+	db.UpdateBalance("bot:1", "Вася", 5000)      // a bot row that happens to carry a non-empty name
+	db.UpdateBalance("460670583", "Danya", 5000) // a genuine player, for a sanity positive case
+
+	if id, found := db.FindUserByName(""); found {
+		t.Errorf("FindUserByName(\"\") = (%q, true), want found == false — this must not resolve to the house bank account", id)
+	}
+	if id, found := db.FindUserByName("Вася"); found {
+		t.Errorf("FindUserByName(\"Вася\") = (%q, true), want found == false — a bot row must stay unreachable even with a non-empty name", id)
+	}
+	if id, found := db.FindUserByName("Danya"); !found || id != "460670583" {
+		t.Errorf("FindUserByName(\"Danya\") = (%q, %v), want (\"460670583\", true)", id, found)
+	}
+}
+
+func TestGetTopBalancesExcludesBotsAndBank(t *testing.T) {
+	db := newTestDB(t)
+
+	db.UpdateBalance("460670583", "Danya", 5000)
+	db.UpdateBalance("bank:house", "Bank", 99999)
+	db.UpdateBalance("bot:1", "Вася", 88888)
+
+	for _, e := range db.GetTopBalances(10) {
+		if e.UserID == "bank:house" || e.UserID == "bot:1" {
+			t.Errorf("leaderboard leaked a non-player row: %s (%s)", e.UserID, e.Name)
+		}
+	}
+	found := false
+	for _, e := range db.GetTopBalances(10) {
+		if e.UserID == "460670583" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("real player missing from leaderboard")
+	}
+}

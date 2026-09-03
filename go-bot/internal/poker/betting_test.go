@@ -21,6 +21,22 @@ func TestActRejectsOutOfTurn(t *testing.T) {
 	}
 }
 
+// TestActRejectsOutOfRangeToAct proves Act treats an out-of-range ToAct as
+// "nobody's turn" rather than indexing t.Seats[t.ToAct] and panicking. This
+// index is never expected to go out of range in production (ensureBots only
+// removes bot seats between hands, at StageWaiting/StageShowdown, where Act
+// returns before reaching this guard) — but the guard closes the class
+// rather than resting on that being true today. See betting.go's Act and
+// ForceTimeout guards.
+func TestActRejectsOutOfRangeToAct(t *testing.T) {
+	tbl := headsUp(t)
+	actor := tbl.Seats[tbl.ToAct].UserID
+	tbl.ToAct = len(tbl.Seats) // one past the end — must not panic
+	if err := tbl.Act(actor, ActCall, 0); err != ErrNotYourTurn {
+		t.Fatalf("Act with out-of-range ToAct = %v, want ErrNotYourTurn", err)
+	}
+}
+
 func TestActRejectsCheckWhenBetOutstanding(t *testing.T) {
 	tbl := headsUp(t)
 	actor := tbl.Seats[tbl.ToAct].UserID

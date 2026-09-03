@@ -141,3 +141,51 @@ func TestThreeSeatsButtonSBBBRotation(t *testing.T) {
 		t.Errorf("ToAct = %d, want UTG (seat after BB) %d", tbl.ToAct, utg)
 	}
 }
+
+func TestSitBotIgnoresBuyInClamps(t *testing.T) {
+	tbl := NewTable("t1", 1)
+	if err := tbl.SitBot("bot:1", "Вася", 25000); err != nil {
+		t.Fatalf("SitBot: %v", err)
+	}
+	if got := tbl.Seats[0].Stack; got != 25000 {
+		t.Errorf("stack = %d, want 25000 (SitBot must not clamp to MaxBuyIn)", got)
+	}
+	if err := tbl.SitBot("bot:2", "Петро", 100); err != nil {
+		t.Fatalf("SitBot below MinBuyIn: %v", err)
+	}
+	if got := tbl.Seats[1].Stack; got != 100 {
+		t.Errorf("stack = %d, want 100 (SitBot must not reject below MinBuyIn)", got)
+	}
+}
+
+func TestSitBotStillEnforcesSeatsAndDuplicates(t *testing.T) {
+	tbl := NewTable("t1", 1)
+	for i := 0; i < MaxSeats; i++ {
+		if err := tbl.SitBot("bot:"+string(rune('a'+i)), "B", 1000); err != nil {
+			t.Fatalf("seat %d: %v", i, err)
+		}
+	}
+	if err := tbl.SitBot("bot:overflow", "B", 1000); err == nil {
+		t.Error("expected ErrTableFull at a full table")
+	}
+
+	tbl2 := NewTable("t2", 1)
+	_ = tbl2.SitBot("bot:1", "Вася", 1000)
+	if err := tbl2.SitBot("bot:1", "Вася", 1000); err == nil {
+		t.Error("expected ErrAlreadySat for a duplicate bot")
+	}
+}
+
+func TestSitBotRejectsNonBotUserID(t *testing.T) {
+	tbl := NewTable("t1", 1)
+	// Plain numeric Telegram-style userID should be rejected
+	if err := tbl.SitBot("123456789", "Hacker", 5000); err == nil {
+		t.Error("expected ErrNotABot for non-prefixed userID")
+	} else if err != ErrNotABot {
+		t.Errorf("got error %v, want ErrNotABot", err)
+	}
+	// No seats should be created
+	if len(tbl.Seats) != 0 {
+		t.Errorf("seats created despite ErrNotABot: %d seats", len(tbl.Seats))
+	}
+}

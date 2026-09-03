@@ -706,6 +706,20 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	}
 
 	tbl.Lock()
+	// Make room for a genuinely new human at a full table by evicting one
+	// bot, so bots occupying every seat can never silently defeat "humans
+	// get priority". This runs only between hands (Stage is StageWaiting —
+	// this table has never dealt a hand — or StageShowdown, right after a
+	// hand's chips have already been distributed by settle()): removing a
+	// seat mid-hand would both disturb the Button/ToAct indices the engine
+	// derives from seat position AND drop that seat's still-live Committed
+	// chips out of the pot BuildPots computes at showdown, silently
+	// destroying real money. A reconnecting player never reaches this point
+	// (see the early-return above), so this can only ever cost a BOT its
+	// seat, never a human who is already seated.
+	if (tbl.Stage == poker.StageWaiting || tbl.Stage == poker.StageShowdown) && len(tbl.Seats) >= poker.MaxSeats {
+		h.evictOneBot(tbl)
+	}
 	if err := tbl.Sit(userID, name, buyIn); err != nil {
 		tbl.Unlock()
 		if fresh {
@@ -716,8 +730,14 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	}
 	// Auto-start once a second player is seated. Without this, hands never
 	// begin: nothing else ever calls StartHand on a freshly created table.
-	if tbl.Stage == poker.StageWaiting && tbl.SeatedCount() >= 2 {
-		_ = tbl.StartHand()
+	// ensureBots runs BEFORE the SeatedCount() >= 2 guard below (not folded
+	// into it): a lone human is one seat, and gating ensureBots itself on
+	// >= 2 would mean it never runs in exactly the case bots exist for.
+	if tbl.Stage == poker.StageWaiting {
+		h.ensureBots(tbl)
+		if tbl.SeatedCount() >= 2 {
+			_ = tbl.StartHand()
+		}
 	}
 	view := tbl.ViewFor(userID)
 	h.broadcast(tbl) // called with the table lock held, per lock ordering
@@ -725,6 +745,43 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	h.touch(tbl.ID)
 
 	writeJSON(w, view)
+}
+
+// evictOneBot removes one bot seat to make room for an arriving human at a
+// full table. It repairs both tbl.Button and tbl.ToAct so they stay valid
+// indices into the shortened Seats slice: if the evicted seat is the one
+// tbl.ToAct points at — a stale index left over from the just-finished
+// hand's last action, still a valid Seats index at StageShowdown — ToAct is
+// reset to -1 rather than skipping that seat, since at StageWaiting and
+// StageShowdown (the only stages this ever runs in — see handleJoin) ToAct
+// is never read for money; the money-relevant path is Act/ForceTimeout
+// during live betting, which this function never touches. Leaving a lone
+// evictable bot un-evicted just because it happened to sit at a stale
+// ToAct would otherwise reject a sixth human with "стіл заповнений" even
+// though a seat is free to take. The caller MUST hold the table lock and
+// must only call this between hands. Reports whether a bot was removed.
+func (h *PokerHub) evictOneBot(tbl *poker.Table) bool {
+	for i, s := range tbl.Seats {
+		if !isBotUser(s.UserID) {
+			continue
+		}
+		tbl.Seats = append(tbl.Seats[:i], tbl.Seats[i+1:]...)
+		if tbl.Button >= i {
+			tbl.Button--
+		}
+		if tbl.Button < 0 {
+			tbl.Button = len(tbl.Seats) - 1
+		}
+		switch {
+		case tbl.ToAct == i:
+			tbl.ToAct = -1
+		case tbl.ToAct > i:
+			tbl.ToAct--
+		}
+		tbl.Seq++
+		return true
+	}
+	return false
 }
 
 // handleAction applies one player action, settles the hand exactly once if
@@ -797,12 +854,24 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 
 	if h.db != nil {
 		entries := make([]storage.PokerDelta, 0, len(tbl.Seats))
+		bankDelta := 0
 		for _, s := range tbl.Seats {
 			d, ok := deltas[s.UserID]
 			if !ok || d == 0 {
 				continue
 			}
+			// A bot has no balance of its own: its win or loss belongs to
+			// the house. Netting every bot into one bank entry reduces the
+			// per-hand transaction row count from one-per-bot to exactly one,
+			// while keeping humans + bank summing to zero.
+			if isBotUser(s.UserID) {
+				bankDelta += d
+				continue
+			}
 			entries = append(entries, storage.PokerDelta{UserID: s.UserID, Name: s.Name, Amount: d})
+		}
+		if bankDelta != 0 {
+			entries = append(entries, storage.PokerDelta{UserID: bankUserID, Name: "Банк", Amount: bankDelta})
 		}
 		// A crash or SIGTERM mid-settlement is the only place in the system
 		// that could otherwise break the zero-sum invariant across players
@@ -1070,7 +1139,7 @@ func (h *PokerHub) sweepOnce() {
 			// their seatedAt claims exactly as item 3 was written to fix.
 			// Only a real join or a real player action (handleJoin,
 			// handleAction) may refresh idleness.
-		case tbl.Stage == poker.StageShowdown && tbl.SeatedCount() >= 2 && h.showdownReady(id):
+		case tbl.Stage == poker.StageShowdown && h.showdownReady(id):
 			// At least one full sweepInterval has passed since settle()
 			// transitioned this table into showdown (see
 			// showdownAt/showdownReady) — checking merely "prevStage was
@@ -1081,18 +1150,61 @@ func (h *PokerHub) sweepOnce() {
 			// settle() call above finished (e.g. via the ForceTimeout case
 			// on some earlier pass, or a player action moments ago) —
 			// either way giving players ~0 seconds to see the showdown
-			// reveal, the only moment it exists for. The table still has
-			// 2+ players with chips, so deal the next hand rather than
-			// leaving it stuck after exactly one hand.
+			// reveal, the only moment it exists for.
 			//
-			// Also deliberately NOT h.touch(id): an auto-started hand with
-			// nobody acting is still just the sweeper auto-folding forever,
-			// same reasoning as the ForceTimeout case above — it must not
-			// keep an abandoned table alive.
-			if err := tbl.StartHand(); err == nil {
+			// ensureBots runs BEFORE the SeatedCount() >= 2 check below, not
+			// folded into this case's own guard: if both bots busted out
+			// last hand, SeatedCount() can drop to 1 with a lone human left,
+			// and gating entry to this case on >= 2 would stop ensureBots
+			// from ever running to rebuy/reseat them — wedging the table in
+			// exactly the situation bots exist to prevent.
+			h.ensureBots(tbl)
+			// hasActiveHuman guards against a bot-only hand: a solo human
+			// who busts to 0 still occupies a seat (ensureBots' humans
+			// count includes them, so it makes no changes), but the two
+			// bots they were playing against still hold chips, so
+			// SeatedCount() alone stays >= 2 forever. That's money-safe —
+			// the busted human is excluded from settlement and the bots'
+			// deltas cancel — but it deals a pointless bot-only hand every
+			// sweep interval until the 30-minute idle reclaim. Requiring at
+			// least one non-bot seat with chips closes that off without
+			// touching the (separately reviewed) money path.
+			if tbl.SeatedCount() >= 2 && hasActiveHuman(tbl) {
+				// Also deliberately NOT h.touch(id): an auto-started hand
+				// with nobody acting is still just the sweeper auto-folding
+				// forever, same reasoning as the ForceTimeout case above —
+				// it must not keep an abandoned table alive.
+				if err := tbl.StartHand(); err == nil {
+					h.broadcast(tbl)
+				}
+			}
+		}
+
+		// Let a bot to act take its turn, independent of the two cases
+		// above: a bot may be first to act immediately after StartHand()
+		// just dealt above, or simply be mid-hand on a later pass where
+		// neither case applied this tick. Guarded to active betting stages
+		// only, both because actBots has nothing to do between hands and to
+		// avoid a pointless re-broadcast during the showdown-reveal pause.
+		// One call per pass — see actBots's own doc comment — so a bot's
+		// turn resolves within a sweep interval rather than looping to
+		// completion inside this lock hold.
+		if tbl.Stage != poker.StageWaiting && tbl.Stage != poker.StageShowdown {
+			botPrevStage := tbl.Stage
+			if h.actBots(tbl) {
+				// Same settle-on-transition condition as handleAction and
+				// the ForceTimeout case above, just checked against the
+				// stage immediately before THIS action rather than the
+				// pass's original prevStage (which, on the StartHand branch
+				// above, is stale — it's the OLD hand's StageShowdown, not
+				// this new hand's).
+				if tbl.Stage == poker.StageShowdown && botPrevStage != poker.StageShowdown {
+					h.settle(tbl)
+				}
 				h.broadcast(tbl)
 			}
 		}
+
 		idle := h.activitySince(id) > idleTableTimeout
 		tbl.Unlock()
 

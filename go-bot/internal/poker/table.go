@@ -2,6 +2,7 @@ package poker
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,7 @@ var (
 	ErrAlreadySat  = errors.New("ти вже за столом")
 	ErrBuyInTooLow = errors.New("замало богдудіків")
 	ErrNeedPlayers = errors.New("потрібно щонайменше 2 гравці")
+	ErrNotABot     = errors.New("userID must start with " + BotUserPrefix)
 )
 
 func NewTable(id string, chatID int64) *Table {
@@ -81,6 +83,29 @@ func (t *Table) Sit(userID, name string, buyIn int) error {
 		}
 	}
 	t.Seats = append(t.Seats, &Seat{UserID: userID, Name: name, Stack: buyIn})
+	t.Seq++
+	return nil
+}
+
+// SitBot seats a bot with an exact stack, bypassing the human buy-in rules.
+// Bots are funded by the house rather than a balance, so MinBuyIn/MaxBuyIn
+// do not apply — a bot matches the top human's stack, which may exceed
+// MaxBuyIn once that player has been winning. The userID must start with
+// BotUserPrefix ("bot:") to prevent accidental seating of human players with
+// bot privileges. Seat limits and the duplicate-user check still apply.
+func (t *Table) SitBot(userID, name string, stack int) error {
+	if !strings.HasPrefix(userID, BotUserPrefix) {
+		return ErrNotABot
+	}
+	if len(t.Seats) >= MaxSeats {
+		return ErrTableFull
+	}
+	for _, s := range t.Seats {
+		if s.UserID == userID {
+			return ErrAlreadySat
+		}
+	}
+	t.Seats = append(t.Seats, &Seat{UserID: userID, Name: name, Stack: stack})
 	t.Seq++
 	return nil
 }
