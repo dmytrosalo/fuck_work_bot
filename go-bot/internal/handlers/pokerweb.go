@@ -1367,6 +1367,13 @@ func writeJSON(w http.ResponseWriter, v any) {
 // turn clock, a hand ready to auto-start, or idleness.
 const sweepInterval = 5 * time.Second
 
+// botInterval paces bot actions. It is deliberately NOT sweepInterval: bots
+// used to act on the 5s housekeeping tick, one action per pass, so a hand
+// with two bots spent roughly ten seconds per betting round — about
+// forty-five seconds of a hand with nothing happening. The pause should read
+// as deliberation, not as a hang.
+const botInterval = 1200 * time.Millisecond
+
 // idleTableTimeout is how long a table may go without a PLAYER-INITIATED
 // join or action (sweeper-fired timeouts and sweeper-started hands do not
 // count — see lastActivity) before the sweeper reclaims it: removed from
@@ -1445,6 +1452,55 @@ func (h *PokerHub) StartSweeper() {
 			h.sweepOnce()
 		}
 	}()
+	// Bots run on their own, much faster clock. Housekeeping (idle
+	// reclamation, forced timeouts, dealing the next hand) stays on the 5s
+	// sweep, where its cost is irrelevant and its pauses are wanted.
+	go func() {
+		for range time.Tick(botInterval) {
+			h.botTickOnce()
+		}
+	}()
+}
+
+// botTickOnce gives one bot per table its turn. Same two-phase locking as
+// sweepOnce: snapshot the table list under h.mu, release it, then take each
+// table lock separately — never the reverse, which would invert the
+// documented ordering against broadcast().
+func (h *PokerHub) botTickOnce() {
+	h.mu.Lock()
+	tables := make([]*poker.Table, 0, len(h.tables))
+	for _, t := range h.tables {
+		tables = append(tables, t)
+	}
+	h.mu.Unlock()
+
+	for _, tbl := range tables {
+		tbl.Lock()
+		h.botStep(tbl)
+		tbl.Unlock()
+	}
+}
+
+// botStep lets a single bot act, settling and broadcasting if that action
+// ended the hand. Caller must hold tbl's lock and not h.mu.
+//
+// Both tickers funnel through here on purpose: the settle-on-transition
+// condition is a money rule, and having it written twice is how the two
+// copies eventually disagree.
+func (h *PokerHub) botStep(tbl *poker.Table) {
+	// Nothing to do between hands, and acting during the showdown pause
+	// would cut short the only moment the reveal exists for.
+	if tbl.Stage == poker.StageWaiting || tbl.Stage == poker.StageShowdown {
+		return
+	}
+	prev := tbl.Stage
+	if !h.actBots(tbl) {
+		return
+	}
+	if tbl.Stage == poker.StageShowdown && prev != poker.StageShowdown {
+		h.settle(tbl)
+	}
+	h.broadcast(tbl)
 }
 
 // sweepOnce runs a single sweep pass over every table. Split out from
@@ -1539,21 +1595,12 @@ func (h *PokerHub) sweepOnce() {
 		// One call per pass — see actBots's own doc comment — so a bot's
 		// turn resolves within a sweep interval rather than looping to
 		// completion inside this lock hold.
-		if tbl.Stage != poker.StageWaiting && tbl.Stage != poker.StageShowdown {
-			botPrevStage := tbl.Stage
-			if h.actBots(tbl) {
-				// Same settle-on-transition condition as handleAction and
-				// the ForceTimeout case above, just checked against the
-				// stage immediately before THIS action rather than the
-				// pass's original prevStage (which, on the StartHand branch
-				// above, is stale — it's the OLD hand's StageShowdown, not
-				// this new hand's).
-				if tbl.Stage == poker.StageShowdown && botPrevStage != poker.StageShowdown {
-					h.settle(tbl)
-				}
-				h.broadcast(tbl)
-			}
-		}
+		// Kept here as well as on the bot ticker: a hand dealt by the
+		// StartHand branch just above may have a bot first to act, and this
+		// lets it move without waiting for the next bot tick. botStep is
+		// idempotent when no bot is to act, so the two callers cannot
+		// double-act.
+		h.botStep(tbl)
 
 		idle := h.activitySince(id) > idleTableTimeout
 		tbl.Unlock()

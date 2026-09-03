@@ -134,3 +134,36 @@ func (h *PokerHub) handleChat(w http.ResponseWriter, r *http.Request, tbl *poker
 func (h *PokerHub) dropChat(tableID string) {
 	delete(h.chat, tableID)
 }
+
+// AdjustStack mirrors an outside balance change onto a player's chips if
+// they are currently sitting at a table. Registered as storage.DB's
+// OnBalanceChange hook, so every economy command in the group chat — /rob,
+// /slots, gifts, quiz rewards — reaches the felt too, instead of silently
+// diverging from the number on screen.
+//
+// Locking follows the hub's rule the same way sweepOnce does: h.mu is taken
+// alone to resolve the table, released, and only then is the table lock
+// taken. Never nested the other way, which would invert the ordering
+// broadcast() depends on.
+func (h *PokerHub) AdjustStack(userID string, delta int) {
+	if delta == 0 {
+		return
+	}
+	h.mu.Lock()
+	tableID, seated := h.seatedAt[userID]
+	var tbl *poker.Table
+	if seated {
+		tbl = h.tables[tableID]
+	}
+	h.mu.Unlock()
+	if tbl == nil {
+		return
+	}
+
+	tbl.Lock()
+	applied := tbl.AdjustSeat(userID, delta)
+	if applied != 0 {
+		h.broadcast(tbl)
+	}
+	tbl.Unlock()
+}

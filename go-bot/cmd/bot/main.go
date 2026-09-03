@@ -219,6 +219,11 @@ func main() {
 	pokerHub.Register(mux)
 	pokerHub.StartSweeper()
 	h.SetPokerHub(pokerHub)
+	// Economy commands in the group chat (/rob, /slots, gifts, quiz
+	// rewards) move a player's balance; this makes them move that player's
+	// chips too when they are sitting at a poker table, so the number on
+	// the felt cannot silently drift from the number in /balance.
+	db.OnBalanceChange = pokerHub.AdjustStack
 
 	go func() {
 		log.Println("Web server starting on :8080...")

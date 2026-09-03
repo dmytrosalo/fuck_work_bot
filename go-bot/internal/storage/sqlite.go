@@ -15,6 +15,13 @@ type ClassifierStats struct {
 }
 
 type DB struct {
+	// OnBalanceChange, if set, is called after UpdateBalance applies a
+	// non-zero delta, with the user and the amount applied. The poker hub
+	// registers it so an economy event in the group chat — a rob, a slots
+	// spin, a gift — also moves that player's chips if they are sitting at
+	// a table. A plain func keeps storage unaware of poker.
+	OnBalanceChange func(userID string, delta int)
+
 	db *sql.DB
 }
 
@@ -643,7 +650,21 @@ func (d *DB) GetBalance(userID, name string) int {
 func (d *DB) UpdateBalance(userID, name string, amount int) int {
 	d.db.Exec(`INSERT INTO balances (user_id, name, coins) VALUES (?, ?, 100 + ?) ON CONFLICT(user_id) DO UPDATE SET coins = coins + ?, name = CASE WHEN ? != '' THEN ? ELSE name END`,
 		userID, name, amount, amount, name, name)
-	return d.GetBalance(userID, "")
+	balance := d.GetBalance(userID, "")
+	// Fired last, once every statement above has returned and released the
+	// single pooled connection (SetMaxOpenConns(1)). A hook that ran while
+	// this method still held the connection could block on a lock owned by
+	// a goroutine that is itself waiting for that connection — precisely
+	// the shape of the poker settle path, which holds a table lock across
+	// SettlePoker.
+	//
+	// Note this is UpdateBalance only: SettlePoker writes balances through
+	// its own transaction and deliberately does NOT come through here, so
+	// poker winnings never feed back into a player's chips.
+	if d.OnBalanceChange != nil && amount != 0 {
+		d.OnBalanceChange(userID, amount)
+	}
+	return balance
 }
 
 // PokerDelta is one player's balance change from a settled poker hand, as

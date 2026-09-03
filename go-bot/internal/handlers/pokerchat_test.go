@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
+	"github.com/dmytrosalo/fuck-work-bot/internal/storage"
 )
 
 func chatReq(text string) *http.Request {
@@ -199,5 +201,63 @@ func TestChatSnapshotIsACopy(t *testing.T) {
 
 	if again := h.chatSnapshot(tbl.ID); again[0].Text != "original" {
 		t.Errorf("snapshot aliases hub state: %q", again[0].Text)
+	}
+}
+
+// TestBalanceChangeReachesTheTable is the end-to-end wiring: a plain
+// UpdateBalance — what /rob, /slots and every gift ultimately call — must
+// move a seated player's chips through the OnBalanceChange hook.
+func TestBalanceChangeReachesTheTable(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "adjust-test.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	h := NewPokerHub(db, nil, "tok")
+	db.OnBalanceChange = h.AdjustStack
+	tbl := h.Create(-1)
+
+	tbl.Lock()
+	_ = tbl.Sit("42", "Dmytro", 5000)
+	tbl.Unlock()
+	h.mu.Lock()
+	h.seatedAt["42"] = tbl.ID
+	h.mu.Unlock()
+
+	db.UpdateBalance("42", "Dmytro", 303) // a /rob payout in the group chat
+
+	tbl.Lock()
+	got := tbl.Seats[0].Stack
+	tbl.Unlock()
+	if got != 5303 {
+		t.Errorf("stack = %d, want 5303 — the chat payout never reached the felt", got)
+	}
+
+	// An unseated player must be a no-op, not a panic or a stray write.
+	db.UpdateBalance("999", "Nobody", 500)
+}
+
+// Poker settlement writes balances through SettlePoker, NOT UpdateBalance.
+// If that ever changed, every pot would also be added to the winner's chips
+// a second time, so this pins the boundary.
+func TestSettlementDoesNotReenterTheHook(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "settle-hook-test.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	fired := 0
+	db.OnBalanceChange = func(string, int) { fired++ }
+	if err := db.SettlePoker([]storage.PokerDelta{
+		{UserID: "1", Name: "", Amount: 500},
+		{UserID: "2", Name: "", Amount: -500},
+	}); err != nil {
+		t.Fatalf("SettlePoker: %v", err)
+	}
+	if fired != 0 {
+		t.Errorf("SettlePoker fired the balance hook %d times — poker winnings "+
+			"would be credited to the stack a second time", fired)
 	}
 }

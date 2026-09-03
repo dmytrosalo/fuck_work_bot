@@ -266,3 +266,40 @@ func (t *Table) nextActive(from int) int {
 func (t *Table) Lock() { t.mu.Lock() }
 
 func (t *Table) Unlock() { t.mu.Unlock() }
+
+// AdjustSeat moves a seated player's chips by delta to mirror a change made
+// to their balance outside the game — a rob, a slots spin, a gift.
+//
+// startStack moves by the SAME delta, and that is the whole point. Showdown
+// computes each seat's settlement result as Stack - startStack and hands
+// that to SettlePoker, which applies it to the balance. Moving Stack alone
+// would make these chips look like poker winnings and credit them to the
+// balance a second time, minting money out of a /rob. Moving both leaves
+// the hand's result untouched while the chips still appear on the table.
+//
+// A withdrawal is clamped at the chips actually sitting in the stack:
+// anything already committed to the pot this hand belongs to the pot, not
+// to the player, and taking it would break the pot arithmetic. The returned
+// value is the delta actually applied, which can therefore be smaller in
+// magnitude than the one requested.
+func (t *Table) AdjustSeat(userID string, delta int) int {
+	if delta == 0 {
+		return 0
+	}
+	for _, s := range t.Seats {
+		if s.UserID != userID {
+			continue
+		}
+		if delta < 0 && -delta > s.Stack {
+			delta = -s.Stack
+		}
+		if delta == 0 {
+			return 0
+		}
+		s.Stack += delta
+		s.startStack += delta
+		t.Seq++
+		return delta
+	}
+	return 0
+}
