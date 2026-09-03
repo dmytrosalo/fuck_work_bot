@@ -232,3 +232,63 @@ func TestSettleRoutesBotDeltasToBank(t *testing.T) {
 
 	t.Error("could not produce a non-zero hand delta after 20 attempts (1 in ~5^20 chance)")
 }
+
+// TestActBotsAdvancesAHandWithoutHumans proves bots can finish a hand among
+// themselves once the lone human has folded, rather than leaving the table
+// stuck with nobody able to act.
+func TestActBotsAdvancesAHandWithoutHumans(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 5000)
+	h.ensureBots(tbl)
+	_ = tbl.StartHand()
+
+	// The human folds immediately; the bots must be able to finish the hand
+	// among themselves rather than leaving the table stuck.
+	if tbl.Seats[tbl.ToAct].UserID == "u1" {
+		_ = tbl.Act("u1", poker.ActFold, 0)
+	}
+	for i := 0; i < 200 && tbl.Stage != poker.StageShowdown; i++ {
+		if s := tbl.Seats[tbl.ToAct]; !isBotUser(s.UserID) {
+			_ = tbl.Act(s.UserID, poker.ActFold, 0)
+			continue
+		}
+		if !h.actBots(tbl) {
+			break
+		}
+	}
+	stage := tbl.Stage
+	tbl.Unlock()
+
+	if stage != poker.StageShowdown {
+		t.Fatalf("stage = %v, want showdown — bots did not drive the hand to a conclusion", stage)
+	}
+}
+
+// TestActBotsReturnsFalseWhenSeatToActIsHuman proves actBots is a no-op
+// (does not act on the human's behalf, does not report having acted) when
+// the seat to act is not a bot.
+func TestActBotsReturnsFalseWhenSeatToActIsHuman(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 5000)
+	_ = tbl.Sit("u2", "Data", 5000)
+	_ = tbl.StartHand()
+	seq := tbl.Seq
+	toAct := tbl.ToAct
+
+	acted := h.actBots(tbl)
+
+	if acted {
+		t.Error("actBots reported acting when the seat to act is human")
+	}
+	if tbl.Seq != seq {
+		t.Errorf("Seq changed from %d to %d — actBots must not touch the table when it is a human's turn", seq, tbl.Seq)
+	}
+	if tbl.ToAct != toAct {
+		t.Errorf("ToAct changed from %d to %d — actBots must not touch the table when it is a human's turn", toAct, tbl.ToAct)
+	}
+	tbl.Unlock()
+}

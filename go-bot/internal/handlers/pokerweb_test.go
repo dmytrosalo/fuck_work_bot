@@ -136,11 +136,16 @@ func TestJoinSucceedsWithBuyInClampedToMaxBuyIn(t *testing.T) {
 		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
 	}
 	v := decodeView(t, rec)
-	if len(v.Seats) != 1 {
-		t.Fatalf("seats = %d, want 1", len(v.Seats))
+	// 3 seats, not 1: a solo human now brings bot company (see ensureBots),
+	// so Alice's join also seats 2 bots and auto-starts a hand.
+	if len(v.Seats) != 3 {
+		t.Fatalf("seats = %d, want 3 (Alice + 2 bots)", len(v.Seats))
 	}
-	if v.Seats[0].Stack != poker.MaxBuyIn {
-		t.Errorf("stack = %d, want buy-in clamped to MaxBuyIn=%d", v.Seats[0].Stack, poker.MaxBuyIn)
+	if v.YouSeat < 0 || v.YouSeat >= len(v.Seats) {
+		t.Fatalf("you_seat = %d, want a real seat among %d", v.YouSeat, len(v.Seats))
+	}
+	if v.Seats[v.YouSeat].Stack != poker.MaxBuyIn {
+		t.Errorf("stack = %d, want buy-in clamped to MaxBuyIn=%d", v.Seats[v.YouSeat].Stack, poker.MaxBuyIn)
 	}
 }
 
@@ -301,8 +306,12 @@ func TestJoinReconnectsAlreadySeatedPlayer(t *testing.T) {
 	if secondView.YouSeat != firstView.YouSeat {
 		t.Errorf("reconnect you_seat = %d, want unchanged %d", secondView.YouSeat, firstView.YouSeat)
 	}
-	if len(secondView.Seats) != 1 {
-		t.Errorf("reconnect seats = %d, want still 1 (must not re-seat or duplicate)", len(secondView.Seats))
+	// 3 seats, not 1: Alice's first join also seated 2 bots (see
+	// ensureBots). The point of this test — reconnecting must not re-seat
+	// or duplicate Alice's OWN seat — still holds; only the total table
+	// population changed with this task.
+	if len(secondView.Seats) != 3 {
+		t.Errorf("reconnect seats = %d, want still 3 (Alice + 2 bots, must not re-seat or duplicate)", len(secondView.Seats))
 	}
 	if secondView.Seats[secondView.YouSeat].Stack != firstStack {
 		t.Errorf("reconnect stack = %d, want unchanged %d (must not re-read balance or reset stack)", secondView.Seats[secondView.YouSeat].Stack, firstStack)
@@ -311,8 +320,8 @@ func TestJoinReconnectsAlreadySeatedPlayer(t *testing.T) {
 	tbl.Lock()
 	seatCount := len(tbl.Seats)
 	tbl.Unlock()
-	if seatCount != 1 {
-		t.Errorf("table has %d seats after reconnect, want still 1", seatCount)
+	if seatCount != 3 {
+		t.Errorf("table has %d seats after reconnect, want still 3", seatCount)
 	}
 }
 
@@ -355,6 +364,74 @@ func TestJoinReconnectsAlreadySeatedPlayerAtFullTable(t *testing.T) {
 	}
 	if v.Seats[0].Stack != 2000 {
 		t.Errorf("stack = %d, want unchanged 2000", v.Seats[0].Stack)
+	}
+}
+
+// TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable is the regression
+// guard for Ruling 3: a full table (4 humans + 2 bots, exactly what
+// ensureBots seats for 4 humans) must not silently reject a fifth,
+// genuinely new human with "table full" just because bots are squatting on
+// the remaining seats — that would defeat "humans get priority" without any
+// visible error. handleJoin must evict one bot to make room BEFORE
+// attempting Sit.
+func TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("2000", "NewGuy", 5000-100) // GetBalance seeds new rows at 100
+
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	// Seat 4 humans directly against the engine, then let ensureBots fill
+	// the remaining 2 seats — the exact full-table shape Ruling 3 describes.
+	// The table is left in StageWaiting (no hand ever started), so this
+	// exercises handleJoin's bot-eviction path without needing to drive a
+	// full hand to reach a safe between-hands window.
+	for i := 0; i < 4; i++ {
+		userID := fmt.Sprintf("%d", 1000+i)
+		if err := tbl.Sit(userID, fmt.Sprintf("U%d", i), 2000); err != nil {
+			t.Fatalf("Sit seat %d: %v", i, err)
+		}
+	}
+	tbl.Lock()
+	h.ensureBots(tbl)
+	seatCount := len(tbl.Seats)
+	botsBefore := countBots(tbl)
+	tbl.Unlock()
+	if seatCount != poker.MaxSeats {
+		t.Fatalf("setup: table has %d seats, want full %d", seatCount, poker.MaxSeats)
+	}
+	if botsBefore != 2 {
+		t.Fatalf("setup: table has %d bots, want 2", botsBefore)
+	}
+
+	// A fifth, genuinely new human tries to join the full table.
+	initData := userInitData(t, "test-token", 2000, "NewGuy", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("join at a full table with bots status = %d, want 200 (a bot must be evicted to make room), body=%s", rec.Code, rec.Body.String())
+	}
+	v := decodeView(t, rec)
+	if v.YouSeat < 0 {
+		t.Fatalf("you_seat = %d, want a real seat", v.YouSeat)
+	}
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if got := len(tbl.Seats); got != poker.MaxSeats {
+		t.Errorf("seats = %d, want still %d (one bot evicted, one human added)", got, poker.MaxSeats)
+	}
+	if got := countBots(tbl); got != 1 {
+		t.Errorf("bots = %d, want 1 (bot count must drop by one)", got)
+	}
+	if idx := tbl.SeatIndexOf("2000"); idx < 0 {
+		t.Error("new human was not actually seated")
 	}
 }
 
@@ -684,8 +761,10 @@ func TestStreamSendsInitialSnapshotThenBroadcastsJoin(t *testing.T) {
 	if err := json.Unmarshal([]byte(updated), &updatedView); err != nil {
 		t.Fatalf("decode updated view: %v, raw=%s", err, updated)
 	}
-	if len(updatedView.Seats) != 1 {
-		t.Fatalf("seats after join broadcast = %d, want 1", len(updatedView.Seats))
+	// 3 seats, not 1: a solo human now brings bot company (see ensureBots),
+	// so Eve's join also seats 2 bots and auto-starts a hand.
+	if len(updatedView.Seats) != 3 {
+		t.Fatalf("seats after join broadcast = %d, want 3 (Eve + 2 bots)", len(updatedView.Seats))
 	}
 }
 
@@ -789,10 +868,19 @@ func TestStreamRejectsNonChatMember(t *testing.T) {
 
 // TestConcurrentJoinsRespectCapacityAndDontRace hammers the join endpoint
 // from many goroutines at once. Under the required lock discipline (every
-// Sit/ViewFor call happens under tbl.Lock()), exactly poker.MaxSeats joins
-// must succeed and the rest must be rejected with 409 — never more seats
-// than capacity, and no corrupted/duplicate seats. Run with -race to prove
-// there's no data race on the shared table.
+// Sit/ViewFor call happens under tbl.Lock()), the table must never exceed
+// poker.MaxSeats and must never contain a corrupted/duplicate seat. Run with
+// -race to prove there's no data race on the shared table.
+//
+// Before bots existed, exactly poker.MaxSeats of these humans succeeded and
+// the rest were rejected with 409. That is no longer guaranteed: whichever
+// goroutine's join happens to land first (a race with no fixed winner) seats
+// 2 bots and auto-starts a hand (Ruling 1 — ensureBots now runs for a solo
+// human too), permanently claiming up to 2 of the MaxSeats slots for the
+// rest of that hand. So this test now checks the invariant that actually
+// matters under concurrency — capacity respected, no duplicates, and the
+// HTTP success count matches the humans really seated — rather than a fixed
+// human count that bots make nondeterministic.
 func TestConcurrentJoinsRespectCapacityAndDontRace(t *testing.T) {
 	db := setupTestDB(t)
 	const attempts = 20
@@ -826,23 +914,31 @@ func TestConcurrentJoinsRespectCapacityAndDontRace(t *testing.T) {
 	}
 	wg.Wait()
 
-	if int(successes) != poker.MaxSeats {
-		t.Errorf("successful joins = %d, want exactly poker.MaxSeats=%d", successes, poker.MaxSeats)
-	}
-
 	tbl.Lock()
 	seatCount := len(tbl.Seats)
+	humanSeats, botSeats := 0, 0
 	seen := map[string]bool{}
 	for _, s := range tbl.Seats {
 		if seen[s.UserID] {
 			t.Errorf("duplicate seat for user %s", s.UserID)
 		}
 		seen[s.UserID] = true
+		if isBotUser(s.UserID) {
+			botSeats++
+		} else {
+			humanSeats++
+		}
 	}
 	tbl.Unlock()
 
-	if seatCount != poker.MaxSeats {
-		t.Errorf("tbl.Seats has %d entries, want poker.MaxSeats=%d", seatCount, poker.MaxSeats)
+	if seatCount > poker.MaxSeats {
+		t.Errorf("tbl.Seats has %d entries, want at most poker.MaxSeats=%d", seatCount, poker.MaxSeats)
+	}
+	if humanSeats+botSeats != seatCount {
+		t.Errorf("bookkeeping mismatch: %d human + %d bot seats != %d total", humanSeats, botSeats, seatCount)
+	}
+	if int(successes) != humanSeats {
+		t.Errorf("successful joins = %d, want to match the %d human seats actually seated", successes, humanSeats)
 	}
 }
 

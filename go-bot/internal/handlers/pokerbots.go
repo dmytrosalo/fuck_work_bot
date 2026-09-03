@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
 )
@@ -91,6 +93,58 @@ func (h *PokerHub) ensureBots(tbl *poker.Table) {
 		bots++
 	}
 	tbl.Seq++
+}
+
+// actBots plays one action for the seat to act, if that seat is a bot.
+// Reports whether it acted. The caller MUST hold the table lock; like
+// ensureBots, this touches Seats/ToAct directly and takes no locks of its
+// own.
+//
+// One action per call, not a loop to completion: the sweeper calls this on
+// its regular tick, so a bot's turn resolves within one interval. That pause
+// reads as deliberation and, more importantly, keeps bots on machinery whose
+// locking has already been reviewed rather than introducing new goroutines.
+func (h *PokerHub) actBots(tbl *poker.Table) bool {
+	if tbl.ToAct < 0 || tbl.ToAct >= len(tbl.Seats) {
+		return false
+	}
+	s := tbl.Seats[tbl.ToAct]
+	if !isBotUser(s.UserID) {
+		return false
+	}
+
+	high := 0
+	for _, o := range tbl.Seats {
+		if o.Bet > high {
+			high = o.Bet
+		}
+	}
+	pot := 0
+	for _, o := range tbl.Seats {
+		pot += o.Committed
+	}
+
+	action, amount := poker.Decide(poker.BotInput{
+		Hole:     s.Hole,
+		Board:    tbl.Board,
+		ToCall:   high - s.Bet,
+		Pot:      pot,
+		Stack:    s.Stack,
+		MinRaise: tbl.MinRaise,
+		Bet:      s.Bet,
+	}, rand.New(rand.NewSource(time.Now().UnixNano())))
+
+	if err := tbl.Act(s.UserID, action, amount); err != nil {
+		// The engine rejected it (an illegal raise size, say). Fall back to
+		// the always-legal action so a bot can never stall the table: check
+		// when nothing is owed, otherwise fold.
+		fallback := poker.ActCheck
+		if high > s.Bet {
+			fallback = poker.ActFold
+		}
+		_ = tbl.Act(s.UserID, fallback, 0)
+	}
+	return true
 }
 
 // botNames are the display names bots use, in order.
