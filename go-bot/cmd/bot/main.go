@@ -371,6 +371,18 @@ func main() {
 		}
 	}
 
+	sep3danya20k := "gift_danya_sep3_20000"
+	if db.GetMeta(sep3danya20k) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 20000)
+			db.LogTransaction(danyaID, "Danya", "gift", 20000)
+			db.SetMeta(sep3danya20k, "done")
+			log.Println("Gifted 20000 богдудіків to Danya")
+		} else {
+			log.Println("Gift skipped: no balances row named Danya")
+		}
+	}
+
 	syklivKey := "gift_danya_sykliv_ultra"
 	if db.GetMeta(syklivKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
