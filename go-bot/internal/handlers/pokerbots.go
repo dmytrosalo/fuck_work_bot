@@ -40,9 +40,14 @@ func (h *PokerHub) ensureBots(tbl *poker.Table) {
 		}
 	}
 
-	// No humans means nobody to play against; leave the table empty so the
-	// idle sweeper can reclaim it.
+	// No humans means nobody to play against; make no changes and let the
+	// time-based idle sweeper reclaim the table.
 	if humans == 0 {
+		return
+	}
+
+	// All humans are busted; no bots until someone rebuys.
+	if topStack == 0 {
 		return
 	}
 

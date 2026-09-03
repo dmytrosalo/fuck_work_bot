@@ -80,6 +80,45 @@ func TestEnsureBotsRebuysBustedBot(t *testing.T) {
 	}
 }
 
+func TestEnsureBotsIgnoresWhenAllHumansBusted(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 0) // busted human
+	h.ensureBots(tbl)
+	tbl.Unlock()
+
+	for _, s := range tbl.Seats {
+		if isBotUser(s.UserID) {
+			t.Errorf("bot %s should not be seated when all humans are busted", s.UserID)
+		}
+	}
+}
+
+func TestEnsureBotsUnchangedWhenNoHumans(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.SitBot("bot:1", "Вася", 5000)
+	_ = tbl.SitBot("bot:2", "Петро", 5000)
+	initialSeats := len(tbl.Seats)
+	initialStacks := make([]int, len(tbl.Seats))
+	for i, s := range tbl.Seats {
+		initialStacks[i] = s.Stack
+	}
+	h.ensureBots(tbl)
+	tbl.Unlock()
+
+	if len(tbl.Seats) != initialSeats {
+		t.Errorf("seat count changed from %d to %d with no humans", initialSeats, len(tbl.Seats))
+	}
+	for i, s := range tbl.Seats {
+		if s.Stack != initialStacks[i] {
+			t.Errorf("bot %s stack changed from %d to %d with no humans", s.UserID, initialStacks[i], s.Stack)
+		}
+	}
+}
+
 func TestSettleRoutesBotDeltasToBank(t *testing.T) {
 	db := setupTestDB(t) // the handlers-package helper, pokerweb_test.go:55
 	h := NewPokerHub(db, nil, "test-token")
