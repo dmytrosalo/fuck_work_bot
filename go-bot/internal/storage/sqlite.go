@@ -964,6 +964,17 @@ func (d *DB) ClearCards() {
 	d.db.Exec(`DELETE FROM cards`)
 }
 
+// CountPokerTransactions is a test helper that counts transaction rows with
+// activity='poker'. Used to verify bot deltas are summed into a single bank
+// entry rather than written per-bot.
+func (d *DB) CountPokerTransactions() (int, error) {
+	var count int
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE activity = 'poker'`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func scanStats(rows *sql.Rows) ([]ClassifierStats, error) {
 	var stats []ClassifierStats
 	for rows.Next() {

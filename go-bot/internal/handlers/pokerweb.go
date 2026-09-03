@@ -804,9 +804,9 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 				continue
 			}
 			// A bot has no balance of its own: its win or loss belongs to
-			// the house. Netting every bot into one bank entry keeps humans
-			// + bank summing to zero while leaving activity stats free of
-			// bot rows.
+			// the house. Netting every bot into one bank entry reduces the
+			// per-hand transaction row count from one-per-bot to exactly one,
+			// while keeping humans + bank summing to zero.
 			if isBotUser(s.UserID) {
 				bankDelta += d
 				continue
