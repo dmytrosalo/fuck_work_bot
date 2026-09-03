@@ -261,3 +261,50 @@ func TestSettlementDoesNotReenterTheHook(t *testing.T) {
 			"would be credited to the stack a second time", fired)
 	}
 }
+
+// TestEveryGamePayoutReachesTheTable covers the hook generically. Blackjack,
+// dart, slots, quiz, cards and the rest all move money the same way — via
+// UpdateBalance — so what matters is that ANY delta through that method
+// lands on the felt, in both directions, and that a loss bigger than the
+// stack empties it rather than going negative.
+func TestEveryGamePayoutReachesTheTable(t *testing.T) {
+	cases := []struct {
+		name      string
+		delta     int
+		wantStack int
+	}{
+		{"blackjack win", +2000, 7000},
+		{"blackjack loss", -2000, 3000},
+		{"slots jackpot", +50000, 55000},
+		{"loss larger than the stack empties it, never negative", -999999, 0},
+		{"zero delta is a no-op", 0, 5000},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			db, err := storage.New(filepath.Join(t.TempDir(), "payout.db"))
+			if err != nil {
+				t.Fatalf("storage.New: %v", err)
+			}
+			defer db.Close()
+
+			h := NewPokerHub(db, nil, "tok")
+			db.OnBalanceChange = h.AdjustStack
+			tbl := h.Create(-1)
+			tbl.Lock()
+			_ = tbl.Sit("42", "Dmytro", 5000)
+			tbl.Unlock()
+			h.mu.Lock()
+			h.seatedAt["42"] = tbl.ID
+			h.mu.Unlock()
+
+			db.UpdateBalance("42", "Dmytro", c.delta)
+
+			tbl.Lock()
+			got := tbl.Seats[0].Stack
+			tbl.Unlock()
+			if got != c.wantStack {
+				t.Errorf("stack = %d, want %d", got, c.wantStack)
+			}
+		})
+	}
+}
