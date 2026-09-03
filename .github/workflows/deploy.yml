@@ -5,7 +5,23 @@ on:
     branches: [main]
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go-bot/go.mod
+          cache-dependency-path: go-bot/go.sum
+      - name: Test
+        working-directory: go-bot
+        run: go test ./... -race -count=1
+      - name: Build
+        working-directory: go-bot
+        run: CGO_ENABLED=0 go build ./cmd/bot/
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
