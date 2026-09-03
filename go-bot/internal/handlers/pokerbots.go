@@ -24,6 +24,18 @@ func isBotUser(userID string) bool {
 	return strings.HasPrefix(userID, poker.BotUserPrefix)
 }
 
+// hasActiveHuman reports whether tbl has at least one non-bot seat with
+// chips to play, i.e. someone bots could actually play against. The caller
+// MUST hold the table lock.
+func hasActiveHuman(tbl *poker.Table) bool {
+	for _, s := range tbl.Seats {
+		if !isBotUser(s.UserID) && s.Stack > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // ensureBots brings a table's bot population in line with the seating rule
 // and reloads any busted bot. The caller MUST hold the table lock; this
 // touches Seats directly and takes no locks of its own.
@@ -42,13 +54,12 @@ func (h *PokerHub) ensureBots(tbl *poker.Table) {
 		}
 	}
 
-	// No humans means nobody to play against; make no changes and let the
-	// time-based idle sweeper reclaim the table.
-	if humans == 0 {
-		return
-	}
-
-	// All humans are busted; no bots until someone rebuys.
+	// topStack is only ever raised inside the loop above, and only by a
+	// human seat — so topStack == 0 covers both "no humans at all" (nobody
+	// to play against; let the time-based idle sweeper reclaim the table)
+	// and "every human present is busted" (no bots until someone rebuys) in
+	// one guard. No input can tell these two cases apart from inside this
+	// function, so there is no separate branch left to test for either one.
 	if topStack == 0 {
 		return
 	}
@@ -137,12 +148,16 @@ func (h *PokerHub) actBots(tbl *poker.Table) bool {
 	if err := tbl.Act(s.UserID, action, amount); err != nil {
 		// The engine rejected it (an illegal raise size, say). Fall back to
 		// the always-legal action so a bot can never stall the table: check
-		// when nothing is owed, otherwise fold.
+		// when nothing is owed, otherwise fold. Report whether THAT action
+		// actually succeeded rather than unconditionally returning true —
+		// callers (the sweeper) key their settle-and-broadcast logic off
+		// this return value, so it must be structurally tied to whether a
+		// bot really acted, not just assumed true because a bot was found.
 		fallback := poker.ActCheck
 		if high > s.Bet {
 			fallback = poker.ActFold
 		}
-		_ = tbl.Act(s.UserID, fallback, 0)
+		return tbl.Act(s.UserID, fallback, 0) == nil
 	}
 	return true
 }

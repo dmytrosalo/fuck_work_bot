@@ -95,7 +95,14 @@ func TestEnsureBotsIgnoresWhenAllHumansBusted(t *testing.T) {
 	}
 }
 
-func TestEnsureBotsUnchangedWhenNoHumans(t *testing.T) {
+// TestEnsureBotsUnchangedWhenOnlyBotsSeated exercises ensureBots with a
+// table holding no human seats at all — humans == 0 and, since topStack is
+// only ever raised by a human seat, topStack == 0 too. Both conditions
+// collapse to the single topStack == 0 guard in ensureBots (see its
+// comment); this test just pins that a bots-only table is left untouched,
+// not a branch the merged guard could distinguish from the busted-humans
+// case.
+func TestEnsureBotsUnchangedWhenOnlyBotsSeated(t *testing.T) {
 	h := NewPokerHub(nil, nil, "test-token")
 	tbl := h.Create(1)
 	tbl.Lock()
