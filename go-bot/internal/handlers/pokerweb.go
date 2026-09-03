@@ -51,6 +51,9 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  padding:0 5px;font-size:10px;font-weight:700}
 .chip{display:inline-block;background:#e8a33d;color:#3a2708;border-radius:8px;padding:0 5px;
  font-size:10px;font-weight:700;margin-top:1px}
+.oppHole{margin:2px 0}
+.oppHole .card{width:16px;height:22px;line-height:22px;font-size:9px;margin:0 1px;border-radius:3px}
+.card.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d);border:1px solid #3f6199}
 #centre{position:absolute;top:44%;left:0;right:0;text-align:center}
 .card{display:inline-block;background:#fff;border-radius:4px;width:26px;height:36px;line-height:36px;
  text-align:center;font-size:14px;font-weight:700;margin:0 2px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
@@ -86,11 +89,20 @@ const INIT=(tg&&tg.initData)||"";
 const msgEl=document.getElementById("msg");
 function setMsg(t){msgEl.textContent=t||""}
 
+// Sticky error state: tick() runs every second and would otherwise stomp a
+// just-set error (connection lost, action rejected, ...) with the ordinary
+// countdown/turn line within a second. errorMsg takes precedence in tick()
+// until the next successful render() or a reconnected SSE stream clears it.
+let errorMsg=null;
+function setError(t){errorMsg=t;setMsg(t)}
+
 const SUITS={h:"♥",d:"♦",c:"♣",s:"♠"};
 const STAGE_UA={waiting:"Очікування",preflop:"Префлоп",flop:"Флоп",turn:"Терн",river:"Рівер",showdown:"Шоудаун"};
 
 // Card strings from the server are rank+suit-letter, e.g. "Ah","Td" — never
-// suit symbols, so this is purely a display transform.
+// suit symbols, so this is purely a display transform. It only ever reads
+// rank/suit LETTERS out of a server-controlled card string, never anything
+// player-supplied, so building its markup via string concatenation is safe.
 function card(s){
   if(!s)return "";
   const suitLetter=s.slice(-1);
@@ -98,7 +110,15 @@ function card(s){
   const red=suitLetter==="h"||suitLetter==="d";
   return '<span class="card'+(red?' red':'')+'">'+rank+(SUITS[suitLetter]||suitLetter)+'</span>';
 }
+// Face-down card back markup, built once from a fixed constant — never from
+// anything derived from another player's data.
+const CARD_BACK='<span class="card back"></span>';
+const CARD_BACKS=CARD_BACK+CARD_BACK;
+
 function clip(n){n=n||"";return n.length>10?n.slice(0,10)+"…":n}
+
+const actionBtns=["btn-fold","btn-check","btn-call","btn-raise"].map(id=>document.getElementById(id));
+function setActsBusy(busy){actionBtns.forEach(b=>b.disabled=busy)}
 
 let state=null;
 // Highest seq rendered so far. A broadcast can land between SSE subscriber
@@ -113,16 +133,40 @@ let highestSeq=-1;
 let lastPot=0;
 let lastStage=null;
 
+// Recomputes the action row (call amount, enabled/disabled) from the last
+// known state. Called from render() on every fresh snapshot, and also from
+// act()'s failure paths — a request forcibly disables the buttons while in
+// flight (see act()), and a failure produces no fresh render() to restore
+// them, so this must be callable on its own too.
+function applyButtons(){
+  if(!state){setActsBusy(true);return}
+  const live=state.stage!=="waiting"&&state.stage!=="showdown";
+  const seats=state.seats||[];
+  const me=state.you_seat>=0?seats[state.you_seat]:null;
+  const myTurn=live&&!!(me&&me.to_act);
+  const highBet=Math.max(0,...seats.map(s=>s.bet||0));
+  const toCall=me?Math.max(0,highBet-(me.bet||0)):0;
+  document.getElementById("btn-call").textContent=toCall>0?("Колл "+toCall):"Колл";
+  document.getElementById("btn-fold").disabled=!myTurn;
+  document.getElementById("btn-check").disabled=!myTurn||toCall>0;
+  document.getElementById("btn-call").disabled=!myTurn||toCall<=0;
+  document.getElementById("btn-raise").disabled=!myTurn;
+}
+
 function render(v){
   if(v.seq<=highestSeq)return;
   highestSeq=v.seq;
   state=v;
+  errorMsg=null; // a fresh snapshot means we're caught up; stop overriding the countdown/turn line
 
   // t.ToAct defaults to seat 0 before any hand is ever dealt and is never
   // reset between hands, so a seat can carry to_act=true while the table is
   // merely "waiting" or sitting at "showdown". Only trust to_act while a
   // hand is actually live.
   const live=v.stage!=="waiting"&&v.stage!=="showdown";
+  // TableView.Seats is appended onto a nil slice server-side, so a
+  // zero-seat table marshals as "seats":null.
+  const seats=v.seats||[];
 
   if(v.stage==="preflop"&&lastStage!=="preflop")lastPot=0;
   lastStage=v.stage;
@@ -135,71 +179,107 @@ function render(v){
 
   const felt=document.getElementById("felt");
   felt.querySelectorAll(".seat").forEach(e=>e.remove());
-  const n=v.seats.length,cx=50,cy=42,rx=38,ry=30;
+  const n=seats.length,cx=50,cy=42,rx=38,ry=30;
   const left=Math.max(0,v.deadline-Math.floor(Date.now()/1000));
-  v.seats.forEach((s,i)=>{
+  seats.forEach((s,i)=>{
     const ang=(-Math.PI/2)+(2*Math.PI*i/n);
     const isActive=live&&s.to_act;
     const d=document.createElement("div");
-    // Never reads s.hole here — another player's hole cards are only ever
-    // taken from state.you_seat's own entry below, so this loop structurally
-    // cannot leak them even though the server legitimately reveals them for
-    // non-folded seats at showdown.
     d.className="seat"+(s.folded?" folded":"")+(isActive?" act":"");
     d.style.left=(cx+rx*Math.cos(ang))+"%";
     d.style.top=(cy+ry*Math.sin(ang))+"%";
-    d.innerHTML='<div class="nm">'+clip(s.name)+'</div><div class="st">'+s.stack+'</div>'+
-      (s.bet?'<span class="chip">'+s.bet+'</span>':'')+
-      (isActive?'<div class="cd">'+left+'с</div>':'');
+
+    // Display name is player-controlled (it comes straight from the
+    // player's own Telegram profile) — set via textContent, never
+    // innerHTML/string-concatenation. clip() truncating to 10 chars is
+    // NOT what makes this safe; textContent is.
+    const nm=document.createElement("div");
+    nm.className="nm";
+    nm.textContent=clip(s.name);
+    d.appendChild(nm);
+
+    // Opponents' hole cards: "hole" is populated only at showdown for
+    // non-folded, in-hand seats (server-enforced isolation, view.go) — show
+    // the real cards when the server sent them, otherwise a face-down back
+    // for anyone still holding cards. The back markup is the fixed
+    // CARD_BACKS constant, never anything derived from s, so this loop
+    // structurally cannot leak another player's hand.
+    if(!s.folded&&v.stage!=="waiting"){
+      const hole=document.createElement("div");
+      hole.className="oppHole";
+      hole.innerHTML=s.hole?s.hole.map(card).join(""):CARD_BACKS;
+      d.appendChild(hole);
+    }
+
+    // Stack/bet/countdown are Go ints and JS numbers, not player-controlled
+    // text, so textContent here is just for consistency, not a safety
+    // requirement.
+    const st=document.createElement("div");
+    st.className="st";
+    st.textContent=s.stack;
+    d.appendChild(st);
+
+    if(s.bet){
+      const chip=document.createElement("span");
+      chip.className="chip";
+      chip.textContent=s.bet;
+      d.appendChild(chip);
+    }
+    if(isActive){
+      const cd=document.createElement("div");
+      cd.className="cd";
+      cd.textContent=left+"с";
+      d.appendChild(cd);
+    }
     felt.appendChild(d);
   });
 
-  const me=v.you_seat>=0?v.seats[v.you_seat]:null;
+  const me=v.you_seat>=0?seats[v.you_seat]:null;
   document.getElementById("me").textContent=me?clip(me.name):"";
   document.getElementById("stack").textContent=me?me.stack:"";
   document.getElementById("hole").innerHTML=me&&me.hole?me.hole.map(card).join(""):"";
 
-  const myTurn=live&&!!(me&&me.to_act);
-  const highBet=Math.max(0,...v.seats.map(s=>s.bet||0));
-  const toCall=me?Math.max(0,highBet-(me.bet||0)):0;
-  document.getElementById("btn-call").textContent=toCall>0?("Колл "+toCall):"Колл";
-  document.getElementById("btn-fold").disabled=!myTurn;
-  document.getElementById("btn-check").disabled=!myTurn||toCall>0;
-  document.getElementById("btn-call").disabled=!myTurn||toCall<=0;
-  document.getElementById("btn-raise").disabled=!myTurn;
-
+  applyButtons();
   tick();
 }
 
 function tick(){
   if(!state)return;
+  if(errorMsg){setMsg(errorMsg);return} // a pending error outranks the countdown/turn line
   const live=state.stage!=="waiting"&&state.stage!=="showdown";
   const left=Math.max(0,state.deadline-Math.floor(Date.now()/1000));
   const cd=document.querySelector(".seat.act .cd");
   if(cd)cd.textContent=left+"с";
-  const me=state.you_seat>=0?state.seats[state.you_seat]:null;
+  const seats=state.seats||[];
+  const me=state.you_seat>=0?seats[state.you_seat]:null;
   setMsg(live&&me&&me.to_act?("Твій хід · "+left+"с"):"");
 }
 setInterval(tick,1000);
 
 async function act(a,amount){
+  // Disable every action button for the duration of the request: without
+  // this a double-tap fires two requests carrying the same seq, and the
+  // second one 409s and reports "Хід уже пройшов" for a move that actually
+  // went through.
+  setActsBusy(true);
   try{
     const r=await fetch("/api/poker/"+TABLE+"/action",{
       method:"POST",
       headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
       body:JSON.stringify({action:a,amount:amount||0,seq:state?state.seq:0})
     });
-    if(r.status===409){setMsg("Хід уже пройшов, оновлюю…");return}
-    if(!r.ok){setMsg(await r.text());return}
+    if(r.status===409){setError("Хід уже пройшов, оновлюю…");applyButtons();return}
+    if(!r.ok){setError(await r.text());applyButtons();return}
     render(await r.json());
-  }catch(e){setMsg("Зʼєднання втрачено…")}
+  }catch(e){setError("Зʼєднання втрачено…");applyButtons()}
 }
 
 document.getElementById("btn-fold").onclick=()=>act("fold");
 document.getElementById("btn-check").onclick=()=>act("check");
 document.getElementById("btn-call").onclick=()=>act("call");
 document.getElementById("btn-raise").onclick=()=>{
-  const highBet=state?Math.max(0,...state.seats.map(s=>s.bet||0)):0;
+  const seats=state?(state.seats||[]):[];
+  const highBet=Math.max(0,...seats.map(s=>s.bet||0));
   const input=window.prompt("Сума рейзу (всього на цій вулиці):",String(highBet+100));
   if(input===null)return;
   const amt=parseInt(input,10);
@@ -218,7 +298,12 @@ document.getElementById("btn-raise").onclick=()=>{
 
   const es=new EventSource("/api/poker/"+TABLE+"/stream?init_data="+encodeURIComponent(INIT));
   es.onmessage=e=>{try{render(JSON.parse(e.data))}catch(err){}};
-  es.onerror=()=>setMsg("Зʼєднання втрачено…");
+  // A recovered connection must not leave a stale "connection lost" message
+  // sitting on screen — errorMsg is also cleared by the next successful
+  // render(), but onopen fires as soon as the socket reconnects, before any
+  // data has necessarily arrived.
+  es.onopen=()=>{errorMsg=null};
+  es.onerror=()=>setError("Зʼєднання втрачено…");
 })();
 </script></body></html>`))
 
