@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -107,7 +108,14 @@ func decodeView(t *testing.T, rec *httptest.ResponseRecorder) poker.TableView {
 
 // --- join ------------------------------------------------------------------
 
-func TestJoinSucceedsAndClampsBuyInToMaxBuyIn(t *testing.T) {
+// TestJoinSucceedsWithBuyInClampedToMaxBuyIn drives a real join over HTTP
+// end-to-end and checks the seated stack is clamped to MaxBuyIn. NOTE: this
+// does NOT pin down handleJoin's own buyIn clamp — poker.Table.Sit clamps to
+// MaxBuyIn itself, so this test still passes even with the handler-side
+// clamp deleted. The handler clamp is kept anyway as defence in depth (so a
+// future engine change can't silently remove the ceiling), but its coverage
+// lives at the poker package level, not here.
+func TestJoinSucceedsWithBuyInClampedToMaxBuyIn(t *testing.T) {
 	db := setupTestDB(t)
 	db.UpdateBalance("111", "Alice", 50000-100) // GetBalance seeds new rows at 100
 
@@ -132,6 +140,52 @@ func TestJoinSucceedsAndClampsBuyInToMaxBuyIn(t *testing.T) {
 	}
 	if v.Seats[0].Stack != poker.MaxBuyIn {
 		t.Errorf("stack = %d, want buy-in clamped to MaxBuyIn=%d", v.Seats[0].Stack, poker.MaxBuyIn)
+	}
+}
+
+// TestJoinRejectsSecondSeatAtDifferentTable proves one bankroll can't back
+// simultaneous buy-ins at several tables: a user seated at tableA must be
+// rejected, with a Ukrainian 409, when trying to also sit at tableB — even
+// though tableB has room and the user's balance alone would cover both
+// buy-ins.
+func TestJoinRejectsSecondSeatAtDifferentTable(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("111", "Alice", 20000-100) // enough to "afford" two buy-ins
+
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tableA := h.Create(1)
+	tableB := h.Create(2)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	initData := userInitData(t, "test-token", 111, "Alice", "")
+
+	reqA := httptest.NewRequest("POST", "/api/poker/"+tableA.ID+"/join", nil)
+	reqA.Header.Set("X-Telegram-Init-Data", initData)
+	recA := httptest.NewRecorder()
+	mux.ServeHTTP(recA, reqA)
+	if recA.Code != http.StatusOK {
+		t.Fatalf("join tableA status = %d, want 200, body=%s", recA.Code, recA.Body.String())
+	}
+
+	reqB := httptest.NewRequest("POST", "/api/poker/"+tableB.ID+"/join", nil)
+	reqB.Header.Set("X-Telegram-Init-Data", initData)
+	recB := httptest.NewRecorder()
+	mux.ServeHTTP(recB, reqB)
+
+	if recB.Code != http.StatusConflict {
+		t.Fatalf("join tableB status = %d, want 409 for a second simultaneous seat, body=%s", recB.Code, recB.Body.String())
+	}
+	if !strings.Contains(recB.Body.String(), "Ти вже за іншим столом") {
+		t.Errorf("body = %q, want Ukrainian already-at-another-table message", recB.Body.String())
+	}
+
+	tableB.Lock()
+	seatsB := len(tableB.Seats)
+	tableB.Unlock()
+	if seatsB != 0 {
+		t.Errorf("tableB seats = %d, want 0 — the rejected join must not have seated the player", seatsB)
 	}
 }
 
@@ -443,6 +497,18 @@ func readSSEEvent(r *bufio.Reader) (string, error) {
 // "join" branch of the action switch. These three pin auth on the other two
 // endpoints directly.
 
+// streamTestTimeout bounds the SSE tests below that call mux.ServeHTTP
+// directly (not over a real network connection). If auth ever regressed to
+// let an unauthenticated/non-member request reach handleStream, ServeHTTP
+// would block forever inside its "for { select ... }" loop — httptest's
+// ResponseRecorder has no reader to close the connection and unblock it, so
+// the test would hang until the whole `go test` run times out rather than
+// failing with a clear assertion. Giving the request a short-lived context
+// means a regression instead makes handleStream exit almost immediately
+// (r.Context().Done() fires), so the test fails fast on the wrong status
+// code instead of hanging.
+const streamTestTimeout = 2 * time.Second
+
 func TestStreamRejectsMissingInitData(t *testing.T) {
 	h := NewPokerHub(nil, nil, "test-token")
 	stubAllowMember(h)
@@ -451,7 +517,9 @@ func TestStreamRejectsMissingInitData(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 
-	req := httptest.NewRequest("GET", "/api/poker/"+tbl.ID+"/stream", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), streamTestTimeout)
+	defer cancel()
+	req := httptest.NewRequest("GET", "/api/poker/"+tbl.ID+"/stream", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -486,7 +554,9 @@ func TestStreamRejectsNonChatMember(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 333, "Carl", "")
-	req := httptest.NewRequest("GET", "/api/poker/"+tbl.ID+"/stream", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), streamTestTimeout)
+	defer cancel()
+	req := httptest.NewRequest("GET", "/api/poker/"+tbl.ID+"/stream", nil).WithContext(ctx)
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

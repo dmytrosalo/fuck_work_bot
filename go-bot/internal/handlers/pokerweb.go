@@ -21,6 +21,12 @@ import (
 // resolves to something.
 var pokerTmpl = template.Must(template.New("poker").Parse(`<!doctype html><meta charset="utf-8"><title>Покер</title>`))
 
+// sseKeepaliveInterval is how often an idle SSE stream sends a comment-only
+// ping frame. Fly.io's proxy (and some browsers/corporate proxies) can
+// silently buffer or drop a connection that goes quiet, so a stream with no
+// real updates still needs to write *something* periodically.
+const sseKeepaliveInterval = 20 * time.Second
+
 // subscriber is one open SSE connection watching a table.
 type subscriber struct {
 	userID string
@@ -51,6 +57,15 @@ type PokerHub struct {
 	mu     sync.Mutex
 	tables map[string]*poker.Table
 	subs   map[string][]*subscriber
+
+	// seatedAt maps a userID to the single table they currently hold a seat
+	// (or a pending seat attempt) at, hub-wide. It exists so one bankroll
+	// can't back simultaneous buy-ins at several tables: the engine settles
+	// per hand rather than escrowing at buy-in (deliberately, so a mid-hand
+	// redeploy can't eat a real buy-in), so nothing else stops a user from
+	// sitting at N tables at once for N times their real balance. Guarded by
+	// h.mu, same as subs/tables.
+	seatedAt map[string]string
 }
 
 func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
@@ -61,6 +76,37 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		isMember: defaultIsMember(bot),
 		tables:   map[string]*poker.Table{},
 		subs:     map[string][]*subscriber{},
+		seatedAt: map[string]string{},
+	}
+}
+
+// claimSeat atomically reserves userID's single hub-wide seat for tableID.
+// ok is false if userID already holds a claim on a *different* table, in
+// which case the caller must reject the join outright. fresh is true when
+// this call created the claim (nothing existed before) — the caller must
+// remember that, because only a fresh claim should be released if the
+// subsequent Sit() fails; a pre-existing claim for this same table means
+// the user may already have a live seat here, and releasing it out from
+// under them on an unrelated Sit failure would let a concurrent join steal
+// their spot at another table.
+func (h *PokerHub) claimSeat(userID, tableID string) (fresh, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if existing, exists := h.seatedAt[userID]; exists {
+		return false, existing == tableID
+	}
+	h.seatedAt[userID] = tableID
+	return true, true
+}
+
+// releaseSeatClaim drops userID's hub-wide seat claim, but only if it still
+// points at tableID — never clobber a claim a later, unrelated join already
+// moved elsewhere.
+func (h *PokerHub) releaseSeatClaim(userID, tableID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.seatedAt[userID] == tableID {
+		delete(h.seatedAt, userID)
 	}
 }
 
@@ -189,9 +235,22 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 
 // handleJoin seats the authenticated user with min(balance, MaxBuyIn) chips.
 // The engine itself rejects a buy-in below MinBuyIn.
+//
+// A user may hold only one seat across the whole hub at a time — see
+// seatedAt — so a single bankroll can't back simultaneous buy-ins at
+// several tables. The claim is taken before Sit() (and released again if
+// Sit() then fails) rather than debited from the balance, because
+// settlement happens per hand precisely so a mid-hand redeploy can't eat a
+// real buy-in; escrowing chips at sit-down would undo that.
 func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64, firstName, username string) {
 	userID := fmt.Sprintf("%d", uid)
 	name := resolveTarget(firstName, username)
+
+	fresh, ok := h.claimSeat(userID, tbl.ID)
+	if !ok {
+		http.Error(w, "Ти вже за іншим столом", http.StatusConflict)
+		return
+	}
 
 	balance := 0
 	if h.db != nil {
@@ -205,6 +264,9 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	tbl.Lock()
 	if err := tbl.Sit(userID, name, buyIn); err != nil {
 		tbl.Unlock()
+		if fresh {
+			h.releaseSeatClaim(userID, tbl.ID)
+		}
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -235,15 +297,16 @@ func (h *PokerHub) handleAction(w http.ResponseWriter, r *http.Request, tbl *pok
 	userID := fmt.Sprintf("%d", uid)
 
 	tbl.Lock()
-	defer tbl.Unlock()
 
 	if body.Seq != tbl.Seq {
+		tbl.Unlock()
 		http.Error(w, "Застаріла дія, онови стан", http.StatusConflict)
 		return
 	}
 
 	prevStage := tbl.Stage
 	if err := tbl.Act(userID, poker.Action(body.Action), body.Amount); err != nil {
+		tbl.Unlock()
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -259,6 +322,11 @@ func (h *PokerHub) handleAction(w http.ResponseWriter, r *http.Request, tbl *pok
 
 	view := tbl.ViewFor(userID)
 	h.broadcast(tbl)
+	tbl.Unlock()
+
+	// Written outside the table lock, like handleJoin: with no server
+	// WriteTimeout, a client that stops reading here must not be able to
+	// stall the whole table for everyone else.
 	writeJSON(w, view)
 }
 
@@ -291,6 +359,9 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// Tells Fly.io's proxy (nginx-compatible) not to buffer this response;
+	// without it an idle stream can sit in the proxy's buffer indefinitely.
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	sub := &subscriber{userID: userID, ch: make(chan poker.TableView, 4)}
 	h.mu.Lock()
@@ -318,12 +389,21 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	tbl.Unlock()
 	sendView(w, flusher, initial)
 
+	keepalive := time.NewTicker(sseKeepaliveInterval)
+	defer keepalive.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case v := <-sub.ch:
 			sendView(w, flusher, v)
+		case <-keepalive.C:
+			// Comment-only SSE frame: keeps the connection warm through
+			// proxies/browsers that drop or buffer a silent stream, without
+			// being interpreted as a data event by the client.
+			fmt.Fprint(w, ": ping\n\n")
+			flusher.Flush()
 		}
 	}
 }
