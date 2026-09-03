@@ -214,6 +214,11 @@ func main() {
 	// Start web server
 	mux := http.NewServeMux()
 	handlers.RegisterWeb(mux, db)
+
+	pokerHub := handlers.NewPokerHub(db, bot, os.Getenv("TELEGRAM_BOT_TOKEN"))
+	pokerHub.Register(mux)
+	h.SetPokerHub(pokerHub)
+
 	go func() {
 		log.Println("Web server starting on :8080...")
 		if err := http.ListenAndServe(":8080", mux); err != nil {

@@ -15,14 +15,19 @@ import (
 
 // Bot wraps the classifier and storage for Telegram handlers.
 type Bot struct {
-	clf *classifier.Classifier
-	db  *storage.DB
+	clf   *classifier.Classifier
+	db    *storage.DB
+	poker *PokerHub
 }
 
 // New creates a new Bot handler.
 func New(clf *classifier.Classifier, db *storage.DB) *Bot {
 	return &Bot{clf: clf, db: db}
 }
+
+// SetPokerHub wires the poker hub after construction, since the hub needs the
+// *tele.Bot which is created after the handlers.
+func (b *Bot) SetPokerHub(h *PokerHub) { b.poker = h }
 
 // muteCheck wraps a handler to block muted users
 func (b *Bot) muteCheck(next func(tele.Context) error) func(tele.Context) error {
@@ -102,6 +107,7 @@ func (b *Bot) Register(bot *tele.Bot) {
 	bot.Handle("/evolve", b.handleEvolve)
 	bot.Handle("/card_idea", b.handleCardIdea)
 	bot.Handle("/joke", b.handleJoke)
+	bot.Handle("/poker", b.muteCheck(b.handlePoker))
 	bot.Handle(tele.OnText, b.handleText)
 }
 
