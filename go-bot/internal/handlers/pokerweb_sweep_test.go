@@ -882,19 +882,154 @@ func TestConcurrentActionAndSweepNeverOrphanHubState(t *testing.T) {
 // --- sweepOnce: actBots wiring (Task 7) -------------------------------------
 
 // TestSweepOnceDrivesBotsToShowdownAndSettlesOnce is the regression guard
-// for Ruling 2 as applied to the sweeper's actBots call: once the lone human
-// folds, only the sweeper's repeated ticks (never a direct call to
+// for Ruling 2 as applied to the sweeper's actBots call: once the human
+// steps out, only the sweeper's repeated ticks (never a direct call to
 // h.settle, never an HTTP action) drive the two bots to showdown, and the
-// settle-on-transition condition must fire exactly once — extra sweep
-// passes after showdown must not move any balance again.
+// settle-on-transition condition must fire exactly once.
+//
+// This must prove BOTH halves, or it's vacuous: (1) settle actually ran at
+// all — Alice's own balance and the bank's balance changed, and their
+// deltas cancel and are nonzero — not just (2) that it didn't run TWICE.
+// Reading balances only after showdown and asserting they don't move on
+// further passes (the original, insufficient version of this test) is
+// satisfied identically by a table that never settles at all: with
+// h.settle deleted from the sweeper's bot path, showdown is still reached,
+// showdownAt is never recorded so showdownReady stays permanently true,
+// hands keep auto-restarting, and no balance ever moves anywhere at all —
+// both reads stay equal and a "not settled twice" check passes for
+// entirely the wrong reason.
+//
+// Alice goes all-in as her one action (rather than folding) so her own
+// money is genuinely at risk: a human who folds before ever committing a
+// chip — the button/UTG seat in a 3-handed hand, acting first, owing
+// nothing yet — has a real balance delta of exactly zero regardless of
+// whether settle ran at all, which would make an assertion on her delta
+// meaningless. Going all-in guarantees a nonzero delta except in the
+// vanishingly rare exact three-way chop (retried below, same pattern as
+// TestSettleRoutesBotDeltasToBank).
 func TestSweepOnceDrivesBotsToShowdownAndSettlesOnce(t *testing.T) {
-	db := setupTestDB(t)
-	db.UpdateBalance("111", "Alice", 5000-100)
+	const aliceBuyIn = 5000
 
-	h := NewPokerHub(db, nil, "test-token")
+	db := setupTestDB(t)
+
+	for attempt := 0; attempt < 20; attempt++ {
+		db.UpdateBalance("111", "Alice", aliceBuyIn-db.GetBalance("111", "Alice"))
+
+		// A fresh hub per attempt, not just a fresh table: sweepOnce sweeps
+		// every table a hub knows about, so reusing one hub across retries
+		// would mean a later attempt's sweep passes also drive stale tables
+		// left behind by an earlier chopped-pot retry — corrupting exactly
+		// the before/after balance snapshot this test depends on.
+		h := NewPokerHub(db, nil, "test-token")
+		tbl := h.Create(int64(attempt))
+		tbl.Lock()
+		if err := tbl.Sit("111", "Alice", aliceBuyIn); err != nil {
+			tbl.Unlock()
+			t.Fatalf("Sit: %v", err)
+		}
+		h.ensureBots(tbl)
+		if err := tbl.StartHand(); err != nil {
+			tbl.Unlock()
+			t.Fatalf("StartHand: %v", err)
+		}
+		// Let bots act (directly, not via the sweeper — this setup phase is
+		// not what's under test) until it's genuinely Alice's turn, then
+		// shove her whole stack all-in. AllIn seats are skipped by
+		// nextActive, so this is her only action all hand: everything after
+		// this must be driven purely by the sweeper's actBots calls below.
+		for i := 0; i < 10 && tbl.Seats[tbl.ToAct].UserID != "111"; i++ {
+			if !h.actBots(tbl) {
+				tbl.Unlock()
+				t.Fatalf("attempt %d: no bot to act and it is not Alice's turn either", attempt)
+			}
+		}
+		alice := tbl.Seats[tbl.SeatIndexOf("111")]
+		if err := tbl.Act("111", poker.ActRaise, alice.Bet+alice.Stack); err != nil {
+			tbl.Unlock()
+			t.Fatalf("attempt %d: Alice's all-in shove rejected: %v", attempt, err)
+		}
+		tbl.Unlock()
+
+		aliceBefore := db.GetBalance("111", "")
+		bankBefore := db.GetBalance(bankUserID, "")
+
+		const maxPasses = 500
+		reached := false
+		for i := 0; i < maxPasses; i++ {
+			h.sweepOnce()
+			tbl.Lock()
+			stage := tbl.Stage
+			tbl.Unlock()
+			if stage == poker.StageShowdown {
+				reached = true
+				break
+			}
+		}
+		if !reached {
+			t.Fatalf("attempt %d: the sweeper's actBots calls did not drive the hand to showdown within maxPasses", attempt)
+		}
+
+		aliceAfterFirst := db.GetBalance("111", "")
+		bankAfterFirst := db.GetBalance(bankUserID, "")
+		aliceDelta := aliceAfterFirst - aliceBefore
+		bankDelta := bankAfterFirst - bankBefore
+
+		if aliceDelta+bankDelta != 0 {
+			t.Errorf("attempt %d: alice %+d and bank %+d do not cancel — zero-sum broken", attempt, aliceDelta, bankDelta)
+		}
+
+		if aliceDelta == 0 {
+			// Exact chop: try again with a fresh deal rather than asserting
+			// on a hand that happens to prove nothing either way.
+			continue
+		}
+
+		// Half 1 confirmed: settle actually ran (a real, nonzero,
+		// zero-sum-respecting balance change happened). Half 2: further
+		// sweep passes, well past showdown, must not settle again.
+		for i := 0; i < 10; i++ {
+			h.sweepOnce()
+		}
+		if got := db.GetBalance("111", ""); got != aliceAfterFirst {
+			t.Errorf("alice balance changed after extra sweep passes: %d -> %d (double-settle?)", aliceAfterFirst, got)
+		}
+		if got := db.GetBalance(bankUserID, ""); got != bankAfterFirst {
+			t.Errorf("bank balance changed after extra sweep passes: %d -> %d (double-settle?)", bankAfterFirst, got)
+		}
+		return // test passed
+	}
+
+	t.Error("could not produce a non-zero hand delta after 20 attempts (exact three-way chop each time is astronomically unlikely)")
+}
+
+// TestSweepOnceActsAtMostOneBotPerPass is the regression guard for Ruling 4:
+// one bot action per sweep tick, never a loop to completion inside one
+// h.actBots call. A loop-to-completion implementation would pass every
+// other test touched by this task — TestSweepOnceDrivesBotsToShowdownAndSettlesOnce
+// allows up to 500 passes and would simply finish in one — so this pins the
+// per-pass behavior directly via tbl.Seq, which Act() bumps by exactly 1 per
+// call and Showdown() (reached via h.settle, wired by Ruling 2) also bumps
+// by 1 when a hand concludes.
+//
+// The human deliberately CALLS rather than folding, so all three seats
+// (human + 2 bots) are still live when the bot below takes its turn. This
+// is the difference between a correct and a flaky version of this test: an
+// earlier draft folded the human first, leaving exactly 2 live bots — and a
+// bot's own fold is a very common decision (see bluffFrequency/foldpreflop
+// in poker.Decide), which would immediately end the hand in ONE legitimate
+// action, correctly bumping Seq by 2 (Act + Showdown) and making a hard-coded
+// "+1" assertion fail roughly as often as a bot folds, for no bug at all.
+// With three still-live players and this the first action of the street,
+// bettingClosed() cannot yet be true (only 2 of 3 seats will have acted) and
+// liveCount() cannot drop below 2 from a single fold — so Stage provably
+// cannot reach StageShowdown from this one action, and Seq increasing by
+// anything other than exactly 1 can only mean more than one Act() call
+// happened inside a single sweepOnce pass.
+func TestSweepOnceActsAtMostOneBotPerPass(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
 	tbl := h.Create(1)
 	tbl.Lock()
-	if err := tbl.Sit("111", "Alice", 5000); err != nil {
+	if err := tbl.Sit("u1", "Danya", 5000); err != nil {
 		tbl.Unlock()
 		t.Fatalf("Sit: %v", err)
 	}
@@ -903,44 +1038,47 @@ func TestSweepOnceDrivesBotsToShowdownAndSettlesOnce(t *testing.T) {
 		tbl.Unlock()
 		t.Fatalf("StartHand: %v", err)
 	}
-	// Fold Alice out immediately so only the two bots remain — the rest of
-	// the hand must be driven purely by the sweeper's actBots calls below,
-	// with no further HTTP action and no direct h.settle call.
-	if tbl.Seats[tbl.ToAct].UserID == "111" {
-		if err := tbl.Act("111", poker.ActFold, 0); err != nil {
+	if tbl.Seats[tbl.ToAct].UserID == "u1" {
+		high := 0
+		for _, o := range tbl.Seats {
+			if o.Bet > high {
+				high = o.Bet
+			}
+		}
+		act := poker.ActCheck
+		if tbl.Seats[tbl.ToAct].Bet < high {
+			act = poker.ActCall
+		}
+		if err := tbl.Act("u1", act, 0); err != nil {
 			tbl.Unlock()
 			t.Fatalf("Act: %v", err)
 		}
 	}
-	tbl.Unlock()
-
-	const maxPasses = 500
-	reached := false
-	for i := 0; i < maxPasses; i++ {
-		h.sweepOnce()
-		tbl.Lock()
-		stage := tbl.Stage
+	if !isBotUser(tbl.Seats[tbl.ToAct].UserID) {
 		tbl.Unlock()
-		if stage == poker.StageShowdown {
-			reached = true
-			break
+		t.Fatal("expected a bot to be to act once the human has acted")
+	}
+	live := 0
+	for _, s := range tbl.Seats {
+		if s.InHand && !s.Folded {
+			live++
 		}
 	}
-	if !reached {
-		t.Fatal("the sweeper's actBots calls did not drive the two bots to showdown within maxPasses")
+	if live != 3 {
+		tbl.Unlock()
+		t.Fatalf("live players = %d, want 3 (human called/checked rather than folding)", live)
 	}
+	seqBefore := tbl.Seq
+	tbl.Unlock()
 
-	aliceAfterFirst := db.GetBalance("111", "")
-	bankAfterFirst := db.GetBalance(bankUserID, "")
+	h.sweepOnce()
 
-	// Further sweep passes, well past showdown, must not settle again.
-	for i := 0; i < 10; i++ {
-		h.sweepOnce()
+	tbl.Lock()
+	defer tbl.Unlock()
+	if got := tbl.Seq; got != seqBefore+1 {
+		t.Errorf("Seq went from %d to %d across one sweepOnce pass, want exactly %d (one bot action) — actBots must resolve one action per pass, not loop to completion", seqBefore, got, seqBefore+1)
 	}
-	if got := db.GetBalance("111", ""); got != aliceAfterFirst {
-		t.Errorf("alice balance changed after extra sweep passes: %d -> %d (double-settle?)", aliceAfterFirst, got)
-	}
-	if got := db.GetBalance(bankUserID, ""); got != bankAfterFirst {
-		t.Errorf("bank balance changed after extra sweep passes: %d -> %d (double-settle?)", bankAfterFirst, got)
+	if tbl.Stage == poker.StageShowdown {
+		t.Error("hand reached showdown after a single bot action with 3 players still live at the start of the street — this should be structurally impossible; investigate before trusting the Seq check above")
 	}
 }

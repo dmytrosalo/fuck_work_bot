@@ -435,6 +435,71 @@ func TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable(t *testing.T) {
 	}
 }
 
+// TestJoinReconnectAtFullBotTableDoesNotEvictABot is the regression guard
+// for the OTHER half of Ruling 3: eviction is for a genuinely NEW human
+// only. TestJoinReconnectsAlreadySeatedPlayerAtFullTable (above) fills all
+// MaxSeats with humans, so it cannot catch a bug here — evictOneBot would
+// be a no-op there regardless of where it sits in handleJoin's flow, since
+// there is no bot to evict either way. This test seats bots too (4 humans +
+// 2 bots, same full-table shape as the eviction test above) so that placing
+// the eviction block ahead of the reconnect early-return — exactly the
+// mistake Ruling 3 forbids — is actually observable: an ALREADY-SEATED
+// human reloading the page must never cost a bot its seat.
+func TestJoinReconnectAtFullBotTableDoesNotEvictABot(t *testing.T) {
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	// Same full-table setup as TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable:
+	// 4 humans seated directly, then ensureBots fills the remaining 2 seats.
+	for i := 0; i < 4; i++ {
+		userID := fmt.Sprintf("%d", 1000+i)
+		if err := tbl.Sit(userID, fmt.Sprintf("U%d", i), 2000); err != nil {
+			t.Fatalf("Sit seat %d: %v", i, err)
+		}
+	}
+	tbl.Lock()
+	h.ensureBots(tbl)
+	seatCount := len(tbl.Seats)
+	botsBefore := countBots(tbl)
+	tbl.Unlock()
+	if seatCount != poker.MaxSeats {
+		t.Fatalf("setup: table has %d seats, want full %d", seatCount, poker.MaxSeats)
+	}
+	if botsBefore != 2 {
+		t.Fatalf("setup: table has %d bots, want 2", botsBefore)
+	}
+
+	// Seat 0's player reloads the Mini App at their own already-full table —
+	// exactly what TestJoinReconnectsAlreadySeatedPlayerAtFullTable does,
+	// just with bots also present this time.
+	initData := userInitData(t, "test-token", 1000, "U0", "")
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reconnect at a full bot table status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	v := decodeView(t, rec)
+	if v.YouSeat != 0 {
+		t.Errorf("you_seat = %d, want 0 (existing seat)", v.YouSeat)
+	}
+
+	tbl.Lock()
+	defer tbl.Unlock()
+	if got := len(tbl.Seats); got != poker.MaxSeats {
+		t.Errorf("seats = %d, want unchanged %d", got, poker.MaxSeats)
+	}
+	if got := countBots(tbl); got != 2 {
+		t.Errorf("bots = %d, want unchanged 2 — a reconnecting player must not cost a bot its seat", got)
+	}
+}
+
 // --- membership check: transient errors and caching (FIX 2) ----------------
 
 // TestAuthReturns503OnTransientMembershipCheckError proves a checker ERROR
