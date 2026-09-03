@@ -303,3 +303,55 @@ func (t *Table) AdjustSeat(userID string, delta int) int {
 	}
 	return 0
 }
+
+// HasLiveStake reports whether userID currently has chips at risk in a hand
+// in progress at this table. It is the test for whether abandoning their
+// seat would strand real money: between hands, or once they have folded or
+// busted, there is nothing left to protect.
+func (t *Table) HasLiveStake(userID string) bool {
+	if t.Stage == StageWaiting || t.Stage == StageShowdown {
+		return false
+	}
+	for _, s := range t.Seats {
+		if s.UserID == userID {
+			return s.InHand && !s.Folded
+		}
+	}
+	return false
+}
+
+// StandUp removes a player's seat, repairing Button and ToAct so they stay
+// valid indices into the shortened slice — the same repair evictOneBot does
+// for bots. It refuses while the seat has a live stake, since removing it
+// mid-hand would delete chips that are already part of a pot other players
+// are contesting.
+//
+// Returns whether a seat was actually removed.
+func (t *Table) StandUp(userID string) bool {
+	if t.HasLiveStake(userID) {
+		return false
+	}
+	for i, s := range t.Seats {
+		if s.UserID != userID {
+			continue
+		}
+		t.Seats = append(t.Seats[:i], t.Seats[i+1:]...)
+		if t.Button >= i {
+			t.Button--
+		}
+		if t.Button < 0 {
+			t.Button = len(t.Seats) - 1
+		}
+		switch {
+		case t.ToAct == i:
+			// -1 is the engine's "nobody to act" sentinel; StartHand
+			// recomputes it, and no money path reads ToAct between hands.
+			t.ToAct = -1
+		case t.ToAct > i:
+			t.ToAct--
+		}
+		t.Seq++
+		return true
+	}
+	return false
+}

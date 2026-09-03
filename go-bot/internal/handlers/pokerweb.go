@@ -1027,6 +1027,14 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	}
 	tbl.Unlock()
 
+	// A claim pointing at some OTHER table is usually stale rather than
+	// real: the player ran /poker again, which creates a fresh table, while
+	// their old one sits idle for up to thirty minutes before the sweeper
+	// reclaims it. Without this they are locked out of their own new table
+	// for that whole window with no way to clear it — the "Ти вже за іншим
+	// столом" dead end. Genuinely being mid-hand elsewhere still blocks.
+	h.releaseStaleClaim(userID, tbl.ID)
+
 	fresh, ok, live := h.claimSeat(userID, tbl.ID)
 	if !live {
 		// The sweeper reclaimed this table in the window between Register's
@@ -1628,6 +1636,53 @@ func (h *PokerHub) sweepOnce() {
 				delete(h.seatedAt, uid)
 			}
 		}
+	}
+	h.mu.Unlock()
+}
+
+// releaseStaleClaim drops userID's hub-wide seat claim when the table it
+// points at no longer has real money riding on them, and stands them up
+// from that table so the abandoned seat cannot keep paying blinds into
+// settlements against a bankroll that has moved on.
+//
+// Locking follows the hub's rule the same way sweepOnce does: h.mu alone to
+// resolve the old table, released, then that table's lock, released, then
+// h.mu alone again to mutate the claim. h.mu is never held across a table
+// lock, which would invert the ordering broadcast() depends on.
+//
+// The claim is re-checked under the final lock before deleting: between the
+// two h.mu sections the player may have joined somewhere else entirely, and
+// clobbering that newer claim would hand them two funded seats — exactly
+// what seatedAt exists to prevent.
+func (h *PokerHub) releaseStaleClaim(userID, wantTableID string) {
+	h.mu.Lock()
+	existing, has := h.seatedAt[userID]
+	var old *poker.Table
+	if has && existing != wantTableID {
+		old = h.tables[existing]
+	}
+	h.mu.Unlock()
+
+	if !has || existing == wantTableID {
+		return
+	}
+
+	if old != nil {
+		old.Lock()
+		if old.HasLiveStake(userID) {
+			old.Unlock()
+			return // really is mid-hand elsewhere: the 409 is correct
+		}
+		stoodUp := old.StandUp(userID)
+		if stoodUp {
+			h.broadcast(old)
+		}
+		old.Unlock()
+	}
+
+	h.mu.Lock()
+	if h.seatedAt[userID] == existing {
+		delete(h.seatedAt, userID)
 	}
 	h.mu.Unlock()
 }
