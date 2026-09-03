@@ -151,3 +151,22 @@ func (t *Table) advance() {
 		// nobody can act — run the remaining board out rather than hang
 	}
 }
+
+// ForceTimeout applies the deadlock-breaking auto-action when the turn clock
+// has expired: check if it is free, otherwise fold. Reports whether it acted.
+// Without this, a player who closes Telegram mid-hand freezes the table
+// forever with chips already committed to the pot.
+func (t *Table) ForceTimeout() bool {
+	if t.Stage == StageWaiting || t.Stage == StageShowdown {
+		return false
+	}
+	if t.ToAct < 0 || time.Now().Before(t.Deadline) {
+		return false
+	}
+	s := t.Seats[t.ToAct]
+	a := ActFold
+	if s.Bet >= t.highBet() {
+		a = ActCheck
+	}
+	return t.Act(s.UserID, a, 0) == nil
+}

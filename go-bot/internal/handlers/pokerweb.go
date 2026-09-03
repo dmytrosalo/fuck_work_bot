@@ -317,6 +317,11 @@ const sseKeepaliveInterval = 20 * time.Second
 type subscriber struct {
 	userID string
 	ch     chan poker.TableView
+	// done is closed by sweepOnce when its table is reclaimed for being
+	// idle, so a still-connected SSE goroutine watching a now-deleted table
+	// exits instead of idling forever on a channel nothing will ever send
+	// to again.
+	done chan struct{}
 }
 
 // PokerHub owns every live poker table and the SSE subscribers watching
@@ -352,17 +357,26 @@ type PokerHub struct {
 	// sitting at N tables at once for N times their real balance. Guarded by
 	// h.mu, same as subs/tables.
 	seatedAt map[string]string
+
+	// lastActivity records, per table id, the last time a join, an action,
+	// or a sweeper-driven event (a forced timeout or an auto-started hand)
+	// touched that table. It lives on the hub rather than on poker.Table so
+	// idle bookkeeping never has to touch the engine. A table idle beyond
+	// idleTableTimeout is reclaimed by the sweeper — see sweepOnce. Guarded
+	// by h.mu, same as tables/subs/seatedAt.
+	lastActivity map[string]time.Time
 }
 
 func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 	return &PokerHub{
-		db:       db,
-		bot:      bot,
-		token:    token,
-		isMember: defaultIsMember(bot),
-		tables:   map[string]*poker.Table{},
-		subs:     map[string][]*subscriber{},
-		seatedAt: map[string]string{},
+		db:           db,
+		bot:          bot,
+		token:        token,
+		isMember:     defaultIsMember(bot),
+		tables:       map[string]*poker.Table{},
+		subs:         map[string][]*subscriber{},
+		seatedAt:     map[string]string{},
+		lastActivity: map[string]time.Time{},
 	}
 }
 
@@ -429,6 +443,7 @@ func (h *PokerHub) Create(chatID int64) *poker.Table {
 	tbl := poker.NewTable(id, chatID)
 	h.mu.Lock()
 	h.tables[id] = tbl
+	h.lastActivity[id] = time.Now()
 	h.mu.Unlock()
 	return tbl
 }
@@ -556,9 +571,15 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
+	// Auto-start once a second player is seated. Without this, hands never
+	// begin: nothing else ever calls StartHand on a freshly created table.
+	if tbl.Stage == poker.StageWaiting && tbl.SeatedCount() >= 2 {
+		_ = tbl.StartHand()
+	}
 	view := tbl.ViewFor(userID)
 	h.broadcast(tbl) // called with the table lock held, per lock ordering
 	tbl.Unlock()
+	h.touch(tbl.ID)
 
 	writeJSON(w, view)
 }
@@ -609,6 +630,7 @@ func (h *PokerHub) handleAction(w http.ResponseWriter, r *http.Request, tbl *pok
 	view := tbl.ViewFor(userID)
 	h.broadcast(tbl)
 	tbl.Unlock()
+	h.touch(tbl.ID)
 
 	// Written outside the table lock, like handleJoin: with no server
 	// WriteTimeout, a client that stops reading here must not be able to
@@ -649,7 +671,7 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	// without it an idle stream can sit in the proxy's buffer indefinitely.
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	sub := &subscriber{userID: userID, ch: make(chan poker.TableView, 4)}
+	sub := &subscriber{userID: userID, ch: make(chan poker.TableView, 4), done: make(chan struct{})}
 	h.mu.Lock()
 	h.subs[tbl.ID] = append(h.subs[tbl.ID], sub)
 	h.mu.Unlock()
@@ -681,6 +703,10 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-sub.done:
+			// Table reclaimed as idle by the sweeper: nothing will ever be
+			// sent on sub.ch again, so exit rather than idle here forever.
 			return
 		case v := <-sub.ch:
 			sendView(w, flusher, v)
@@ -723,4 +749,128 @@ func (h *PokerHub) broadcast(tbl *poker.Table) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// sweepInterval is how often the sweeper checks every table for an expired
+// turn clock, a hand ready to auto-start, or idleness.
+const sweepInterval = 5 * time.Second
+
+// idleTableTimeout is how long a table may go without a join, an action, or
+// a sweeper-driven event (a forced timeout, an auto-started hand) before the
+// sweeper reclaims it: removed from h.tables, every seatedAt claim pointing
+// at it released, and its subscriber list dropped so any still-connected SSE
+// goroutines exit. Reclaimed regardless of whether it still has seats — an
+// abandoned table with seated players is exactly the case that would
+// otherwise strand their hub-wide seat claim until the process restarts.
+const idleTableTimeout = 30 * time.Minute
+
+// touch records activity on tableID now. Guarded by h.mu; safe to call
+// either standalone or while holding a table's own lock, since h.mu is
+// always the inner lock relative to a table lock.
+func (h *PokerHub) touch(tableID string) {
+	h.mu.Lock()
+	h.lastActivity[tableID] = time.Now()
+	h.mu.Unlock()
+}
+
+// activitySince returns how long it has been since tableID last saw
+// activity, per lastActivity. A table with no recorded activity (should not
+// happen — Create seeds it) is treated as maximally idle.
+func (h *PokerHub) activitySince(tableID string) time.Duration {
+	h.mu.Lock()
+	last, ok := h.lastActivity[tableID]
+	h.mu.Unlock()
+	if !ok {
+		return idleTableTimeout + 1
+	}
+	return time.Since(last)
+}
+
+// StartSweeper starts the background goroutine that enforces turn deadlines,
+// auto-starts hands, and reclaims idle tables across the whole hub. Without
+// it: a player who closes Telegram stalls their table forever with real
+// chips committed, a table that fills up never actually deals a hand, and
+// h.tables/h.subs grow without bound for the life of the process. Call once,
+// after Register, from main — it runs for the life of the process.
+func (h *PokerHub) StartSweeper() {
+	go func() {
+		for range time.Tick(sweepInterval) {
+			h.sweepOnce()
+		}
+	}()
+}
+
+// sweepOnce runs a single sweep pass over every table. Split out from
+// StartSweeper's ticker loop so tests can drive one deterministic pass
+// directly, without a real background goroutine (and its ticker) to leak
+// across tests.
+//
+// Lock ordering: a table's own lock is always OUTER, h.mu is always INNER
+// (see the PokerHub doc comment). This snapshots the table list under h.mu
+// and releases it before ever touching a table lock — the same two-phase
+// shape broadcast() relies on, just run in the opposite direction: broadcast
+// is called while already holding a table lock and takes h.mu inside; here
+// we take h.mu first, alone, then take each table lock separately afterward.
+// Reclaiming idle tables happens in a third pass, back under h.mu alone,
+// once every table lock has already been released.
+func (h *PokerHub) sweepOnce() {
+	h.mu.Lock()
+	tables := make(map[string]*poker.Table, len(h.tables))
+	for id, t := range h.tables {
+		tables[id] = t
+	}
+	h.mu.Unlock()
+
+	var idleIDs []string
+	for id, tbl := range tables {
+		tbl.Lock()
+		prevStage := tbl.Stage
+		switch {
+		case tbl.ForceTimeout():
+			// Settle exactly as handleAction does: only on the single
+			// transition into showdown, reusing the same helper so the
+			// money rules never diverge between the two call sites.
+			if tbl.Stage == poker.StageShowdown && prevStage != poker.StageShowdown {
+				h.settle(tbl)
+			}
+			h.broadcast(tbl)
+			h.touch(id)
+		case prevStage == poker.StageShowdown && tbl.SeatedCount() >= 2:
+			// The table was already sitting in showdown at the START of
+			// this pass (not a fresh transition this tick, which gives
+			// players at least one sweep interval to see the result before
+			// the next hand deals) and still has 2+ players with chips —
+			// deal the next hand rather than leaving the table stuck after
+			// exactly one hand.
+			if err := tbl.StartHand(); err == nil {
+				h.broadcast(tbl)
+				h.touch(id)
+			}
+		}
+		idle := h.activitySince(id) > idleTableTimeout
+		tbl.Unlock()
+
+		if idle {
+			idleIDs = append(idleIDs, id)
+		}
+	}
+
+	if len(idleIDs) == 0 {
+		return
+	}
+	h.mu.Lock()
+	for _, id := range idleIDs {
+		delete(h.tables, id)
+		delete(h.lastActivity, id)
+		for _, sub := range h.subs[id] {
+			close(sub.done)
+		}
+		delete(h.subs, id)
+		for uid, tid := range h.seatedAt {
+			if tid == id {
+				delete(h.seatedAt, uid)
+			}
+		}
+	}
+	h.mu.Unlock()
 }

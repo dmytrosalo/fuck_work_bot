@@ -217,6 +217,7 @@ func main() {
 
 	pokerHub := handlers.NewPokerHub(db, bot, os.Getenv("TELEGRAM_BOT_TOKEN"))
 	pokerHub.Register(mux)
+	pokerHub.StartSweeper()
 	h.SetPokerHub(pokerHub)
 
 	go func() {
