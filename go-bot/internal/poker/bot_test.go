@@ -311,11 +311,11 @@ func TestBotSelfPlayDecideBeatsWeakBaseline(t *testing.T) {
 	// own coin flips (bluffs, tie-breaks), not the deck order. Each seed is
 	// therefore still an independent random trial rather than a reproducible
 	// replay. To size the threshold against that, this test was run 20 times
-	// (20 * 8 seeds = 160 independent 2000-hand trials; see task-8-report.md
-	// for the raw figures): Decide's avg chips/hand against two
-	// weak-baseline opponents had mean=120.34, stddev=18.43, min=70.62,
-	// max=180.20. The threshold is set to 60 — about 3.3 standard deviations
-	// below the mean, and below every one of those 160 trials by at least
+	// (20 * 8 seeds = 160 independent 2000-hand trials): Decide's avg
+	// chips/hand against two weak-baseline opponents had mean=120.34,
+	// stddev=18.43, min=70.62, max=180.20. The threshold is set to 60 —
+	// about 3.3 standard deviations below the mean, and below every one of
+	// those 160 trials by at least
 	// 10.6 chips/hand — comfortably outside this simulation's noise while
 	// staying well clear of tuning it to just barely pass.
 	const minAvgDeltaPerHand = 60 // chips/hand; big blind is 100
