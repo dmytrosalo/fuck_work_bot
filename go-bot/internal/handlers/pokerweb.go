@@ -797,12 +797,24 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 
 	if h.db != nil {
 		entries := make([]storage.PokerDelta, 0, len(tbl.Seats))
+		bankDelta := 0
 		for _, s := range tbl.Seats {
 			d, ok := deltas[s.UserID]
 			if !ok || d == 0 {
 				continue
 			}
+			// A bot has no balance of its own: its win or loss belongs to
+			// the house. Netting every bot into one bank entry keeps humans
+			// + bank summing to zero while leaving activity stats free of
+			// bot rows.
+			if isBotUser(s.UserID) {
+				bankDelta += d
+				continue
+			}
 			entries = append(entries, storage.PokerDelta{UserID: s.UserID, Name: s.Name, Amount: d})
+		}
+		if bankDelta != 0 {
+			entries = append(entries, storage.PokerDelta{UserID: bankUserID, Name: "Банк", Amount: bankDelta})
 		}
 		// A crash or SIGTERM mid-settlement is the only place in the system
 		// that could otherwise break the zero-sum invariant across players
