@@ -43,7 +43,7 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #blinds{color:#c9a25a;font-weight:700}
 #blinds.rising{color:#ffd166}
-#felt{position:relative;height:40vh;min-height:220px;
+#felt{position:relative;height:42vh;min-height:260px;
  background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
 .seat{position:absolute;width:74px;margin-left:-37px;margin-top:-20px;text-align:center;font-size:11px;
  transition:opacity .2s}
@@ -59,11 +59,12 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .oppHole{margin:2px 0}
 .oppHole .card{width:16px;height:22px;line-height:22px;font-size:9px;margin:0 1px;border-radius:3px}
 .card.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d);border:1px solid #3f6199}
-#centre{position:absolute;top:44%;left:0;right:0;text-align:center}
+#centre{position:absolute;top:30%;left:0;right:0;text-align:center}
 .card{display:inline-block;background:#fff;border-radius:4px;width:26px;height:36px;line-height:36px;
  text-align:center;font-size:14px;font-weight:700;margin:0 2px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .card.red{color:#d62828}
-#pot{color:#ffd166;font-weight:700;margin-top:8px}
+#pot{display:inline-block;color:#ffd166;font-weight:700;margin-top:10px;
+ background:rgba(4,20,12,.55);border-radius:12px;padding:2px 12px}
 #mine{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0d1220}
 #me{font-weight:700;color:#fff}
 #stack{color:#7ddba5;font-size:12px;margin-left:6px}
@@ -400,7 +401,11 @@ function render(v){
 
   const felt=document.getElementById("felt");
   felt.querySelectorAll(".seat").forEach(e=>e.remove());
-  const n=seats.length,cx=50,cy=40,rx=38,ry=30;
+  // cy/ry are tuned against #centre's top: the viewer's seat sits at
+  // cy+ry, and the board+pot block ends around top+61px. They collided
+  // when the felt shrank to make room for the chat log, hiding the pot
+  // behind the bottom seat.
+  const n=seats.length,cx=50,cy=44,rx=38,ry=32;
   const left=Math.max(0,v.deadline-Math.floor(Date.now()/1000));
   // Seats are placed RELATIVE to the viewer, who always sits at the bottom
   // of the oval (+PI/2) with everyone else running clockwise from there —
