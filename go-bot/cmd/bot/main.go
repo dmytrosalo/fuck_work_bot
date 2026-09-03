@@ -338,6 +338,19 @@ func main() {
 		}
 	}
 
+	// One-shot, keyed on a meta flag like every gift above: the process
+	// restarts on each deploy, so an unguarded UpdateBalance would pay out
+	// again on every boot.
+	sep3gift := "gift_danya_sep3_10000"
+	if db.GetMeta(sep3gift) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 10000)
+			db.LogTransaction(danyaID, "Danya", "gift", 10000)
+			db.SetMeta(sep3gift, "done")
+			log.Println("Gifted 10000 богдудіків to Danya")
+		}
+	}
+
 	syklivKey := "gift_danya_sykliv_ultra"
 	if db.GetMeta(syklivKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {

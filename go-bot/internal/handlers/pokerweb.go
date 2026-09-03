@@ -70,15 +70,51 @@ button.pri{background:#e8a33d;color:#2b1d05}
 button.dng{background:#3a2029;color:#e08a9a}
 button:disabled{opacity:.35}
 #msg{text-align:center;padding:8px;color:#9fb0c9;font-size:12px;min-height:18px}
+/* Raise controls. window.prompt() is unavailable inside Telegram's webview —
+   it returns null without ever showing a dialog — so the raise amount has to
+   be chosen with real in-page controls. */
+#raisebox{display:none;padding:10px;background:#121927;border-top:1px solid #1d2740}
+#raisebox.on{display:block}
+#raiseval{text-align:center;color:#ffd166;font-weight:700;font-size:15px;margin-bottom:8px}
+#raiserange{width:100%;accent-color:#e8a33d;margin:0 0 10px}
+.rrow{display:flex;gap:6px;margin-bottom:6px}
+.rrow button{padding:9px 0;font-size:12px}
+/* Win banner: one shot per hand, purely decorative and pointer-transparent so
+   it can never swallow a tap meant for the table underneath. */
+#win{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+ pointer-events:none;opacity:0}
+#win.go{animation:winpop 2s ease-out}
+#win b{background:rgba(4,10,6,.62);color:#ffd166;font-size:32px;font-weight:800;
+ padding:10px 22px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+@keyframes winpop{
+ 0%{opacity:0;transform:scale(.55)}
+ 18%{opacity:1;transform:scale(1.14)}
+ 32%{transform:scale(1)}
+ 78%{opacity:1;transform:scale(1)}
+ 100%{opacity:0;transform:scale(1.02)}}
 </style></head><body>
 <div id="bar"><span>♠ Покер</span><span id="stage"></span></div>
-<div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div></div>
+<div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="acts">
   <button id="btn-fold" class="dng" disabled>Пас</button>
   <button id="btn-check" disabled>Чек</button>
   <button id="btn-call" disabled>Колл</button>
   <button id="btn-raise" class="pri" disabled>Рейз</button>
+</div>
+<div id="raisebox">
+  <div id="raiseval"></div>
+  <input id="raiserange" type="range" min="0" max="100" step="10" value="0">
+  <div class="rrow">
+    <button data-preset="min">Мін</button>
+    <button data-preset="half">½ банку</button>
+    <button data-preset="pot">Банк</button>
+    <button data-preset="all">Ва-банк</button>
+  </div>
+  <div class="rrow">
+    <button id="raise-cancel">Скасувати</button>
+    <button id="raise-ok" class="pri">Підтвердити</button>
+  </div>
 </div>
 <div id="msg"></div>
 <script>
@@ -136,6 +172,18 @@ let highestSeq=-1;
 // (stage transitions into "preflop") starts.
 let lastPot=0;
 let lastStage=null;
+// Latch so the win banner plays once per hand — see render().
+let winShown=false;
+
+// Replays the CSS animation from the start: removing the class alone is not
+// enough, the reflow between remove and add is what restarts it.
+function showWin(n){
+  const el=document.getElementById("win");
+  el.firstElementChild.textContent="+"+n+" 🪙";
+  el.classList.remove("go");
+  void el.offsetWidth;
+  el.classList.add("go");
+}
 
 // Recomputes the action row (call amount, enabled/disabled) from the last
 // known state. Called from render() on every fresh snapshot, and also from
@@ -155,6 +203,10 @@ function applyButtons(){
   document.getElementById("btn-check").disabled=!myTurn||toCall>0;
   document.getElementById("btn-call").disabled=!myTurn||toCall<=0;
   document.getElementById("btn-raise").disabled=!myTurn;
+  // Never leave the sizing panel open past our own turn: the bounds it was
+  // built from are stale the moment the street or the high bet moves, and
+  // confirming from a stale panel just earns an ErrRaiseTooLow.
+  if(!myTurn)closeRaise();
 }
 
 function render(v){
@@ -183,10 +235,16 @@ function render(v){
 
   const felt=document.getElementById("felt");
   felt.querySelectorAll(".seat").forEach(e=>e.remove());
-  const n=seats.length,cx=50,cy=42,rx=38,ry=30;
+  const n=seats.length,cx=50,cy=40,rx=38,ry=30;
   const left=Math.max(0,v.deadline-Math.floor(Date.now()/1000));
+  // Seats are placed RELATIVE to the viewer, who always sits at the bottom
+  // of the oval (+PI/2) with everyone else running clockwise from there —
+  // the orientation every poker client uses. Seat order round the table is
+  // preserved because only the starting offset changes. A spectator with no
+  // seat (you_seat < 0) falls back to seat 0 at the bottom.
+  const meIdx=v.you_seat>=0?v.you_seat:0;
   seats.forEach((s,i)=>{
-    const ang=(-Math.PI/2)+(2*Math.PI*i/n);
+    const ang=(Math.PI/2)+(2*Math.PI*((i-meIdx+n)%n)/n);
     const isActive=live&&s.to_act;
     const d=document.createElement("div");
     d.className="seat"+(s.folded?" folded":"")+(isActive?" act":"");
@@ -239,6 +297,15 @@ function render(v){
   });
 
   const me=v.you_seat>=0?seats[v.you_seat]:null;
+  // Showdown can render more than once (the action response and a broadcast
+  // both carry it, and later bookkeeping bumps seq again), so the banner is
+  // latched and only rearmed once the next hand leaves showdown.
+  if(v.stage!=="showdown")winShown=false;
+  else if(!winShown){
+    winShown=true;
+    const won=me?(me.won||0):0;
+    if(won>0)showWin(won);
+  }
   document.getElementById("me").textContent=me?clip(me.name):"";
   document.getElementById("stack").textContent=me?me.stack:"";
   document.getElementById("hole").innerHTML=me&&me.hole?me.hole.map(card).join(""):"";
@@ -281,15 +348,74 @@ async function act(a,amount){
 document.getElementById("btn-fold").onclick=()=>act("fold");
 document.getElementById("btn-check").onclick=()=>act("check");
 document.getElementById("btn-call").onclick=()=>act("call");
-document.getElementById("btn-raise").onclick=()=>{
-  const seats=state?(state.seats||[]):[];
-  const highBet=Math.max(0,...seats.map(s=>s.bet||0));
-  const input=window.prompt("Сума рейзу (всього на цій вулиці):",String(highBet+100));
-  if(input===null)return;
-  const amt=parseInt(input,10);
-  if(!Number.isFinite(amt))return;
-  act("raise",amt);
+// Raise sizing. The server's "amount" is the TOTAL this seat should have
+// committed on the current street, not the increment, so every number here
+// is a street total.
+//
+// window.prompt() used to collect it. Telegram's webview does not implement
+// prompt — it returns null immediately without ever showing a dialog — so
+// the old handler silently did nothing on every tap. These controls replace
+// it; nothing else about the raise request changed.
+const raiseBox=document.getElementById("raisebox");
+const raiseRange=document.getElementById("raiserange");
+const raiseVal=document.getElementById("raiseval");
+
+// min_raise and high_bet come from the server: min_raise is the smallest
+// legal increment over high_bet and widens after a raise, so deriving it
+// client-side as "+BigBlind" produced amounts the engine rejected with
+// ErrRaiseTooLow.
+function raiseBounds(){
+  if(!state)return null;
+  const seats=state.seats||[];
+  const me=state.you_seat>=0?seats[state.you_seat]:null;
+  if(!me)return null;
+  const high=state.high_bet||0;
+  const cap=me.stack+me.bet;              // going all-in, as a street total
+  // A stack too short for a full raise can still shove: the engine allows
+  // amount == stack+bet even when that is under high+min_raise.
+  const min=Math.min(high+(state.min_raise||0),cap);
+  return {min:min,max:cap,pot:state.pot||0,high:high};
+}
+function setRaise(v){
+  const b=raiseBounds();
+  if(!b)return;
+  v=Math.round(Math.max(b.min,Math.min(b.max,v)));
+  raiseRange.value=String(v);
+  raiseVal.textContent="Рейз до "+v+" 🪙"+(v>=b.max?" (ва-банк)":"");
+}
+function openRaise(){
+  const b=raiseBounds();
+  if(!b)return;
+  // A seat with nothing behind cannot raise at all; max would equal the
+  // current bet and the slider would have no range.
+  if(b.max<=b.high){setError("Нема на що рейзити");return}
+  raiseRange.min=String(b.min);
+  raiseRange.max=String(b.max);
+  raiseRange.step="10";
+  setRaise(b.min);
+  raiseBox.classList.add("on");
+}
+function closeRaise(){raiseBox.classList.remove("on")}
+
+raiseRange.oninput=()=>setRaise(parseInt(raiseRange.value,10)||0);
+document.querySelectorAll("#raisebox [data-preset]").forEach(btn=>{
+  btn.onclick=()=>{
+    const b=raiseBounds();
+    if(!b)return;
+    const p=btn.getAttribute("data-preset");
+    if(p==="min")setRaise(b.min);
+    else if(p==="half")setRaise(b.high+Math.round(b.pot/2));
+    else if(p==="pot")setRaise(b.high+b.pot);
+    else setRaise(b.max);
+  };
+});
+document.getElementById("raise-cancel").onclick=closeRaise;
+document.getElementById("raise-ok").onclick=()=>{
+  const amt=parseInt(raiseRange.value,10);
+  closeRaise();
+  if(Number.isFinite(amt))act("raise",amt);
 };
+document.getElementById("btn-raise").onclick=openRaise;
 
 (async()=>{
   if(!tg){setMsg("Відкрий через кнопку в чаті Telegram");return}
