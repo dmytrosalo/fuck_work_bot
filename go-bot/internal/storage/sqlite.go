@@ -532,16 +532,35 @@ func (d *DB) RemoveCardsByRarity(userID string, rarity, count int) int {
 	if err != nil {
 		return 0
 	}
-	defer rows.Close()
 
-	removed := 0
-	for rows.Next() && removed < count {
+	// Collect the matching rows first and close the result set before doing
+	// any writes. With db.SetMaxOpenConns(1), the open *sql.Rows here pins
+	// the single connection in the pool; issuing d.db.Exec while it's still
+	// open would deadlock waiting for a connection that can never be freed.
+	type pair struct{ cardID, cnt int }
+	var toProcess []pair
+	for rows.Next() {
 		var cardID, cnt int
 		rows.Scan(&cardID, &cnt)
-		if cnt <= 1 {
-			d.db.Exec(`DELETE FROM collection WHERE user_id = ? AND card_id = ?`, userID, cardID)
+		toProcess = append(toProcess, pair{cardID, cnt})
+	}
+	// Ignoring rows.Err() here matches this file's existing convention of not
+	// surfacing per-statement errors (see the ~43 discarded Exec errors
+	// elsewhere in this file); if the scan loop above stopped early due to
+	// an error, toProcess simply holds fewer rows and we act on what we got
+	// rather than pretending the full `count` was scanned successfully.
+	_ = rows.Err()
+	rows.Close()
+
+	removed := 0
+	for _, p := range toProcess {
+		if removed >= count {
+			break
+		}
+		if p.cnt <= 1 {
+			d.db.Exec(`DELETE FROM collection WHERE user_id = ? AND card_id = ?`, userID, p.cardID)
 		} else {
-			d.db.Exec(`UPDATE collection SET count = count - 1 WHERE user_id = ? AND card_id = ?`, userID, cardID)
+			d.db.Exec(`UPDATE collection SET count = count - 1 WHERE user_id = ? AND card_id = ?`, userID, p.cardID)
 		}
 		removed++
 	}

@@ -214,3 +214,66 @@ func TestDailyStats(t *testing.T) {
 		t.Errorf("expected 0 users after reset, got %d", len(stats))
 	}
 }
+
+// --- RemoveCardsByRarity (query-then-write deadlock fix) -------------------
+//
+// RemoveCardsByRarity used to run its DELETE/UPDATE writes while the
+// selecting *sql.Rows was still open. With db.SetMaxOpenConns(1) (sqlite.go
+// ~L41) that pins the pool's only connection on the open rows, so the
+// in-loop d.db.Exec calls block forever waiting for a connection that can
+// never be freed — a process-wide deadlock. This test drives the function
+// with enough matching rows that the loop iterates more than once, so it
+// would hang against the pre-fix code instead of completing.
+func TestRemoveCardsByRarityDoesNotDeadlockAndRemovesCorrectCount(t *testing.T) {
+	db := newTestDB(t)
+
+	const userID = "u1"
+	const rarity = 5
+
+	// Three cards of the target rarity, plus a decoy of a different rarity
+	// that must never be touched.
+	db.AddCard(1, "Card One", rarity, "cat", "🃏", "desc", 1, 1, "", 0)
+	db.AddCard(2, "Card Two", rarity, "cat", "🃏", "desc", 1, 1, "", 0)
+	db.AddCard(3, "Card Three", rarity, "cat", "🃏", "desc", 1, 1, "", 0)
+	db.AddCard(4, "Decoy", rarity+1, "cat", "🃏", "desc", 1, 1, "", 0)
+
+	db.AddToCollection(userID, 1) // count = 1 -> should be deleted entirely
+	db.AddToCollection(userID, 2)
+	db.AddToCollection(userID, 2) // count = 2 -> should be decremented to 1
+	db.AddToCollection(userID, 3)
+	db.AddToCollection(userID, 3)
+	db.AddToCollection(userID, 3) // count = 3 -> should be decremented to 2
+	db.AddToCollection(userID, 4) // decoy, different rarity
+
+	removed := db.RemoveCardsByRarity(userID, rarity, 3)
+	if removed != 3 {
+		t.Fatalf("expected 3 cards removed, got %d", removed)
+	}
+
+	counts := map[int]int{}
+	rows, err := db.db.Query(`SELECT card_id, count FROM collection WHERE user_id = ?`, userID)
+	if err != nil {
+		t.Fatalf("query collection: %v", err)
+	}
+	for rows.Next() {
+		var cardID, cnt int
+		if err := rows.Scan(&cardID, &cnt); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		counts[cardID] = cnt
+	}
+	rows.Close()
+
+	if _, ok := counts[1]; ok {
+		t.Errorf("card 1 should have been fully removed, still present: %+v", counts)
+	}
+	if counts[2] != 1 {
+		t.Errorf("expected card 2 count=1, got %d", counts[2])
+	}
+	if counts[3] != 2 {
+		t.Errorf("expected card 3 count=2, got %d", counts[3])
+	}
+	if counts[4] != 1 {
+		t.Errorf("decoy card 4 (different rarity) should be untouched, got count=%d", counts[4])
+	}
+}
