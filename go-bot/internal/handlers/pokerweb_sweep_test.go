@@ -343,3 +343,107 @@ func TestSweepOnceDoesNotReclaimActiveTable(t *testing.T) {
 		t.Fatal("freshly created table was reclaimed despite being active")
 	}
 }
+
+// --- regression guard: sweeper-driven events must NOT refresh idleness ----
+
+// TestSweepOnceReclaimsTableWhoseOnlyEventsAreForcedTimeouts is the
+// regression guard for the corrected touch policy: only PLAYER-INITIATED
+// events (a real join, a real action) may refresh a table's activity.
+// Sweeper-fired forced timeouts and sweeper-started hands must NOT — they
+// are evidence of absence, not activity. Without this, two players who go
+// permanently AFK while still funded keep the sweeper auto-folding them
+// forever, which (with the old, wrong touch-on-sweeper-event behaviour)
+// would refresh lastActivity every pass, so the table would never go idle,
+// would never be reclaimed, and both players' seatedAt claims would be
+// stuck forever — exactly the failure item 3 exists to prevent.
+func TestSweepOnceReclaimsTableWhoseOnlyEventsAreForcedTimeouts(t *testing.T) {
+	db := setupTestDB(t)
+	db.UpdateBalance("111", "Alice", 5000-100)
+	db.UpdateBalance("222", "Bob", 5000-100)
+
+	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(1)
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	join := func(uid int64, name string) {
+		t.Helper()
+		initData := userInitData(t, "test-token", uid, name, "")
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req.Header.Set("X-Telegram-Init-Data", initData)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("join uid=%d status = %d, want 200, body=%s", uid, rec.Code, rec.Body.String())
+		}
+	}
+	join(111, "Alice")
+	join(222, "Bob") // second join auto-starts the hand — this is the LAST real activity this table ever sees
+
+	forceExpiredTurn := func() {
+		tbl.Lock()
+		if tbl.Stage != poker.StageWaiting && tbl.Stage != poker.StageShowdown {
+			tbl.Deadline = time.Now().Add(-time.Second)
+		}
+		tbl.Unlock()
+	}
+
+	// Several sweep passes, each forcing an expired turn (and, once a hand
+	// ends, auto-starting the next one) — simulating the sweeper being the
+	// ONLY thing that ever touches this table again, i.e. both players are
+	// permanently AFK but still funded. This must not, by itself, prevent
+	// the table from eventually going idle.
+	for i := 0; i < 3; i++ {
+		forceExpiredTurn()
+		h.sweepOnce()
+	}
+	if h.table(tbl.ID) == nil {
+		t.Fatal("table reclaimed too early — only milliseconds of wall-clock time have actually elapsed")
+	}
+
+	// Simulate real time having passed with no further real activity: push
+	// lastActivity itself into the past, beyond idleTableTimeout. A real
+	// deployment reaches this state 30 minutes after the second join, with
+	// the sweeper ticking every 5s across all of it exactly like the loop
+	// above.
+	h.mu.Lock()
+	h.lastActivity[tbl.ID] = time.Now().Add(-(idleTableTimeout + time.Minute))
+	h.mu.Unlock()
+
+	forceExpiredTurn()
+	h.sweepOnce() // this pass both forces a timeout AND finds the table idle
+
+	if h.table(tbl.ID) != nil {
+		t.Fatal("table whose only events were sweeper-fired timeouts was never reclaimed — a sweeper-fired timeout must not refresh activity")
+	}
+
+	h.mu.Lock()
+	_, aliceStillClaimed := h.seatedAt["111"]
+	_, bobStillClaimed := h.seatedAt["222"]
+	h.mu.Unlock()
+	if aliceStillClaimed {
+		t.Error("Alice's seatedAt claim not released after reclaiming an AFK-only-touched table")
+	}
+	if bobStillClaimed {
+		t.Error("Bob's seatedAt claim not released after reclaiming an AFK-only-touched table")
+	}
+
+	// End-to-end: both formerly-AFK players must now be able to join a
+	// different table, proving the claim release is real, not just an
+	// empty map.
+	tbl2 := h.Create(2)
+	for _, u := range []struct {
+		id   int64
+		name string
+	}{{111, "Alice"}, {222, "Bob"}} {
+		initData := userInitData(t, "test-token", u.id, u.name, "")
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", nil)
+		req.Header.Set("X-Telegram-Init-Data", initData)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s join to a new table after reclaim status = %d, want 200, body=%s", u.name, rec.Code, rec.Body.String())
+		}
+	}
+}

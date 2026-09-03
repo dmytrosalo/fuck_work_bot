@@ -358,12 +358,17 @@ type PokerHub struct {
 	// h.mu, same as subs/tables.
 	seatedAt map[string]string
 
-	// lastActivity records, per table id, the last time a join, an action,
-	// or a sweeper-driven event (a forced timeout or an auto-started hand)
-	// touched that table. It lives on the hub rather than on poker.Table so
-	// idle bookkeeping never has to touch the engine. A table idle beyond
-	// idleTableTimeout is reclaimed by the sweeper — see sweepOnce. Guarded
-	// by h.mu, same as tables/subs/seatedAt.
+	// lastActivity records, per table id, the last time a join or an action
+	// touched that table — deliberately PLAYER-INITIATED events only. A
+	// sweeper-fired forced timeout or a sweeper-started hand must NOT
+	// refresh this: those are evidence of absence (nobody is there to act),
+	// not activity, and touching it there would mean two permanently AFK
+	// but still-funded players keep their table (and their seatedAt claims)
+	// alive forever, exactly what item 3's reclamation exists to prevent.
+	// It lives on the hub rather than on poker.Table so idle bookkeeping
+	// never has to touch the engine. A table idle beyond idleTableTimeout
+	// is reclaimed by the sweeper — see sweepOnce. Guarded by h.mu, same as
+	// tables/subs/seatedAt.
 	lastActivity map[string]time.Time
 }
 
@@ -755,13 +760,21 @@ func writeJSON(w http.ResponseWriter, v any) {
 // turn clock, a hand ready to auto-start, or idleness.
 const sweepInterval = 5 * time.Second
 
-// idleTableTimeout is how long a table may go without a join, an action, or
-// a sweeper-driven event (a forced timeout, an auto-started hand) before the
-// sweeper reclaims it: removed from h.tables, every seatedAt claim pointing
-// at it released, and its subscriber list dropped so any still-connected SSE
-// goroutines exit. Reclaimed regardless of whether it still has seats — an
-// abandoned table with seated players is exactly the case that would
-// otherwise strand their hub-wide seat claim until the process restarts.
+// idleTableTimeout is how long a table may go without a PLAYER-INITIATED
+// join or action (sweeper-fired timeouts and sweeper-started hands do not
+// count — see lastActivity) before the sweeper reclaims it: removed from
+// h.tables, every seatedAt claim pointing at it released, and its
+// subscriber list dropped so any still-connected SSE goroutines exit.
+// Reclaimed regardless of whether it still has seats — an abandoned table
+// with seated players is exactly the case that would otherwise strand their
+// hub-wide seat claim until the process restarts.
+//
+// 30 minutes comfortably exceeds a realistic hand length even with every
+// street forced to its full TurnTimeout (90s): a hand has at most 4 streets
+// (preflop/flop/turn/river) each with at most MaxSeats-1 live actors, so the
+// pathological worst case is on the order of a few minutes, not 30 — a
+// table where players are merely thinking between actions is never at risk
+// of being reclaimed mid-hand.
 const idleTableTimeout = 30 * time.Minute
 
 // touch records activity on tableID now. Guarded by h.mu; safe to call
@@ -834,7 +847,14 @@ func (h *PokerHub) sweepOnce() {
 				h.settle(tbl)
 			}
 			h.broadcast(tbl)
-			h.touch(id)
+			// Deliberately NOT h.touch(id) here: a sweeper-fired forced
+			// timeout is evidence of absence, not activity. Refreshing
+			// lastActivity on it would mean two permanently-AFK-but-funded
+			// players never go idle (the sweeper would keep auto-folding
+			// them forever, forever renewing their claim), which strands
+			// their seatedAt claims exactly as item 3 was written to fix.
+			// Only a real join or a real player action (handleJoin,
+			// handleAction) may refresh idleness.
 		case prevStage == poker.StageShowdown && tbl.SeatedCount() >= 2:
 			// The table was already sitting in showdown at the START of
 			// this pass (not a fresh transition this tick, which gives
@@ -842,9 +862,13 @@ func (h *PokerHub) sweepOnce() {
 			// the next hand deals) and still has 2+ players with chips —
 			// deal the next hand rather than leaving the table stuck after
 			// exactly one hand.
+			//
+			// Also deliberately NOT h.touch(id): an auto-started hand with
+			// nobody acting is still just the sweeper auto-folding forever,
+			// same reasoning as above — it must not keep an abandoned table
+			// alive.
 			if err := tbl.StartHand(); err == nil {
 				h.broadcast(tbl)
-				h.touch(id)
 			}
 		}
 		idle := h.activitySince(id) > idleTableTimeout
