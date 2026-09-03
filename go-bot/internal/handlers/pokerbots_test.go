@@ -6,6 +6,80 @@ import (
 	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
 )
 
+func countBots(tbl *poker.Table) int {
+	n := 0
+	for _, s := range tbl.Seats {
+		if isBotUser(s.UserID) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestEnsureBotsSeatingTable(t *testing.T) {
+	cases := []struct{ humans, wantBots int }{
+		{1, 2}, {2, 2}, {3, 2}, {4, 2}, {5, 1}, {6, 0},
+	}
+	for _, tc := range cases {
+		h := NewPokerHub(nil, nil, "test-token")
+		tbl := h.Create(1)
+		tbl.Lock()
+		for i := 0; i < tc.humans; i++ {
+			if err := tbl.Sit("u"+string(rune('a'+i)), "H", 5000); err != nil {
+				t.Fatalf("%d humans: seat %d: %v", tc.humans, i, err)
+			}
+		}
+		h.ensureBots(tbl)
+		got := countBots(tbl)
+		tbl.Unlock()
+		if got != tc.wantBots {
+			t.Errorf("%d humans: got %d bots, want %d", tc.humans, got, tc.wantBots)
+		}
+		if total := len(tbl.Seats); total > poker.MaxSeats {
+			t.Errorf("%d humans: table has %d seats, over the %d cap", tc.humans, total, poker.MaxSeats)
+		}
+	}
+}
+
+func TestEnsureBotsMatchesTopHumanStack(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 4000)
+	_ = tbl.Sit("u2", "Data", 9000)
+	h.ensureBots(tbl)
+	tbl.Unlock()
+
+	for _, s := range tbl.Seats {
+		if isBotUser(s.UserID) && s.Stack != 9000 {
+			t.Errorf("bot %s stack = %d, want 9000 (the top human stack)", s.UserID, s.Stack)
+		}
+	}
+}
+
+func TestEnsureBotsRebuysBustedBot(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 7000)
+	h.ensureBots(tbl)
+	// Bust one bot.
+	for _, s := range tbl.Seats {
+		if isBotUser(s.UserID) {
+			s.Stack = 0
+			break
+		}
+	}
+	h.ensureBots(tbl)
+	tbl.Unlock()
+
+	for _, s := range tbl.Seats {
+		if isBotUser(s.UserID) && s.Stack != 7000 {
+			t.Errorf("bot %s stack = %d, want 7000 after rebuy", s.UserID, s.Stack)
+		}
+	}
+}
+
 func TestSettleRoutesBotDeltasToBank(t *testing.T) {
 	db := setupTestDB(t) // the handlers-package helper, pokerweb_test.go:55
 	h := NewPokerHub(db, nil, "test-token")
