@@ -11,6 +11,8 @@ func TestViewHidesOtherPlayersHoleCards(t *testing.T) {
 	_ = tbl.Sit("u1", "Danya", 5000)
 	_ = tbl.Sit("u2", "Data", 5000)
 	_ = tbl.StartHand()
+	// Set deterministic cards to avoid flaky substring checks
+	tbl.Seats[0].Hole = cards("2c", "3d")
 	tbl.Seats[1].Hole = cards("Ah", "Ks")
 
 	v := tbl.ViewFor("u1")
