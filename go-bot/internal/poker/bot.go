@@ -118,10 +118,6 @@ const raiseThreshold = 0.75
 // for ActRaise, where it is the total this seat should have committed on the
 // current street. The engine validates every action regardless, so a bad
 // return here can only produce a rejected action, never an illegal one.
-// Decide chooses an action for a bot. The returned amount is meaningful only
-// for ActRaise, where it is the total this seat should have committed on the
-// current street. The engine validates every action regardless, so a bad
-// return here can only produce a rejected action, never an illegal one.
 func Decide(in BotInput, rng *rand.Rand) (Action, int) {
 	strength := handStrength(in.Hole, in.Board)
 

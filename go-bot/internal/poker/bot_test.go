@@ -110,3 +110,95 @@ func TestDecideShortStackAllIn(t *testing.T) {
 		t.Errorf("got amount %d, want 50 (full stack)", amount)
 	}
 }
+
+func TestBotSelfPlayIsRoughlyBreakEven(t *testing.T) {
+	const (
+		hands = 2000
+		// 50 big blinds: inside the production range (MinBuyIn=1000..MaxBuyIn=
+		// 10000, i.e. 10..100 BB) a bot's stack is actually seated with. A
+		// 1000-BB stack (100000) is never produced by this game and, combined
+		// with Decide's pot-proportional all-in sizing, turns rare "trips vs.
+		// trips" collisions into single hands worth hundreds of BB — variance
+		// so large that 2000 hands cannot average it out at any reasonable
+		// raiseThreshold. At a realistic depth the same collisions are capped
+		// at a realistic size, and the sample converges. Seats reload to this
+		// value after every hand regardless, so a bust never ends the run early.
+		startingS = 5000
+	)
+	rng := rand.New(rand.NewSource(42))
+
+	tbl := NewTable("sim", 1)
+	if err := tbl.SitBot("bot:1", "A", startingS); err != nil {
+		t.Fatalf("SitBot bot:1: %v", err)
+	}
+	if err := tbl.SitBot("bot:2", "B", startingS); err != nil {
+		t.Fatalf("SitBot bot:2: %v", err)
+	}
+	if err := tbl.SitBot("bot:3", "C", startingS); err != nil {
+		t.Fatalf("SitBot bot:3: %v", err)
+	}
+
+	net := map[string]int{}
+	for i := 0; i < hands; i++ {
+		if err := tbl.StartHand(); err != nil {
+			t.Fatalf("hand %d: %v", i, err)
+		}
+		for guard := 0; tbl.Stage != StageShowdown; guard++ {
+			if guard > 500 {
+				t.Fatalf("hand %d did not terminate", i)
+			}
+			s := tbl.Seats[tbl.ToAct]
+			high := 0
+			for _, o := range tbl.Seats {
+				if o.Bet > high {
+					high = o.Bet
+				}
+			}
+			pot := 0
+			for _, o := range tbl.Seats {
+				pot += o.Committed
+			}
+			action, amount := Decide(BotInput{Hole: s.Hole, Board: tbl.Board,
+				ToCall: high - s.Bet, Pot: pot, Stack: s.Stack,
+				MinRaise: tbl.MinRaise, Bet: s.Bet}, rng)
+			if err := tbl.Act(s.UserID, action, amount); err != nil {
+				fallback := ActCheck
+				if high > s.Bet {
+					fallback = ActFold
+				}
+				if err := tbl.Act(s.UserID, fallback, 0); err != nil {
+					t.Fatalf("hand %d: fallback rejected: %v", i, err)
+				}
+			}
+		}
+		for id, d := range tbl.Showdown() {
+			net[id] += d
+		}
+		// Reload so a bust cannot end the simulation early.
+		for _, s := range tbl.Seats {
+			s.Stack = startingS
+		}
+	}
+
+	// Every hand is zero-sum, so the totals must cancel exactly.
+	sum := 0
+	for _, d := range net {
+		sum += d
+	}
+	if sum != 0 {
+		t.Fatalf("simulated deltas sum to %d, want 0 — chips created or destroyed", sum)
+	}
+
+	// No bot should be systematically printing or bleeding money. The band is
+	// per-hand average, so it scales with the sample rather than being a
+	// magic absolute number.
+	const maxDriftPerHand = 60 // chips; big blind is 100
+	for id, d := range net {
+		avg := float64(d) / hands
+		t.Logf("%s: total delta=%d, avg/hand=%.2f", id, d, avg)
+		if avg > maxDriftPerHand || avg < -maxDriftPerHand {
+			t.Errorf("%s drifts %.1f chips/hand (band ±%d) — bots are not break-even",
+				id, avg, maxDriftPerHand)
+		}
+	}
+}
