@@ -110,6 +110,10 @@ type BotInput struct {
 // value, which the self-play simulation guards.
 const bluffFrequency = 0.10
 
+// raiseThreshold is the minimum hand strength to raise facing a bet.
+// Approximately trips-or-better on the 0..1 normalization (1 - rank/7462).
+const raiseThreshold = 0.75
+
 // Decide chooses an action for a bot. The returned amount is meaningful only
 // for ActRaise, where it is the total this seat should have committed on the
 // current street. The engine validates every action regardless, so a bad
@@ -129,7 +133,7 @@ func Decide(in BotInput, rng *rand.Rand) (Action, int) {
 	potOdds := float64(in.ToCall) / float64(in.Pot+in.ToCall)
 
 	switch {
-	case strength > 0.80:
+	case strength > raiseThreshold:
 		return raiseOrAllIn(in, strength, rng)
 	case strength > potOdds+0.10:
 		return ActCall, 0
