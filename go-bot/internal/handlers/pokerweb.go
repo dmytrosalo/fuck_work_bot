@@ -748,15 +748,21 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 }
 
 // evictOneBot removes one bot seat to make room for an arriving human at a
-// full table. It skips the seat currently at tbl.ToAct — a stale index left
-// over from the just-finished hand's last action, still a valid Seats index
-// at StageShowdown — so removal can never leave ToAct pointing past the end
-// of, or at the wrong entry in, the shortened slice. The caller MUST hold
-// the table lock and must only call this between hands (see handleJoin).
-// Reports whether a bot was removed.
+// full table. It repairs both tbl.Button and tbl.ToAct so they stay valid
+// indices into the shortened Seats slice: if the evicted seat is the one
+// tbl.ToAct points at — a stale index left over from the just-finished
+// hand's last action, still a valid Seats index at StageShowdown — ToAct is
+// reset to -1 rather than skipping that seat, since at StageWaiting and
+// StageShowdown (the only stages this ever runs in — see handleJoin) ToAct
+// is never read for money; the money-relevant path is Act/ForceTimeout
+// during live betting, which this function never touches. Leaving a lone
+// evictable bot un-evicted just because it happened to sit at a stale
+// ToAct would otherwise reject a sixth human with "стіл заповнений" even
+// though a seat is free to take. The caller MUST hold the table lock and
+// must only call this between hands. Reports whether a bot was removed.
 func (h *PokerHub) evictOneBot(tbl *poker.Table) bool {
 	for i, s := range tbl.Seats {
-		if !isBotUser(s.UserID) || i == tbl.ToAct {
+		if !isBotUser(s.UserID) {
 			continue
 		}
 		tbl.Seats = append(tbl.Seats[:i], tbl.Seats[i+1:]...)
@@ -766,7 +772,10 @@ func (h *PokerHub) evictOneBot(tbl *poker.Table) bool {
 		if tbl.Button < 0 {
 			tbl.Button = len(tbl.Seats) - 1
 		}
-		if tbl.ToAct > i {
+		switch {
+		case tbl.ToAct == i:
+			tbl.ToAct = -1
+		case tbl.ToAct > i:
 			tbl.ToAct--
 		}
 		tbl.Seq++
@@ -1150,7 +1159,17 @@ func (h *PokerHub) sweepOnce() {
 			// from ever running to rebuy/reseat them — wedging the table in
 			// exactly the situation bots exist to prevent.
 			h.ensureBots(tbl)
-			if tbl.SeatedCount() >= 2 {
+			// hasActiveHuman guards against a bot-only hand: a solo human
+			// who busts to 0 still occupies a seat (ensureBots' humans
+			// count includes them, so it makes no changes), but the two
+			// bots they were playing against still hold chips, so
+			// SeatedCount() alone stays >= 2 forever. That's money-safe —
+			// the busted human is excluded from settlement and the bots'
+			// deltas cancel — but it deals a pointless bot-only hand every
+			// sweep interval until the 30-minute idle reclaim. Requiring at
+			// least one non-bot seat with chips closes that off without
+			// touching the (separately reviewed) money path.
+			if tbl.SeatedCount() >= 2 && hasActiveHuman(tbl) {
 				// Also deliberately NOT h.touch(id): an auto-started hand
 				// with nobody acting is still just the sweeper auto-folding
 				// forever, same reasoning as the ForceTimeout case above —

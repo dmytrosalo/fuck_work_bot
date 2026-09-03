@@ -500,6 +500,38 @@ func TestJoinReconnectAtFullBotTableDoesNotEvictABot(t *testing.T) {
 	}
 }
 
+// TestEvictOneBotEvictsSeatAtStaleToAct proves evictOneBot can remove a bot
+// even when that bot sits at the stale tbl.ToAct index left over from the
+// just-finished hand, and that it resets ToAct to -1 rather than leaving it
+// pointing at a seat that no longer exists (or, worse, at the wrong seat
+// once the slice shifts). Before the fix, evictOneBot unconditionally
+// skipped the seat at i == tbl.ToAct, so a lone evictable bot sitting there
+// could never be evicted — silently rejecting a 6th human with "стіл
+// заповнений" even though a seat was free to take. This never risks money:
+// eviction only ever runs at StageWaiting/StageShowdown (see handleJoin),
+// the only stages where ToAct is not read by Act/ForceTimeout.
+func TestEvictOneBotEvictsSeatAtStaleToAct(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 5000)
+	_ = tbl.SitBot("bot:1", "Вася", 5000)
+	botIdx := tbl.SeatIndexOf("bot:1")
+	tbl.ToAct = botIdx // stale index left over from the just-finished hand
+	tbl.Stage = poker.StageShowdown
+
+	if !h.evictOneBot(tbl) {
+		t.Fatal("evictOneBot returned false — the bot at the stale ToAct index was not evicted")
+	}
+	if tbl.SeatIndexOf("bot:1") >= 0 {
+		t.Error("bot:1 is still seated after eviction")
+	}
+	if tbl.ToAct != -1 {
+		t.Errorf("ToAct = %d, want -1 after evicting the seat it pointed at", tbl.ToAct)
+	}
+	tbl.Unlock()
+}
+
 // --- membership check: transient errors and caching (FIX 2) ----------------
 
 // TestAuthReturns503OnTransientMembershipCheckError proves a checker ERROR
@@ -1014,4 +1046,49 @@ func mustParseInt64(t *testing.T, s string) int64 {
 		t.Fatalf("parse int64 from %q: %v", s, err)
 	}
 	return v
+}
+
+// --- sweeper: bot-only tables -----------------------------------------------
+
+// TestSweepDoesNotStartHandWhenOnlyHumanIsBusted is the regression guard for
+// the "bots play each other forever" non-goal: a solo human plus two bots,
+// where the human has busted to 0 chips but still occupies a seat.
+// ensureBots counts them as a human (so it makes no changes — topStack stays
+// 0), but the two bots still hold their chips, so SeatedCount() alone stays
+// >= 2. Before the fix, the sweeper's next-hand branch dealt a bot-only hand
+// every sweep interval until the 30-minute idle reclaim, purely off
+// SeatedCount(). It was always money-safe (the busted human is excluded from
+// settlement and the two bots' deltas cancel) — this test is about the
+// pointless churn, not correctness of the money path.
+func TestSweepDoesNotStartHandWhenOnlyHumanIsBusted(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+
+	tbl.Lock()
+	if err := tbl.Sit("u1", "Danya", 5000); err != nil {
+		t.Fatalf("Sit: %v", err)
+	}
+	h.ensureBots(tbl) // seats bots while the human still has chips
+	if countBots(tbl) == 0 {
+		tbl.Unlock()
+		t.Fatal("setup: ensureBots did not seat any bots")
+	}
+	// Bust the human, as if they just lost their last hand, and simulate
+	// that hand having just settled into showdown.
+	for _, s := range tbl.Seats {
+		if s.UserID == "u1" {
+			s.Stack = 0
+		}
+	}
+	tbl.Stage = poker.StageShowdown
+	tbl.Unlock()
+
+	h.sweepOnce()
+
+	tbl.Lock()
+	stage := tbl.Stage
+	tbl.Unlock()
+	if stage != poker.StageShowdown {
+		t.Errorf("stage = %v after sweepOnce, want it to stay StageShowdown — the sweeper must not start a bot-only hand when the only human is busted", stage)
+	}
 }
