@@ -351,6 +351,21 @@ func main() {
 		}
 	}
 
+	// "Dmytro" is the Telegram first name, which resolveTarget falls through
+	// to because that username is not in usernameToName — so it is also the
+	// name stored on the balances row.
+	sep3dmytro := "gift_dmytro_sep3_10000"
+	if db.GetMeta(sep3dmytro) == "" {
+		if dmytroID, found := db.FindUserByName("Dmytro"); found {
+			db.UpdateBalance(dmytroID, "Dmytro", 10000)
+			db.LogTransaction(dmytroID, "Dmytro", "gift", 10000)
+			db.SetMeta(sep3dmytro, "done")
+			log.Println("Gifted 10000 богдудіків to Dmytro")
+		} else {
+			log.Println("Gift skipped: no balances row named Dmytro")
+		}
+	}
+
 	syklivKey := "gift_danya_sykliv_ultra"
 	if db.GetMeta(syklivKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
