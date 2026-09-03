@@ -37,7 +37,7 @@ func (t *Table) Act(userID string, a Action, amount int) error {
 	if t.Stage == StageWaiting || t.Stage == StageShowdown {
 		return ErrHandOver
 	}
-	if t.ToAct < 0 || t.Seats[t.ToAct].UserID != userID {
+	if t.ToAct < 0 || t.ToAct >= len(t.Seats) || t.Seats[t.ToAct].UserID != userID {
 		return ErrNotYourTurn
 	}
 	s := t.Seats[t.ToAct]
@@ -160,7 +160,7 @@ func (t *Table) ForceTimeout() bool {
 	if t.Stage == StageWaiting || t.Stage == StageShowdown {
 		return false
 	}
-	if t.ToAct < 0 || time.Now().Before(t.Deadline) {
+	if t.ToAct < 0 || t.ToAct >= len(t.Seats) || time.Now().Before(t.Deadline) {
 		return false
 	}
 	s := t.Seats[t.ToAct]

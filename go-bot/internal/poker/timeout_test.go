@@ -39,6 +39,20 @@ func TestForceTimeoutNoopBeforeDeadline(t *testing.T) {
 	}
 }
 
+// TestForceTimeoutNoopWithOutOfRangeToAct proves ForceTimeout treats an
+// out-of-range ToAct as nothing-to-do rather than indexing t.Seats[t.ToAct]
+// and panicking. Same reasoning as TestActRejectsOutOfRangeToAct in
+// betting_test.go: not reachable today, but the guard should hold even if
+// that changes.
+func TestForceTimeoutNoopWithOutOfRangeToAct(t *testing.T) {
+	tbl := headsUp(t)
+	tbl.ToAct = len(tbl.Seats) // one past the end — must not panic
+	tbl.Deadline = time.Now().Add(-time.Second)
+	if tbl.ForceTimeout() {
+		t.Fatal("ForceTimeout must not fire with an out-of-range ToAct")
+	}
+}
+
 // TestForceTimeoutNoopInWaitingStage proves the deadline check is gated on
 // stage: a table that has never started a hand has a zero-value Deadline
 // (already in the past) and ToAct=0 by default, so without the stage guard
