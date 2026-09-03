@@ -42,6 +42,12 @@ type PokerHub struct {
 	bot   *tele.Bot
 	token string
 
+	// isMember checks whether userID is a member of the Telegram chat
+	// chatID. It defaults to a bot-backed check (see defaultIsMember) but
+	// is a field, not a hardcoded call, so tests can stub it instead of
+	// relying on a nil bot to skip the check.
+	isMember func(chatID, userID int64) (bool, error)
+
 	mu     sync.Mutex
 	tables map[string]*poker.Table
 	subs   map[string][]*subscriber
@@ -49,11 +55,36 @@ type PokerHub struct {
 
 func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 	return &PokerHub{
-		db:     db,
-		bot:    bot,
-		token:  token,
-		tables: map[string]*poker.Table{},
-		subs:   map[string][]*subscriber{},
+		db:       db,
+		bot:      bot,
+		token:    token,
+		isMember: defaultIsMember(bot),
+		tables:   map[string]*poker.Table{},
+		subs:     map[string][]*subscriber{},
+	}
+}
+
+// defaultIsMember returns the production chat-membership checker backed by
+// bot. If bot is nil, membership can never be verified, so the checker
+// fails CLOSED: it always reports "not a member" rather than silently
+// granting access, unlike the old behaviour of skipping the check entirely.
+func defaultIsMember(bot *tele.Bot) func(chatID, userID int64) (bool, error) {
+	if bot == nil {
+		return func(chatID, userID int64) (bool, error) {
+			return false, nil
+		}
+	}
+	return func(chatID, userID int64) (bool, error) {
+		m, err := bot.ChatMemberOf(&tele.Chat{ID: chatID}, &tele.User{ID: userID})
+		if err != nil {
+			return false, err
+		}
+		switch m.Role {
+		case tele.Creator, tele.Administrator, tele.Member, tele.Restricted:
+			return true, nil
+		default:
+			return false, nil
+		}
 	}
 }
 
@@ -107,16 +138,9 @@ func (h *PokerHub) auth(r *http.Request, tbl *poker.Table) (uid int64, firstName
 	if err != nil {
 		return 0, "", "", http.StatusUnauthorized
 	}
-	if h.bot != nil {
-		m, err := h.bot.ChatMemberOf(&tele.Chat{ID: tbl.ChatID}, &tele.User{ID: uid})
-		if err != nil {
-			return 0, "", "", http.StatusForbidden
-		}
-		switch m.Role {
-		case tele.Creator, tele.Administrator, tele.Member, tele.Restricted:
-		default:
-			return 0, "", "", http.StatusForbidden
-		}
+	ok, err := h.isMember(tbl.ChatID, uid)
+	if err != nil || !ok {
+		return 0, "", "", http.StatusForbidden
 	}
 	return uid, firstName, username, 0
 }

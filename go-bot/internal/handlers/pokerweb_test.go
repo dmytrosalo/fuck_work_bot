@@ -88,6 +88,14 @@ func newRoleBot(t *testing.T, role string) *tele.Bot {
 	return bot
 }
 
+// stubAllowMember installs a membership checker that always allows. Use it
+// in tests that exercise something other than the membership check itself
+// (join/action/stream mechanics) since NewPokerHub with a nil bot now fails
+// closed by default instead of skipping the check.
+func stubAllowMember(h *PokerHub) {
+	h.isMember = func(chatID, userID int64) (bool, error) { return true, nil }
+}
+
 func decodeView(t *testing.T, rec *httptest.ResponseRecorder) poker.TableView {
 	t.Helper()
 	var v poker.TableView
@@ -104,6 +112,7 @@ func TestJoinSucceedsAndClampsBuyInToMaxBuyIn(t *testing.T) {
 	db.UpdateBalance("111", "Alice", 50000-100) // GetBalance seeds new rows at 100
 
 	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(1)
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -129,6 +138,7 @@ func TestJoinSucceedsAndClampsBuyInToMaxBuyIn(t *testing.T) {
 func TestJoinRejectsBuyInBelowMinimum(t *testing.T) {
 	// No db means balance defaults to 0, which is below poker.MinBuyIn.
 	h := NewPokerHub(nil, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(1)
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -189,6 +199,7 @@ func TestJoinAllowsChatMember(t *testing.T) {
 
 func TestActionRejectsStaleSeq(t *testing.T) {
 	h := NewPokerHub(nil, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(7)
 	if err := tbl.Sit("111", "Alice", 2000); err != nil {
 		t.Fatalf("Sit: %v", err)
@@ -223,6 +234,7 @@ func TestActionRejectsStaleSeq(t *testing.T) {
 
 func TestActionRejectsWrongTurn(t *testing.T) {
 	h := NewPokerHub(nil, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(7)
 	if err := tbl.Sit("111", "Alice", 2000); err != nil {
 		t.Fatalf("Sit: %v", err)
@@ -268,6 +280,7 @@ func TestActionSettlesBalanceExactlyOnceAtShowdown(t *testing.T) {
 	db.UpdateBalance("222", "Bob", 900)
 
 	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(7)
 	if err := tbl.Sit("111", "Alice", 2000); err != nil {
 		t.Fatalf("Sit: %v", err)
@@ -337,6 +350,7 @@ func TestStreamSendsInitialSnapshotThenBroadcastsJoin(t *testing.T) {
 	db.UpdateBalance("555", "Eve", 5000-100)
 
 	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(9)
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -422,6 +436,66 @@ func readSSEEvent(r *bufio.Reader) (string, error) {
 	}
 }
 
+// --- auth on stream/action ------------------------------------------------
+//
+// The other stream/action tests above all install stubAllowMember, so none
+// of them would catch a refactor that moved the auth() call into only the
+// "join" branch of the action switch. These three pin auth on the other two
+// endpoints directly.
+
+func TestStreamRejectsMissingInitData(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(999)
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	req := httptest.NewRequest("GET", "/api/poker/"+tbl.ID+"/stream", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 for missing initData on stream", rec.Code)
+	}
+}
+
+func TestActionRejectsMissingInitData(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	stubAllowMember(h)
+	tbl := h.Create(999)
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/action", strings.NewReader(`{"action":"fold"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 for missing initData on action", rec.Code)
+	}
+}
+
+func TestStreamRejectsNonChatMember(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	h.isMember = func(chatID, userID int64) (bool, error) { return false, nil }
+	tbl := h.Create(999)
+
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	initData := userInitData(t, "test-token", 333, "Carl", "")
+	req := httptest.NewRequest("GET", "/api/poker/"+tbl.ID+"/stream", nil)
+	req.Header.Set("X-Telegram-Init-Data", initData)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for non-member on stream, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // --- concurrency ---------------------------------------------------------
 
 // TestConcurrentJoinsRespectCapacityAndDontRace hammers the join endpoint
@@ -439,6 +513,7 @@ func TestConcurrentJoinsRespectCapacityAndDontRace(t *testing.T) {
 	}
 
 	h := NewPokerHub(db, nil, "test-token")
+	stubAllowMember(h)
 	tbl := h.Create(123)
 	mux := http.NewServeMux()
 	h.Register(mux)
