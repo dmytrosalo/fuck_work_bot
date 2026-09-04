@@ -119,3 +119,40 @@ func TestClaimOnVanishedTableReleased(t *testing.T) {
 		t.Error("still locked out by a claim on a table that no longer exists")
 	}
 }
+
+// TestCreateOrGetReusesTheChatsTable stops every /poker minting a new table.
+// Each new one left the previous button in the chat pointing at a table
+// nobody was at, and split players who tapped different buttons across
+// different tables.
+func TestCreateOrGetReusesTheChatsTable(t *testing.T) {
+	h := NewPokerHub(nil, nil, "tok")
+
+	first := h.CreateOrGet(-100)
+	again := h.CreateOrGet(-100)
+	if first.ID != again.ID {
+		t.Errorf("second /poker made a new table (%s vs %s)", again.ID, first.ID)
+	}
+
+	// A different chat must still get its own table — the chat id is the
+	// authorization anchor, so sharing one across chats would let members
+	// of one group sit at another group's table.
+	other := h.CreateOrGet(-200)
+	if other.ID == first.ID {
+		t.Error("a different chat was handed the first chat's table")
+	}
+	if other.ChatID != -200 {
+		t.Errorf("table bound to chat %d, want -200", other.ChatID)
+	}
+
+	// Once the sweeper reclaims it, /poker starts a fresh one.
+	h.mu.Lock()
+	delete(h.tables, first.ID)
+	h.mu.Unlock()
+	replacement := h.CreateOrGet(-100)
+	if replacement.ID == first.ID {
+		t.Error("handed back a reclaimed table")
+	}
+	if replacement.ChatID != -100 {
+		t.Errorf("replacement bound to chat %d, want -100", replacement.ChatID)
+	}
+}

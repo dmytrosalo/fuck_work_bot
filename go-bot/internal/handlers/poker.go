@@ -45,7 +45,7 @@ func (b *Bot) handlePoker(c tele.Context) error {
 	if b.poker == nil {
 		return c.Send("♠️ Покер зараз недоступний")
 	}
-	tbl := b.poker.Create(c.Chat().ID)
+	tbl := b.poker.CreateOrGet(c.Chat().ID)
 
 	markup := &tele.ReplyMarkup{}
 	btn := markup.URL("♠️ Сісти за стіл", miniAppLink(c.Bot().Me.Username, tbl.ID))

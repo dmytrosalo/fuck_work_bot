@@ -980,6 +980,27 @@ func defaultIsMember(bot *tele.Bot) func(chatID, userID int64) (bool, error) {
 
 // Create allocates a new table for the given chat and registers it in the
 // hub under a fresh random id.
+// CreateOrGet returns the chat's existing live table if it has one, and
+// only creates a new one otherwise.
+//
+// Every /poker used to mint a fresh table, which left the older button
+// sitting in the chat pointing at a table that still existed but that
+// nobody was at — and, after a restart, at one that no longer existed at
+// all. Reusing the live table means the button in the chat keeps working
+// for as long as the table does, and everyone who taps any of them lands at
+// the same table instead of being scattered across several.
+func (h *PokerHub) CreateOrGet(chatID int64) *poker.Table {
+	h.mu.Lock()
+	for _, t := range h.tables {
+		if t.ChatID == chatID {
+			h.mu.Unlock()
+			return t
+		}
+	}
+	h.mu.Unlock()
+	return h.Create(chatID)
+}
+
 func (h *PokerHub) Create(chatID int64) *poker.Table {
 	buf := make([]byte, 8)
 	_, _ = rand.Read(buf)
@@ -1093,7 +1114,7 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 		id, action := tableIDFrom(r.URL.Path)
 		tbl := h.table(id)
 		if tbl == nil {
-			http.Error(w, "Стіл закрито", http.StatusNotFound)
+			http.Error(w, "Стіл закрито — напиши /poker у чаті, щоб створити новий", http.StatusNotFound)
 			return
 		}
 		uid, firstName, username, status := h.auth(r, tbl)
@@ -1138,7 +1159,7 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 		// resolve the id — every /api/poker route still authorizes the id
 		// the client ends up using, so this is not a way in.
 		if id != "" && h.table(id) == nil {
-			http.Error(w, "Стіл закрито", http.StatusNotFound)
+			http.Error(w, "Стіл закрито — напиши /poker у чаті, щоб створити новий", http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1202,7 +1223,7 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 		// existence check and here — same response an unknown table
 		// already produces, since as far as the hub's bookkeeping is
 		// concerned that's exactly what this now is.
-		http.Error(w, "Стіл закрито", http.StatusNotFound)
+		http.Error(w, "Стіл закрито — напиши /poker у чаті, щоб створити новий", http.StatusNotFound)
 		return
 	}
 	if !ok {
@@ -1441,7 +1462,7 @@ func (h *PokerHub) handleStream(w http.ResponseWriter, r *http.Request, tbl *pok
 	// never see again.
 	sub := &subscriber{userID: userID, ch: make(chan tableEnvelope, 4), done: make(chan struct{})}
 	if !h.registerSubscriber(tbl.ID, sub) {
-		http.Error(w, "Стіл закрито", http.StatusNotFound)
+		http.Error(w, "Стіл закрито — напиши /poker у чаті, щоб створити новий", http.StatusNotFound)
 		return
 	}
 
