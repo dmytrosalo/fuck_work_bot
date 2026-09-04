@@ -59,6 +59,7 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #themes.on{display:flex}
 #themes button{flex:0 0 30px;height:24px;padding:0;border-radius:6px;border:2px solid transparent}
 #themes button.sel{border-color:#ffd166}
+#feltrandom{background:#243147;color:#e6edf7;font-size:13px;line-height:1}
 /* Quick reactions: one tap sends the emoji as an ordinary chat message. */
 #quick{display:flex;gap:5px;padding:0 8px 6px;overflow-x:auto}
 /* Buy-in chooser, shown over the felt before the first sit. */
@@ -179,6 +180,7 @@ button:disabled{opacity:.35}
   <button data-felt="felt-purple" style="background:#5a3d80"></button>
   <button data-felt="felt-red"    style="background:#8a2f3a"></button>
   <button data-felt="felt-slate"  style="background:#3c4756"></button>
+  <button data-felt="" id="feltrandom" title="Випадкове фото">🎲</button>
 </div>
 <div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
  <div id="buyin"><h3>Скільки береш за стіл?</h3><div class="opts"></div><div class="bal"></div></div></div>
@@ -229,6 +231,9 @@ const INIT=(tg&&tg.initData)||"";
 // with no id in the path and carries the table in startapp, so start_param
 // is the only source. Opened at /poker/{id} directly, the templated id wins.
 const TABLE={{.TableID}}||((tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param)||"");
+// Filenames of the background photos compiled into the binary. Rendered by
+// html/template as a JS array literal, escaped as data.
+const BGS={{.Backgrounds}};
 
 const msgEl=document.getElementById("msg");
 function setMsg(t){msgEl.textContent=t||""}
@@ -753,10 +758,27 @@ QUICK.forEach(e=>{
 // server, so it is a personal preference rather than a table setting.
 const FELT_KEY="poker.felt";
 const themesRow=document.getElementById("themes");
+// No stored choice means "surprise me": a photo picked at random from the
+// embedded set, re-rolled each time the app opens. Picking a colour is an
+// explicit opt out of that; picking 🎲 opts back in.
 function applyFelt(name){
-  document.body.className=name||"felt-green";
+  const felt=document.getElementById("felt");
+  if(!name&&BGS&&BGS.length){
+    const pick=BGS[Math.floor(Math.random()*BGS.length)];
+    document.body.className="felt-green";
+    // The dark layer is composited into the same background property
+    // rather than an overlay element, so it can never sit above the seats
+    // or swallow a tap meant for the table.
+    felt.style.backgroundImage=
+      "linear-gradient(rgba(4,18,12,.58),rgba(4,18,12,.58)),url('/poker/bg/"+encodeURIComponent(pick)+"')";
+    felt.style.backgroundSize="cover";
+    felt.style.backgroundPosition="center";
+  }else{
+    document.body.className=name||"felt-green";
+    felt.style.backgroundImage="";
+  }
   themesRow.querySelectorAll("button").forEach(b=>
-    b.classList.toggle("sel",b.getAttribute("data-felt")===(name||"felt-green")));
+    b.classList.toggle("sel",b.getAttribute("data-felt")===name));
 }
 function savedFelt(){
   // Private-mode webviews can throw on storage access rather than return
@@ -768,7 +790,9 @@ themesRow.querySelectorAll("button").forEach(b=>{
   b.onclick=()=>{
     const name=b.getAttribute("data-felt");
     applyFelt(name);
-    try{localStorage.setItem(FELT_KEY,name)}catch(e){}
+    // An empty choice clears the preference rather than storing one, so
+    // the next open rolls a fresh photo instead of pinning this one.
+    try{name?localStorage.setItem(FELT_KEY,name):localStorage.removeItem(FELT_KEY)}catch(e){}
     themesRow.classList.remove("on");
   };
 });
@@ -1224,8 +1248,9 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = pokerTmpl.Execute(w, map[string]string{"TableID": id})
+		_ = pokerTmpl.Execute(w, map[string]any{"TableID": id, "Backgrounds": bgNames()})
 	}
+	mux.HandleFunc("/poker/bg/", h.serveBackground)
 	mux.HandleFunc("/poker", page)
 	mux.HandleFunc("/poker/", page)
 }
