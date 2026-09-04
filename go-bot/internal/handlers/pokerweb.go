@@ -54,7 +54,8 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .felt-purple{--f1:#5a3d80;--f2:#3b2757;--f3:#281a3c}
 .felt-red   {--f1:#8a2f3a;--f2:#5c1f27;--f3:#3f151b}
 .felt-slate {--f1:#3c4756;--f2:#28303b;--f3:#1b2129}
-#themebtn{background:none;border:0;padding:0 2px;font-size:13px;cursor:pointer;flex:0 0 auto}
+#themebtn,#sndbtn{background:none;border:0;padding:0 2px;font-size:13px;cursor:pointer;flex:0 0 auto}
+#sndbtn.off{opacity:.4}
 #themes{display:none;gap:6px;padding:6px 10px;background:#151c2b;justify-content:center}
 #themes.on{display:flex}
 #themes button{flex:0 0 30px;height:24px;padding:0;border-radius:6px;border:2px solid transparent}
@@ -173,7 +174,8 @@ button:disabled{opacity:.35}
  100%{opacity:0;transform:scale(1.02)}}
 </style></head><body>
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
- <button id="themebtn" title="Колір столу">🎨</button><span id="stage"></span></div>
+ <button id="themebtn" title="Колір столу">🎨</button>
+ <button id="sndbtn" title="Звук">🔊</button><span id="stage"></span></div>
 <div id="themes">
   <button data-felt="felt-green"  style="background:#176b48"></button>
   <button data-felt="felt-blue"   style="background:#1d5f86"></button>
@@ -234,6 +236,123 @@ const TABLE={{.TableID}}||((tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param
 // Filenames of the background photos compiled into the binary. Rendered by
 // html/template as a JS array literal, escaped as data.
 const BGS={{.Backgrounds}};
+
+// ---- Sound -------------------------------------------------------------
+// Every sound is synthesised with the Web Audio API rather than loaded from
+// a file: nothing to embed in the binary, nothing to fetch, and no CSP
+// surface. The context is created lazily on the first real gesture because
+// mobile browsers refuse to start audio before one.
+const SND_KEY="poker.sound";
+let audio=null,soundOn=true;
+try{soundOn=localStorage.getItem(SND_KEY)!=="0"}catch(e){}
+
+function audioCtx(){
+  if(!soundOn)return null;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)return null;
+  if(!audio)audio=new AC();
+  // Backgrounding the app suspends the context; resume or everything after
+  // that is silent with no error to notice.
+  if(audio.state==="suspended")audio.resume();
+  return audio;
+}
+
+// One shaped tone. Gain is ramped rather than switched so notes do not
+// click, which on short blips is louder than the note itself.
+function tone(freq,start,dur,vol,type){
+  const ac=audioCtx();
+  if(!ac)return;
+  const t=ac.currentTime+start;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type=type||"sine";
+  o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);g.connect(ac.destination);
+  o.start(t);o.stop(t+dur+0.02);
+}
+
+// Filtered noise burst — cards sliding, chips landing.
+function noise(start,dur,vol,freq){
+  const ac=audioCtx();
+  if(!ac)return;
+  const t=ac.currentTime+start;
+  const n=Math.floor(ac.sampleRate*dur);
+  const buf=ac.createBuffer(1,n,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+  const src=ac.createBufferSource();src.buffer=buf;
+  const bp=ac.createBiquadFilter();bp.type="bandpass";bp.frequency.value=freq||2000;
+  const g=ac.createGain();g.gain.value=vol;
+  src.connect(bp);bp.connect(g);g.connect(ac.destination);
+  src.start(t);
+}
+
+const SFX={
+  deal(){noise(0,0.12,0.22,2600);noise(0.07,0.12,0.18,2200)},
+  chip(){tone(1180,0,0.05,0.10,"triangle");tone(1560,0.045,0.06,0.08,"triangle")},
+  fold(){tone(190,0,0.13,0.12,"sine")},
+  check(){tone(520,0,0.07,0.09,"sine")},
+  turn(){tone(740,0,0.13,0.13);tone(988,0.11,0.20,0.13)},
+  win(){[523,659,784,1047].forEach((f,i)=>tone(f,i*0.09,0.34,0.15,"triangle"))},
+  lose(){[440,349,262].forEach((f,i)=>tone(f,i*0.10,0.28,0.11,"sine"))}
+};
+
+const sndBtn=document.getElementById("sndbtn");
+function paintSound(){
+  sndBtn.textContent=soundOn?"🔊":"🔇";
+  sndBtn.classList.toggle("off",!soundOn);
+}
+sndBtn.onclick=()=>{
+  soundOn=!soundOn;
+  try{localStorage.setItem(SND_KEY,soundOn?"1":"0")}catch(e){}
+  paintSound();
+  if(soundOn)SFX.check(); // confirm it is actually audible
+};
+paintSound();
+
+// Telegram's own haptics, paired with the turn chime: with a 90s clock you
+// will be looking elsewhere, and a buzz reaches you when a sound may not.
+function buzz(kind){
+  try{
+    const hf=tg&&tg.HapticFeedback;
+    if(!hf)return;
+    if(kind==="turn")hf.impactOccurred("medium");
+    else hf.notificationOccurred(kind);
+  }catch(e){}
+}
+
+// Chooses sounds by diffing two consecutive snapshots. Driven by state
+// rather than by our own clicks so other players' and the bots' actions are
+// audible too — that is the whole point, since they act while you watch.
+function playTransition(prev,v){
+  if(!soundOn||!prev)return;
+  const live=v.stage!=="waiting"&&v.stage!=="showdown";
+  const seats=v.seats||[],old=prev.seats||[];
+  const byId={};old.forEach(s=>byId[s.user_id]=s);
+
+  if(v.board&&prev.board&&v.board.length>prev.board.length)SFX.deal();
+
+  let acted=false;
+  seats.forEach(s=>{
+    const o=byId[s.user_id];
+    if(!o)return;
+    if(!o.folded&&s.folded){SFX.fold();acted=true}
+    else if((s.bet||0)>(o.bet||0)){SFX.chip();acted=true}
+  });
+
+  const me=v.you_seat>=0?seats[v.you_seat]:null;
+  const wasMine=prev.you_seat>=0&&old[prev.you_seat]&&old[prev.you_seat].to_act;
+  if(live&&me&&me.to_act&&!wasMine){SFX.turn();buzz("turn")}
+
+  if(v.stage==="showdown"&&prev.stage!=="showdown"&&me){
+    const won=me.won||0;
+    if(won>0){SFX.win();buzz("success")}
+    else if(won<0)SFX.lose();
+  }
+  return acted;
+}
 
 const msgEl=document.getElementById("msg");
 function setMsg(t){msgEl.textContent=t||""}
@@ -460,6 +579,7 @@ function render(v){
   // the bar should still re-anchor its clocks from it.
   renderBar(v);
   if(v.seq<=highestSeq)return;
+  const prevSnapshot=state; // captured before state is replaced, for the sound diff
   highestSeq=v.seq;
   state=v;
   errorMsg=null; // a fresh snapshot means we're caught up; stop overriding the countdown/turn line
@@ -602,6 +722,7 @@ function render(v){
 
   applyButtons();
   tick();
+  playTransition(prevSnapshot,v);
   // Last, so it acts on a fully rendered, current snapshot.
   maybeFirePre();
 }
