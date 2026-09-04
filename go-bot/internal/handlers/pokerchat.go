@@ -188,3 +188,40 @@ func (h *PokerHub) appendChatFrom(tableID, name, text string) {
 	h.appendChatLocked(tableID, name, strings.Join(strings.Fields(text), " "), time.Now())
 	h.mu.Unlock()
 }
+
+// avatarPoolSize is how many avatars the client offers. The server only
+// needs the bound: an index outside it would render as nothing at all, and
+// the pool itself is the client's business.
+const avatarPoolSize = 10
+
+// handleAvatar records a player's avatar choice and shows it to the table.
+// Stored per user rather than per seat, so it follows them to every table
+// and survives standing up.
+func (h *PokerHub) handleAvatar(w http.ResponseWriter, r *http.Request, tbl *poker.Table, uid int64) {
+	var body struct {
+		Idx int `json:"idx"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Некоректний запит", http.StatusBadRequest)
+		return
+	}
+	// Bounded here, not in the client: a crafted request naming index 900
+	// would otherwise be stored and render as an empty circle for everyone.
+	if body.Idx < 0 || body.Idx >= avatarPoolSize {
+		http.Error(w, "Невідомий аватар", http.StatusBadRequest)
+		return
+	}
+
+	userID := fmt.Sprintf("%d", uid)
+	if h.db != nil {
+		h.db.SetPokerAvatar(userID, body.Idx)
+	}
+
+	tbl.Lock()
+	tbl.SetAvatar(userID, body.Idx)
+	view := h.envelope(tbl, userID)
+	h.broadcast(tbl)
+	tbl.Unlock()
+
+	writeJSON(w, view)
+}

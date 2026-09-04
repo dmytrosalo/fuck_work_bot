@@ -43,8 +43,17 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #blinds{color:#c9a25a;font-weight:700}
 #blinds.rising{color:#ffd166}
-#felt{position:relative;height:48vh;min-height:340px;
- background:radial-gradient(ellipse at 50% 45%,var(--f1),var(--f2) 70%,var(--f3))}
+#felt{position:relative;height:48vh;min-height:340px;overflow:hidden;
+ background:radial-gradient(ellipse at 50% 45%,#12202b,#0b141c 70%,#080f15)}
+/* The table is now a real oval sitting inside the felt area, so the
+   background photo or colour shows around it as the room rather than being
+   the table surface itself. */
+#oval{position:absolute;left:6%;right:6%;top:12%;bottom:14%;border-radius:50%;
+ background:radial-gradient(ellipse at 50% 42%,var(--f1),var(--f2) 68%,var(--f3));
+ border:10px solid #2a1c10;
+ box-shadow:0 0 0 3px #4a3520 inset,0 0 0 6px rgba(0,0,0,.35),0 14px 34px rgba(0,0,0,.55)}
+#oval::after{content:"";position:absolute;inset:10px;border-radius:50%;
+ box-shadow:0 0 26px rgba(0,0,0,.4) inset;pointer-events:none}
 :root{--f1:#1e7350;--f2:#124b35;--f3:#0d3626}
 /* Felt themes. Purely cosmetic and per-player: the choice lives in this
    browser only and is never sent anywhere, so two players at one table can
@@ -63,6 +72,11 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  border-radius:8px;font-size:12px}
 #radio button.playing{background:#2f4462;color:#ffd166;outline:1px solid #ffd166}
 #radio .credit{color:#5d6b83;font-size:10px;padding-top:7px;text-align:center}
+#avatars{display:none;flex-wrap:wrap;gap:8px;justify-content:center;padding:9px 10px;background:#151c2b}
+#avatars.open{display:flex}
+#avatars button{flex:0 0 46px;height:46px;padding:0;font-size:24px;border-radius:50%;
+ background:#1b2536;border:2px solid #46536b}
+#avatars button.sel{border-color:#ffd166;box-shadow:0 0 10px rgba(255,209,102,.5)}
 #sndbtn.off{opacity:.4}
 #themes{display:none;gap:6px;padding:6px 10px;background:#151c2b;justify-content:center}
 #themes.on{display:flex}
@@ -83,17 +97,31 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #buyin .bal{color:#8fa1bd;font-size:12px}
 #quick button{flex:0 0 auto;min-width:40px;padding:6px 0;font-size:18px;
  background:#1b2536;border-radius:8px}
-.seat{position:absolute;width:104px;margin-left:-52px;margin-top:-20px;text-align:center;font-size:11px;
+.seat{position:absolute;width:104px;margin-left:-52px;margin-top:-34px;text-align:center;font-size:11px;
  transition:opacity .2s}
-.seat .nm{font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.seat .st{color:#7ddba5}
-.seat.folded{opacity:.35}
-.seat.act{outline:2px solid #ffd166;border-radius:8px;padding:2px;background:#1d2740}
+.seat .av{width:44px;height:44px;margin:0 auto -12px;border-radius:50%;
+ background:#1b2536;border:2px solid #46536b;display:flex;align-items:center;
+ justify-content:center;font-size:24px;position:relative;z-index:2}
+.seat .plaque{background:rgba(10,16,26,.92);border:1px solid #33415a;border-radius:9px;
+ padding:13px 5px 5px;position:relative;z-index:1}
+.seat .nm{font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+ font-size:11px;line-height:1.2}
+.seat .st{color:#7ddba5;font-size:12px;font-weight:700}
+.seat.folded{opacity:.4}
+.seat.act .av{border-color:#ffd166;box-shadow:0 0 12px rgba(255,209,102,.6)}
+.seat.act .plaque{border-color:#ffd166;background:#1d2740}
 .seat.act .nm{color:#ffd166}
+.seat .allin{display:block;color:#ff9d6b;font-size:9px;font-weight:700;letter-spacing:.04em}
 .cd{display:block;margin-top:2px;background:#ffd166;color:#2b1d05;border-radius:8px;
  padding:0 5px;font-size:10px;font-weight:700}
-.chip{display:inline-block;background:#e8a33d;color:#3a2708;border-radius:8px;padding:0 5px;
- font-size:10px;font-weight:700;margin-top:1px}
+/* A bet sits out on the cloth between its player and the pot, the way it
+   does on a real table — inside the seat plaque it read as part of the
+   stack rather than as chips already committed. */
+.bet{position:absolute;transform:translate(-50%,-50%);z-index:3;
+ background:rgba(8,16,12,.72);color:#ffd166;border:1px solid rgba(255,209,102,.45);
+ border-radius:11px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;
+ box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.bet i{font-style:normal;margin-right:3px}
 .oppHole{margin:2px 0}
 .oppHole .card{width:26px;height:36px;line-height:36px;font-size:15px;margin:0 1px;border-radius:5px}
 .card.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d);border:1px solid #3f6199}
@@ -184,7 +212,9 @@ button:disabled{opacity:.35}
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
  <button id="themebtn" title="Колір столу">🎨</button>
  <button id="sndbtn" title="Звук">🔊</button>
- <button id="radiobtn" title="Лоу-фай радіо">📻</button><span id="stage"></span></div>
+ <button id="radiobtn" title="Лоу-фай радіо">📻</button>
+ <button id="avbtn" title="Аватар">🙂</button><span id="stage"></span></div>
+<div id="avatars"></div>
 <div id="radio">
   <div class="stations"></div>
   <div class="credit">потік: SomaFM · listener-supported</div>
@@ -197,7 +227,7 @@ button:disabled{opacity:.35}
   <button data-felt="felt-slate"  style="background:#3c4756"></button>
   <button data-felt="" id="feltrandom" title="Випадкове фото">🎲</button>
 </div>
-<div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
+<div id="felt"><div id="oval"></div><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
  <div id="buyin"><h3>Скільки береш за стіл?</h3><div class="opts"></div><div class="bal"></div></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="handline"></div>
@@ -504,6 +534,19 @@ function backsFor(userID){const b=backFor(userID);return b+b}
 // Seats are 104px wide at the 1024px+ target, so full bot names fit.
 function clip(n){n=n||"";return n.length>17?n.slice(0,17)+"…":n}
 
+// Ten avatars, addressed by index. The server stores and bounds the index
+// and knows nothing about the emoji, so this pool can change without a
+// migration — only the order matters.
+const AVATARS=["\ud83e\udd8a","\ud83d\udc3a","\ud83d\udc3b","\ud83e\udd81","\ud83d\udc38",
+               "\ud83d\udc19","\ud83e\udd89","\ud83d\udc37","\ud83d\udc35","\ud83d\udc7d"];
+// Bots wear their own faces rather than a slot from the pool, matching the
+// card backs, which are also chosen from user_id.
+function avatarFor(s){
+  if(s.user_id==="bot:1")return "\ud83c\udfa9";
+  if(s.user_id==="bot:2")return "\ud83e\udd16";
+  return AVATARS[(s.avatar|0)%AVATARS.length];
+}
+
 function mmss(total){
   total=Math.max(0,Math.floor(total));
   const m=Math.floor(total/60),sec=total%60;
@@ -705,7 +748,7 @@ function render(v){
   document.getElementById("pot").textContent="🪙 Банк "+potShown;
 
   const felt=document.getElementById("felt");
-  felt.querySelectorAll(".seat").forEach(e=>e.remove());
+  felt.querySelectorAll(".seat,.bet").forEach(e=>e.remove());
   // cy/ry are tuned against #centre's top: the viewer's seat sits at
   // cy+ry, and the board+pot block ends around top+61px. They collided
   // when the felt shrank to make room for the chat log, hiding the pot
@@ -731,10 +774,28 @@ function render(v){
     // player's own Telegram profile) — set via textContent, never
     // innerHTML/string-concatenation. clip() truncating to 10 chars is
     // NOT what makes this safe; textContent is.
+    const av=document.createElement("div");
+    av.className="av";
+    av.textContent=avatarFor(s);
+    d.appendChild(av);
+
+    const plaque=document.createElement("div");
+    plaque.className="plaque";
     const nm=document.createElement("div");
     nm.className="nm";
     nm.textContent=clip(s.name);
-    d.appendChild(nm);
+    plaque.appendChild(nm);
+    const st=document.createElement("div");
+    st.className="st";
+    st.textContent=s.stack;
+    plaque.appendChild(st);
+    if(s.all_in){
+      const ai=document.createElement("span");
+      ai.className="allin";
+      ai.textContent="ВА-БАНК";
+      plaque.appendChild(ai);
+    }
+    d.appendChild(plaque);
 
     // Opponents' hole cards: "hole" is populated only at showdown for
     // non-folded, in-hand seats (server-enforced isolation, view.go) — show
@@ -761,17 +822,7 @@ function render(v){
     // Stack/bet/countdown are Go ints and JS numbers, not player-controlled
     // text, so textContent here is just for consistency, not a safety
     // requirement.
-    const st=document.createElement("div");
-    st.className="st";
-    st.textContent=s.stack;
-    d.appendChild(st);
-
-    if(s.bet){
-      const chip=document.createElement("span");
-      chip.className="chip";
-      chip.textContent=s.bet;
-      d.appendChild(chip);
-    }
+    // The bet is drawn on the cloth, not in the plaque — see below.
     if(isActive){
       const cd=document.createElement("div");
       cd.className="cd";
@@ -779,6 +830,27 @@ function render(v){
       d.appendChild(cd);
     }
     felt.appendChild(d);
+
+    // The committed chips, placed on the line from this seat toward the
+    // pot at 52% of the way in — far enough off the plaque to read as
+    // being on the cloth, short enough not to collide with the board.
+    if(s.bet){
+      const chip=document.createElement("div");
+      chip.className="bet";
+      // Seats on the vertical axis — the viewer at the bottom, and the
+      // top seat at even seat counts — would drop their chips straight
+      // onto the pot, which sits dead centre. Nudge those sideways,
+      // proportional to how vertical the seat is, so the amount stays
+      // beside the pot instead of on top of it. Side seats barely move.
+      const vertical=1-Math.abs(Math.cos(ang));
+      chip.style.left=(cx+rx*0.52*Math.cos(ang)+13*vertical)+"%";
+      chip.style.top=(cy+ry*0.52*Math.sin(ang))+"%";
+      const coin=document.createElement("i");
+      coin.textContent="🪙";
+      chip.appendChild(coin);
+      chip.appendChild(document.createTextNode(String(s.bet)));
+      felt.appendChild(chip);
+    }
   });
 
   const me=v.you_seat>=0?seats[v.you_seat]:null;
@@ -947,6 +1019,39 @@ document.querySelectorAll("#pre button").forEach(btn=>{
     btn.classList.add("armed");
   };
 });
+
+// Avatar picker. Unlike the felt and the sound toggle this is NOT a local
+// preference: everyone at the table sees it, so it goes to the server and
+// comes back on the seat like any other shared state.
+const avBox=document.getElementById("avatars");
+AVATARS.forEach((emoji,i)=>{
+  const b=document.createElement("button");
+  b.type="button";
+  b.textContent=emoji;
+  b.setAttribute("data-av",String(i));
+  b.onclick=async()=>{
+    try{
+      const r=await fetch("/api/poker/"+TABLE+"/avatar",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
+        body:JSON.stringify({idx:i})
+      });
+      if(!r.ok){setError(await r.text());return}
+      render(await r.json());
+      avBox.classList.remove("open");
+    }catch(e){setError("Зʼєднання втрачено…")}
+  };
+  avBox.appendChild(b);
+});
+document.getElementById("avbtn").onclick=()=>{
+  avBox.classList.toggle("open");
+  // Mark the one currently worn, read from our own seat rather than
+  // remembered locally — the server is the source of truth.
+  const me=state&&state.you_seat>=0?state.seats[state.you_seat]:null;
+  const mine=me?(me.avatar|0):-1;
+  avBox.querySelectorAll("button").forEach(b=>
+    b.classList.toggle("sel",Number(b.getAttribute("data-av"))===mine));
+};
 
 const chatInput=document.getElementById("chatinput");
 async function sendChat(){
@@ -1460,6 +1565,8 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			h.handleAction(w, r, tbl, uid)
 		case "chat":
 			h.handleChat(w, r, tbl, uid, firstName, username)
+		case "avatar":
+			h.handleAvatar(w, r, tbl, uid)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1619,6 +1726,10 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, r *http.Request, tbl *poker
 	if (tbl.Stage == poker.StageWaiting || tbl.Stage == poker.StageShowdown) && len(tbl.Seats) >= poker.MaxSeats {
 		h.evictOneBot(tbl)
 	}
+	avatar := 0
+	if h.db != nil {
+		avatar = h.db.GetPokerAvatar(userID)
+	}
 	if err := tbl.Sit(userID, name, buyIn); err != nil {
 		tbl.Unlock()
 		if fresh {
@@ -1627,6 +1738,7 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, r *http.Request, tbl *poker
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
+	tbl.SetAvatar(userID, avatar)
 	// Auto-start once a second player is seated. Without this, hands never
 	// begin: nothing else ever calls StartHand on a freshly created table.
 	// ensureBots runs BEFORE the SeatedCount() >= 2 guard below (not folded

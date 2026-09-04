@@ -16,7 +16,10 @@ type SeatView struct {
 	// no hole cards and will be dealt in next hand. Without it the client
 	// cannot tell them apart from an active player and renders them
 	// holding face-down cards they do not have.
-	InHand bool     `json:"in_hand"`
+	InHand bool `json:"in_hand"`
+	// Avatar indexes the client's avatar pool. Public by design: everyone
+	// at the table sees which one you picked.
+	Avatar int      `json:"avatar"`
 	Hole   []string `json:"hole,omitempty"` // populated only for the viewer
 	ToAct  bool     `json:"to_act"`
 	// Won is this seat's NET result for the hand just finished — winnings
@@ -102,6 +105,7 @@ func (t *Table) ViewFor(userID string) TableView {
 		sv := SeatView{
 			UserID: s.UserID, Name: s.Name, Stack: s.Stack, Bet: s.Bet,
 			Folded: s.Folded, AllIn: s.AllIn, InHand: s.InHand, ToAct: i == t.ToAct,
+			Avatar: s.Avatar,
 		}
 		if t.Stage == StageShowdown && s.InHand {
 			sv.Won = s.Stack - s.startStack

@@ -24,6 +24,7 @@ const (
 type Seat struct {
 	UserID          string
 	Name            string
+	Avatar          int // index into the client's avatar pool
 	Stack           int // chips at the table
 	Hole            []pk.Card
 	Folded          bool
@@ -359,6 +360,19 @@ func (t *Table) StandUp(userID string) bool {
 		}
 		t.Seq++
 		return true
+	}
+	return false
+}
+
+// SetAvatar updates a seated player's avatar. Returns whether a seat was
+// found, so the caller can tell a real change from a no-op.
+func (t *Table) SetAvatar(userID string, idx int) bool {
+	for _, s := range t.Seats {
+		if s.UserID == userID {
+			s.Avatar = idx
+			t.Seq++ // seats changed: push it to everyone watching
+			return true
+		}
 	}
 	return false
 }

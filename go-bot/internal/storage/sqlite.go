@@ -75,6 +75,7 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS collection (user_id TEXT NOT NULL, card_id INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, card_id))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS poker_tables (id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, snapshot TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE IF NOT EXISTS poker_avatars (user_id TEXT PRIMARY KEY, idx INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL, activity TEXT NOT NULL, amount INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE IF NOT EXISTS balances (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 100)`,
 		`CREATE TABLE IF NOT EXISTS slot_spins (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
@@ -1066,4 +1067,20 @@ func (d *DB) DeletePokerTable(id string) {
 func (d *DB) PrunePokerTables(maxAge time.Duration) {
 	cutoff := time.Now().Add(-maxAge).UTC().Format("2006-01-02 15:04:05")
 	d.db.Exec(`DELETE FROM poker_tables WHERE updated_at < ?`, cutoff)
+}
+
+// --- Poker avatars ---
+
+// GetPokerAvatar returns the avatar index a player chose, or 0 if they
+// never picked one. The index addresses a fixed pool defined client-side;
+// storage deliberately keeps no opinion about what it points at.
+func (d *DB) GetPokerAvatar(userID string) int {
+	var idx int
+	d.db.QueryRow(`SELECT idx FROM poker_avatars WHERE user_id = ?`, userID).Scan(&idx)
+	return idx
+}
+
+func (d *DB) SetPokerAvatar(userID string, idx int) {
+	d.db.Exec(`INSERT INTO poker_avatars (user_id, idx) VALUES (?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET idx = ?`, userID, idx, idx)
 }
