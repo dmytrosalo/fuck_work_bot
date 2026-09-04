@@ -217,6 +217,10 @@ func main() {
 
 	pokerHub := handlers.NewPokerHub(db, bot, os.Getenv("TELEGRAM_BOT_TOKEN"))
 	pokerHub.Register(mux)
+	// Bring back tables the previous process was serving, before the bot
+	// starts accepting updates — a player reopening the app should find
+	// their seat, not a dead link.
+	pokerHub.RestoreTables()
 	pokerHub.StartSweeper()
 	h.SetPokerHub(pokerHub)
 	// Economy commands in the group chat (/rob, /slots, gifts, quiz

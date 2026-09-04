@@ -1192,6 +1192,11 @@ type PokerHub struct {
 	// rather than by bot so two bots cannot alternate and defeat it.
 	// Guarded by h.mu; dropped with the table by dropChat's caller.
 	lastTauntAt map[string]time.Time
+
+	// savedSeq records the table Seq last written to the database, so the
+	// sweeper only persists tables that actually moved rather than
+	// rewriting every table every five seconds. Guarded by h.mu.
+	savedSeq map[string]uint64
 }
 
 // membershipKey identifies one (chat, user) pair for membershipCache.
@@ -1223,6 +1228,7 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		chat:            map[string][]chatMsg{},
 		lastChatAt:      map[string]time.Time{},
 		lastTauntAt:     map[string]time.Time{},
+		savedSeq:        map[string]uint64{},
 	}
 }
 
@@ -2152,6 +2158,19 @@ func (h *PokerHub) sweepOnce() {
 		// double-act.
 		h.botStep(tbl)
 
+		// Persist while the table lock is still held, and only when the
+		// table has moved since the last write — Seq changes on every
+		// action, deal and settlement, so it is exactly the right trigger.
+		h.mu.Lock()
+		changed := h.savedSeq[id] != tbl.Seq
+		if changed {
+			h.savedSeq[id] = tbl.Seq
+		}
+		h.mu.Unlock()
+		if changed {
+			h.persistTable(tbl)
+		}
+
 		idle := h.activitySince(id) > idleTableTimeout
 		tbl.Unlock()
 
@@ -2170,6 +2189,12 @@ func (h *PokerHub) sweepOnce() {
 		delete(h.showdownAt, id)
 		h.dropChat(id) // chat shares the table's lifetime; don't leak the log
 		delete(h.lastTauntAt, id)
+		delete(h.savedSeq, id)
+		if h.db != nil {
+			// Reclaimed deliberately: its snapshot must go too, or the next
+			// restart would resurrect a table nobody is at.
+			h.db.DeletePokerTable(id)
+		}
 		for _, sub := range h.subs[id] {
 			close(sub.done)
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	_ "modernc.org/sqlite"
+	"time"
 )
 
 type ClassifierStats struct {
@@ -73,6 +74,7 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, name TEXT NOT NULL, rarity INTEGER NOT NULL, category TEXT NOT NULL, emoji TEXT NOT NULL, description TEXT NOT NULL, atk INTEGER, def INTEGER, special_name TEXT, special INTEGER)`,
 		`CREATE TABLE IF NOT EXISTS collection (user_id TEXT NOT NULL, card_id INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, card_id))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS poker_tables (id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, snapshot TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL, activity TEXT NOT NULL, amount INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE IF NOT EXISTS balances (user_id TEXT PRIMARY KEY, name TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 100)`,
 		`CREATE TABLE IF NOT EXISTS slot_spins (user_id TEXT NOT NULL, date TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, date))`,
@@ -1022,4 +1024,46 @@ func scanStats(rows *sql.Rows) ([]ClassifierStats, error) {
 		stats = append(stats, s)
 	}
 	return stats, rows.Err()
+}
+
+// --- Poker table persistence ---
+
+// SavePokerTable stores one table snapshot, replacing any previous one.
+// The snapshot is opaque JSON here on purpose: the shape belongs to the
+// poker package, and storage has no business knowing what a seat is.
+func (d *DB) SavePokerTable(id string, chatID int64, snapshot string) error {
+	_, err := d.db.Exec(
+		`INSERT INTO poker_tables (id, chat_id, snapshot, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(id) DO UPDATE SET chat_id = ?, snapshot = ?, updated_at = CURRENT_TIMESTAMP`,
+		id, chatID, snapshot, chatID, snapshot)
+	return err
+}
+
+// LoadPokerTables returns every stored snapshot, newest first.
+func (d *DB) LoadPokerTables() []string {
+	rows, err := d.db.Query(`SELECT snapshot FROM poker_tables ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var snap string
+		if err := rows.Scan(&snap); err == nil {
+			out = append(out, snap)
+		}
+	}
+	return out
+}
+
+func (d *DB) DeletePokerTable(id string) {
+	d.db.Exec(`DELETE FROM poker_tables WHERE id = ?`, id)
+}
+
+// PrunePokerTables drops snapshots untouched for longer than maxAge, so a
+// table abandoned before a crash is not resurrected days later with stale
+// stacks.
+func (d *DB) PrunePokerTables(maxAge time.Duration) {
+	cutoff := time.Now().Add(-maxAge).UTC().Format("2006-01-02 15:04:05")
+	d.db.Exec(`DELETE FROM poker_tables WHERE updated_at < ?`, cutoff)
 }
