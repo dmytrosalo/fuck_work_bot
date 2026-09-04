@@ -144,3 +144,9 @@ func nextBlindSeconds(t *Table) int {
 func (t *Table) BoardStrings() []string {
 	return strs(t.Board)
 }
+
+// HoleStrings returns a seat's hole cards as wire strings. Exported for the
+// hand history, which lists finished hands only.
+func (s *Seat) HoleStrings() []string {
+	return strs(s.Hole)
+}

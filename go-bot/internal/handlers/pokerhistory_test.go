@@ -139,3 +139,108 @@ func TestHistoryEmptyBeforeAnyHand(t *testing.T) {
 		t.Errorf("history = %v, want empty", got)
 	}
 }
+
+// Every dealt-in player is listed with their cards and result, including
+// one who folded and never showed — the point of a history among friends is
+// seeing whether someone was bluffing.
+func TestHistoryListsEveryPlayersCards(t *testing.T) {
+	h, tbl := historyTable(t)
+	tbl.Lock()
+	_ = tbl.StartHand()
+	tbl.Seats[0].Hole = cardsFor("Ah", "Ad")
+	tbl.Seats[1].Hole = cardsFor("2c", "7d")
+	tbl.Board = cardsFor("As", "Kh", "Qd", "3c", "9s")
+	tbl.Stage = poker.StageRiver
+	tbl.Seats[1].Folded = true // mucked: never revealed at the table
+	h.settle(tbl)
+	tbl.Unlock()
+
+	rec := httptest.NewRecorder()
+	h.handleHistory(rec, tbl)
+	var got []handResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 || len(got[0].Players) != 2 {
+		t.Fatalf("players = %+v, want both seats listed", got)
+	}
+
+	byName := map[string]handPlayer{}
+	for _, p := range got[0].Players {
+		byName[p.Name] = p
+	}
+	win, lose := byName["Dmytro"], byName["Danya"]
+
+	if len(win.Hole) != 2 || len(lose.Hole) != 2 {
+		t.Errorf("hole cards missing: winner %v loser %v", win.Hole, lose.Hole)
+	}
+	if !win.Won || lose.Won {
+		t.Errorf("winner flag wrong: %v / %v", win.Won, lose.Won)
+	}
+	if !lose.Folded {
+		t.Error("the folded player is not marked as folded")
+	}
+	if win.Delta <= 0 || lose.Delta >= 0 {
+		t.Errorf("deltas = %d / %d, want a gain and a loss", win.Delta, lose.Delta)
+	}
+	if win.Combo != "трійка" {
+		t.Errorf("winner combo = %q, want трійка", win.Combo)
+	}
+}
+
+// A hand that ended before the flop has no board, so no combination can be
+// named for anyone — "старша карта" there would be meaningless.
+func TestHistoryNamesNoComboWithoutABoard(t *testing.T) {
+	h, tbl := historyTable(t)
+	tbl.Lock()
+	_ = tbl.StartHand()
+	tbl.Seats[0].Hole = cardsFor("Ah", "Ad")
+	tbl.Seats[1].Hole = cardsFor("2c", "7d")
+	tbl.Board = nil
+	tbl.Seats[1].Folded = true
+	h.settle(tbl)
+	tbl.Unlock()
+
+	rec := httptest.NewRecorder()
+	h.handleHistory(rec, tbl)
+	var got []handResult
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if len(got) != 1 {
+		t.Fatalf("history has %d entries", len(got))
+	}
+	if len(got[0].Board) != 0 {
+		t.Errorf("board = %v, want none", got[0].Board)
+	}
+	for _, p := range got[0].Players {
+		if p.Combo != "" {
+			t.Errorf("%s given combo %q with no board", p.Name, p.Combo)
+		}
+		if len(p.Hole) != 2 {
+			t.Errorf("%s listed without cards", p.Name)
+		}
+	}
+}
+
+// Someone who sat down mid-hand was not part of it and must not appear.
+func TestHistorySkipsPlayersNotInTheHand(t *testing.T) {
+	h, tbl := historyTable(t)
+	tbl.Lock()
+	_ = tbl.StartHand()
+	_ = tbl.Sit("99", "LateGuy", 5000) // arrives after the deal
+	tbl.Seats[0].Hole = cardsFor("Ah", "Ad")
+	tbl.Seats[1].Hole = cardsFor("2c", "7d")
+	tbl.Board = cardsFor("As", "Kh", "Qd", "3c", "9s")
+	tbl.Stage = poker.StageRiver
+	h.settle(tbl)
+	tbl.Unlock()
+
+	rec := httptest.NewRecorder()
+	h.handleHistory(rec, tbl)
+	var got []handResult
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	for _, p := range got[0].Players {
+		if p.Name == "LateGuy" {
+			t.Error("a player who joined mid-hand was listed in it")
+		}
+	}
+}

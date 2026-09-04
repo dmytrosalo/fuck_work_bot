@@ -67,16 +67,24 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  cursor:pointer;flex:0 0 auto}
 #history{display:none;padding:8px 10px;background:#151c2b;max-height:210px;overflow-y:auto}
 #history.open{display:block}
-.hrow{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #1d2740;
- font-size:12px}
-.hrow:last-child{border-bottom:0}
-.hrow .hno{color:#5d6b83;flex:0 0 34px;font-size:11px}
-.hrow .hb{flex:0 0 auto;display:flex;gap:2px}
-.hrow .hb span{background:#fff;color:#111;border-radius:3px;padding:0 3px;font-size:11px;font-weight:700}
-.hrow .hb span.red{color:#d62828}
-.hrow .hw{flex:1;color:#e6edf7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hrow .hp{color:#ffd166;font-weight:700;flex:0 0 auto}
-.hrow .hc{color:#7ddba5;font-size:11px;flex:0 0 auto}
+.hand{padding:6px 2px 7px;border-bottom:1px solid #1d2740}
+.hand:last-child{border-bottom:0}
+.hhead{display:flex;align-items:center;gap:8px;font-size:12px}
+.hhead .hno{color:#5d6b83;flex:0 0 40px;font-size:11px}
+.hhead .hb{flex:1;display:flex;gap:2px}
+.hhead .hp{color:#ffd166;font-weight:700;flex:0 0 auto}
+.hb span,.hpc span{background:#fff;color:#111;border-radius:3px;padding:0 3px;font-size:11px;font-weight:700}
+.hb span.red,.hpc span.red{color:#d62828}
+.hpl{display:flex;align-items:center;gap:7px;padding:3px 0 0 40px;font-size:11px}
+.hpl.folded{opacity:.5}
+.hpl .hn{flex:0 0 110px;color:#e6edf7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hpl.won .hn{color:#ffd166;font-weight:700}
+.hpl .hpc{flex:0 0 auto;display:flex;gap:2px}
+.hpl .hcm{flex:1;color:#7ddba5}
+.hpl .hd{flex:0 0 auto;font-weight:700}
+.hpl .hd.up{color:#7ddba5}
+.hpl .hd.dn{color:#e08a9a}
+.hnoboard{color:#5d6b83;font-size:11px;font-style:italic}
 #history .empty{color:#5d6b83;font-size:12px;text-align:center;padding:8px}
 #radiobtn.on{filter:drop-shadow(0 0 5px #ffd166)}
 #radio{display:none;padding:8px 10px;background:#151c2b}
@@ -1095,38 +1103,65 @@ async function loadHistory(){
     return;
   }
   rows.forEach(h=>{
-    const row=document.createElement("div");
-    row.className="hrow";
+    const box=document.createElement("div");
+    box.className="hand";
 
+    const head=document.createElement("div");
+    head.className="hhead";
     const no=document.createElement("div");
     no.className="hno";
     no.textContent="#"+h.hand;
-    row.appendChild(no);
+    head.appendChild(no);
 
     const board=document.createElement("div");
     board.className="hb";
-    (h.board||[]).forEach(c=>board.appendChild(miniCard(c)));
-    row.appendChild(board);
-
-    // Names are player-controlled, so textContent as everywhere else.
-    const who=document.createElement("div");
-    who.className="hw";
-    who.textContent=(h.winners||[]).join(", ");
-    row.appendChild(who);
-
-    if(h.combo){
-      const combo=document.createElement("div");
-      combo.className="hc";
-      combo.textContent=h.combo;
-      row.appendChild(combo);
+    if((h.board||[]).length){
+      h.board.forEach(c=>board.appendChild(miniCard(c)));
+    }else{
+      // No board at all means the hand ended before the flop.
+      const p=document.createElement("span");
+      p.className="hnoboard";
+      p.style.background="none";
+      p.textContent="до флопу";
+      board.appendChild(p);
     }
+    head.appendChild(board);
 
     const pot=document.createElement("div");
     pot.className="hp";
     pot.textContent=h.pot+" 🪙";
-    row.appendChild(pot);
+    head.appendChild(pot);
+    box.appendChild(head);
 
-    histBox.appendChild(row);
+    (h.players||[]).forEach(p=>{
+      const row=document.createElement("div");
+      row.className="hpl"+(p.folded?" folded":"")+(p.won?" won":"");
+
+      // Names come from Telegram profiles: textContent, as everywhere.
+      const nm=document.createElement("div");
+      nm.className="hn";
+      nm.textContent=(p.won?"🏆 ":"")+p.name;
+      row.appendChild(nm);
+
+      const hole=document.createElement("div");
+      hole.className="hpc";
+      (p.hole||[]).forEach(c=>hole.appendChild(miniCard(c)));
+      row.appendChild(hole);
+
+      const combo=document.createElement("div");
+      combo.className="hcm";
+      combo.textContent=p.folded?"пас":(p.combo||"");
+      row.appendChild(combo);
+
+      const d=document.createElement("div");
+      d.className="hd "+(p.delta>0?"up":(p.delta<0?"dn":""));
+      d.textContent=p.delta>0?("+"+p.delta):String(p.delta||0);
+      row.appendChild(d);
+
+      box.appendChild(row);
+    });
+
+    histBox.appendChild(box);
   });
 }
 document.getElementById("histbtn").onclick=async()=>{
@@ -1983,7 +2018,7 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 		}
 	}
 
-	h.recordHistory(tbl)
+	h.recordHistory(tbl, deltas)
 	h.botTaunt(tbl, deltas)
 
 	// A seat busted to 0 chips in this hand must not stay locked out of
