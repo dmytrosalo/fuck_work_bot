@@ -43,7 +43,7 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #blinds{color:#c9a25a;font-weight:700}
 #blinds.rising{color:#ffd166}
-#felt{position:relative;height:48vh;min-height:340px;overflow:hidden;
+#felt{position:relative;height:54vh;min-height:420px;overflow:hidden;
  background:radial-gradient(ellipse at 50% 45%,#12202b,#0b141c 70%,#080f15)}
 /* The table is now a real oval sitting inside the felt area, so the
    background photo or colour shows around it as the room rather than being
@@ -123,7 +123,7 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  box-shadow:0 2px 6px rgba(0,0,0,.45)}
 .bet i{font-style:normal;margin-right:3px}
 .oppHole{margin:2px 0}
-.oppHole .card{width:26px;height:36px;line-height:36px;font-size:15px;margin:0 1px;border-radius:5px}
+.oppHole .card{width:35px;height:49px;line-height:49px;font-size:20px;margin:0 2px;border-radius:6px}
 .card.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d);border:1px solid #3f6199}
 /* Director Bo hides behind a pair of diamond jacks. */
 .card.back.bo{background:#fff;border:1px solid #d9c48a;color:#d62828;
@@ -134,8 +134,8 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  box-shadow:0 0 8px rgba(246,216,121,.45)}
 .card.back.droid svg{width:64%;height:64%;fill:#3a2a05}
 #centre{position:absolute;top:34%;left:0;right:0;text-align:center}
-.card{display:inline-block;background:#fff;border-radius:6px;width:43px;height:59px;line-height:59px;
- text-align:center;font-size:22px;font-weight:700;margin:0 3px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.card{display:inline-block;background:#fff;border-radius:7px;width:58px;height:80px;line-height:80px;
+ text-align:center;font-size:30px;font-weight:700;margin:0 3px;color:#111;box-shadow:0 2px 5px rgba(0,0,0,.5)}
 /* Target is a 1024px-wide viewport and up, where five board cards clear the
    side seats comfortably. Below that they cannot, so step back down rather
    than let the board and the seats collide. */
