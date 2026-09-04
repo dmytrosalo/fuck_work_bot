@@ -383,6 +383,33 @@ func main() {
 		}
 	}
 
+	// Table-driven like cardGifts above, rather than another pair of
+	// copy-pasted blocks. Each entry is one-shot on its own meta key, so a
+	// redeploy cannot pay any of them twice, and a name that fails to
+	// resolve is logged instead of silently doing nothing.
+	coinGifts := []struct {
+		Key    string
+		Name   string
+		Amount int
+	}{
+		{"gift_dmytro_sep4_10000", "Dmytro", 10000},
+		{"gift_danya_sep4_10000", "Danya", 10000},
+	}
+	for _, g := range coinGifts {
+		if db.GetMeta(g.Key) != "" {
+			continue
+		}
+		uid, found := db.FindUserByName(g.Name)
+		if !found {
+			log.Printf("Gift skipped: no balances row named %s", g.Name)
+			continue
+		}
+		db.UpdateBalance(uid, g.Name, g.Amount)
+		db.LogTransaction(uid, g.Name, "gift", g.Amount)
+		db.SetMeta(g.Key, "done")
+		log.Printf("Gifted %d богдудіків to %s", g.Amount, g.Name)
+	}
+
 	syklivKey := "gift_danya_sykliv_ultra"
 	if db.GetMeta(syklivKey) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
