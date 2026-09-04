@@ -43,9 +43,9 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #blinds{color:#c9a25a;font-weight:700}
 #blinds.rising{color:#ffd166}
-#felt{position:relative;height:46vh;min-height:300px;
+#felt{position:relative;height:48vh;min-height:340px;
  background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
-.seat{position:absolute;width:74px;margin-left:-37px;margin-top:-20px;text-align:center;font-size:11px;
+.seat{position:absolute;width:104px;margin-left:-52px;margin-top:-20px;text-align:center;font-size:11px;
  transition:opacity .2s}
 .seat .nm{font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .seat .st{color:#7ddba5}
@@ -57,7 +57,7 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .chip{display:inline-block;background:#e8a33d;color:#3a2708;border-radius:8px;padding:0 5px;
  font-size:10px;font-weight:700;margin-top:1px}
 .oppHole{margin:2px 0}
-.oppHole .card{width:21px;height:29px;line-height:29px;font-size:12px;margin:0 1px;border-radius:4px}
+.oppHole .card{width:26px;height:36px;line-height:36px;font-size:15px;margin:0 1px;border-radius:5px}
 .card.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d);border:1px solid #3f6199}
 /* Director Bo hides behind a pair of diamond jacks. */
 .card.back.bo{background:#fff;border:1px solid #d9c48a;color:#d62828;
@@ -67,9 +67,17 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  border:1px solid #ffe9a8;display:inline-flex;align-items:center;justify-content:center;
  box-shadow:0 0 8px rgba(246,216,121,.45)}
 .card.back.droid svg{width:64%;height:64%;fill:#3a2a05}
-#centre{position:absolute;top:30%;left:0;right:0;text-align:center}
-.card{display:inline-block;background:#fff;border-radius:5px;width:34px;height:47px;line-height:47px;
- text-align:center;font-size:18px;font-weight:700;margin:0 2px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+#centre{position:absolute;top:34%;left:0;right:0;text-align:center}
+.card{display:inline-block;background:#fff;border-radius:6px;width:43px;height:59px;line-height:59px;
+ text-align:center;font-size:22px;font-weight:700;margin:0 3px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+/* Target is a 1024px-wide viewport and up, where five board cards clear the
+   side seats comfortably. Below that they cannot, so step back down rather
+   than let the board and the seats collide. */
+@media (max-width:760px){
+ .card{width:34px;height:47px;line-height:47px;font-size:18px;margin:0 2px}
+ .oppHole .card{width:21px;height:29px;line-height:29px;font-size:12px}
+ .seat{width:74px;margin-left:-37px}
+}
 /* A card that is part of your current best five. */
 .card.made{outline:2px solid #7ddba5;box-shadow:0 0 10px rgba(125,219,165,.55)}
 .card.red{color:#d62828}
@@ -230,7 +238,8 @@ function backFor(userID){
 }
 function backsFor(userID){const b=backFor(userID);return b+b}
 
-function clip(n){n=n||"";return n.length>10?n.slice(0,10)+"…":n}
+// Seats are 104px wide at the 1024px+ target, so full bot names fit.
+function clip(n){n=n||"";return n.length>17?n.slice(0,17)+"…":n}
 
 function mmss(total){
   total=Math.max(0,Math.floor(total));

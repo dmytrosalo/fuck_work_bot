@@ -64,5 +64,43 @@ func HandName(hole, board []pk.Card) (string, []pk.Card) {
 	if bestRank == -1 {
 		return "", nil
 	}
-	return handClassUA[pk.RankClass(bestRank)], bestSet
+	class := pk.RankClass(bestRank)
+	return handClassUA[class], coreOf(class, bestSet)
+}
+
+// coreOf narrows the best five to the cards that actually MAKE the hand,
+// dropping kickers. A pair of nines with three unrelated cards is a pair of
+// nines: highlighting all five says nothing, and high card — where the best
+// five is simply every card available — highlights nothing at all rather
+// than lighting up the whole board.
+//
+// Straights, flushes, straight flushes and full houses genuinely use all
+// five cards, so they are returned whole.
+func coreOf(class int32, best []pk.Card) []pk.Card {
+	switch class {
+	case 1, 3, 4, 5: // straight flush, full house, flush, straight
+		return best
+	case 9: // high card: nothing worth pointing at
+		return nil
+	}
+
+	want := map[int32]int{2: 4, 6: 3, 7: 2, 8: 2}[class] // quads, trips, two pair, pair
+	if want == 0 {
+		return best
+	}
+
+	counts := map[int32]int{}
+	for _, c := range best {
+		counts[c.Rank()]++
+	}
+	out := make([]pk.Card, 0, 4)
+	for _, c := range best {
+		if counts[c.Rank()] == want {
+			out = append(out, c)
+		}
+	}
+	if len(out) == 0 {
+		return best
+	}
+	return out
 }
