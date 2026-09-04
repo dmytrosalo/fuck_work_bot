@@ -165,3 +165,56 @@ func TestEmptyContentDoesNotBurnTheCooldown(t *testing.T) {
 		t.Error("cooldown was stamped despite nothing being said")
 	}
 }
+
+// Roast rows are templates holding a {name} placeholder that every other
+// caller fills in. The bots posted the raw row, so players saw a literal
+// "{name}" in chat.
+func TestBotTauntSubstitutesTheNamePlaceholder(t *testing.T) {
+	h, db, tbl := tauntHub(t)
+	db.AddRoast("personal", "Dmytro", "{name} хотів піти освіжитись, але захворів")
+	deltas := map[string]int{"bot:1": 500, "42": -500}
+
+	var got []chatMsg
+	for i := 0; i < 300 && len(got) == 0; i++ {
+		h.mu.Lock()
+		delete(h.lastTauntAt, tbl.ID) // defeat the cooldown for the test only
+		h.mu.Unlock()
+		tbl.Lock()
+		h.botTaunt(tbl, deltas)
+		tbl.Unlock()
+		got = h.chatSnapshot(tbl.ID)
+	}
+	if len(got) == 0 {
+		t.Fatal("bot never spoke")
+	}
+	if strings.Contains(got[0].Text, "{name}") {
+		t.Errorf("placeholder leaked into chat: %q", got[0].Text)
+	}
+	if !strings.HasPrefix(got[0].Text, "Dmytro хотів") {
+		t.Errorf("text = %q, want the placeholder replaced with the loser's name", got[0].Text)
+	}
+}
+
+// A quote or generic roast that still carries {name} with nobody to name
+// must be dropped, not posted with a visible placeholder.
+func TestBotNeverPostsAnUnfilledPlaceholder(t *testing.T) {
+	h, db, tbl := tauntHub(t)
+	db.AddQuote("хтось", "{name} завжди програє")
+	// Nobody lost: no victim, so nothing can fill the placeholder.
+	deltas := map[string]int{"bot:1": 0, "42": 0}
+	deltas["bot:1"] = 500
+
+	for i := 0; i < 300; i++ {
+		h.mu.Lock()
+		delete(h.lastTauntAt, tbl.ID)
+		h.mu.Unlock()
+		tbl.Lock()
+		h.botTaunt(tbl, deltas)
+		tbl.Unlock()
+	}
+	for _, m := range h.chatSnapshot(tbl.ID) {
+		if strings.Contains(m.Text, "{name}") {
+			t.Errorf("posted an unfilled placeholder: %q", m.Text)
+		}
+	}
+}

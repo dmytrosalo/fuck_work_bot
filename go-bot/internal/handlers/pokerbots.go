@@ -244,6 +244,17 @@ func (h *PokerHub) botTaunt(tbl *poker.Table, deltas map[string]int) {
 	if line == "" {
 		return // empty content tables: say nothing rather than something blank
 	}
+
+	// Roast rows are templates carrying a {name} placeholder, which every
+	// other caller fills in (see handlers.go and quotes.go). Without this
+	// the bots posted the raw row and players saw a literal "{name}".
+	line = strings.ReplaceAll(line, "{name}", victim)
+	// A line still holding a placeholder had no one to name — a generic
+	// roast surfaced when nobody lost anything. Say nothing rather than
+	// something obviously broken.
+	if strings.Contains(line, "{name}") {
+		return
+	}
 	// Stamped only once a line is actually produced, so a hand where the
 	// content tables came back empty does not silence the bots for the next
 	// four minutes.
