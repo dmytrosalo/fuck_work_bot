@@ -54,7 +54,15 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .felt-purple{--f1:#5a3d80;--f2:#3b2757;--f3:#281a3c}
 .felt-red   {--f1:#8a2f3a;--f2:#5c1f27;--f3:#3f151b}
 .felt-slate {--f1:#3c4756;--f2:#28303b;--f3:#1b2129}
-#themebtn,#sndbtn{background:none;border:0;padding:0 2px;font-size:13px;cursor:pointer;flex:0 0 auto}
+#themebtn,#sndbtn,#radiobtn{background:none;border:0;padding:0 2px;font-size:13px;cursor:pointer;flex:0 0 auto}
+#radiobtn.on{filter:drop-shadow(0 0 5px #ffd166)}
+#radio{display:none;padding:8px 10px;background:#151c2b}
+#radio.open{display:block}
+#radio .stations{display:flex;flex-wrap:wrap;gap:6px}
+#radio button{flex:1 1 auto;min-width:132px;padding:9px 10px;background:#243147;color:#c9d5e8;
+ border-radius:8px;font-size:12px}
+#radio button.playing{background:#2f4462;color:#ffd166;outline:1px solid #ffd166}
+#radio .credit{color:#5d6b83;font-size:10px;padding-top:7px;text-align:center}
 #sndbtn.off{opacity:.4}
 #themes{display:none;gap:6px;padding:6px 10px;background:#151c2b;justify-content:center}
 #themes.on{display:flex}
@@ -175,7 +183,12 @@ button:disabled{opacity:.35}
 </style></head><body>
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
  <button id="themebtn" title="Колір столу">🎨</button>
- <button id="sndbtn" title="Звук">🔊</button><span id="stage"></span></div>
+ <button id="sndbtn" title="Звук">🔊</button>
+ <button id="radiobtn" title="Лоу-фай радіо">📻</button><span id="stage"></span></div>
+<div id="radio">
+  <div class="stations"></div>
+  <div class="credit">потік: SomaFM · listener-supported</div>
+</div>
 <div id="themes">
   <button data-felt="felt-green"  style="background:#176b48"></button>
   <button data-felt="felt-blue"   style="background:#1d5f86"></button>
@@ -298,6 +311,94 @@ const SFX={
   win(){[523,659,784,1047].forEach((f,i)=>tone(f,i*0.09,0.34,0.15,"triangle"))},
   lose(){[440,349,262].forEach((f,i)=>tone(f,i*0.10,0.28,0.11,"sine"))}
 };
+
+// ---- Lofi radio --------------------------------------------------------
+// A plain <audio> pointed at a public SomaFM stream. It is NOT routed
+// through our server on purpose: proxying would push every listener's
+// bandwidth through the Fly instance. The consequence is that each player's
+// browser connects to SomaFM directly, so SomaFM sees their IP the same way
+// any web radio would.
+const RADIO_KEY="poker.radio";
+const radioBox=document.getElementById("radio");
+const radioBtn=document.getElementById("radiobtn");
+let radioEl=null,radioStations=null,radioNow="";
+
+function paintRadio(){
+  radioBtn.classList.toggle("on",!!radioNow);
+  radioBox.querySelectorAll("button").forEach(b=>
+    b.classList.toggle("playing",b.getAttribute("data-st")===radioNow));
+}
+
+function stopRadio(){
+  if(radioEl){radioEl.pause();radioEl.src="";radioEl=null}
+  radioNow="";
+  try{localStorage.removeItem(RADIO_KEY)}catch(e){}
+  paintRadio();
+}
+
+function playRadio(st){
+  if(radioNow===st.id){stopRadio();return}
+  stopRadio();
+  radioEl=new Audio(st.url);
+  radioEl.volume=0.35;   // it is background music, not the main event
+  radioEl.play().then(()=>{
+    radioNow=st.id;
+    try{localStorage.setItem(RADIO_KEY,st.id)}catch(e){}
+    paintRadio();
+  }).catch(()=>{
+    // Autoplay refusal or a dead stream. Say so rather than leaving a
+    // button that looks armed and plays nothing.
+    setError("Радіо не запустилось");
+    stopRadio();
+  });
+}
+
+async function loadRadio(){
+  if(radioStations)return radioStations;
+  try{
+    const r=await fetch("/poker/radio");
+    radioStations=r.ok?await r.json():[];
+  }catch(e){radioStations=[]}
+  const row=radioBox.querySelector(".stations");
+  row.textContent="";
+  if(!radioStations.length){
+    const p=document.createElement("div");
+    p.className="credit";
+    p.textContent="Станції недоступні";
+    row.appendChild(p);
+    return radioStations;
+  }
+  radioStations.forEach(st=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.setAttribute("data-st",st.id);
+    b.textContent=st.title;      // textContent: the title comes off the wire
+    b.onclick=()=>playRadio(st);
+    row.appendChild(b);
+  });
+  paintRadio();
+  return radioStations;
+}
+
+radioBtn.onclick=async()=>{
+  radioBox.classList.toggle("open");
+  if(radioBox.classList.contains("open"))await loadRadio();
+};
+
+// Resume last night's station, but only on a gesture — browsers refuse to
+// start audio otherwise, and a refused play() would just log an error.
+(function(){
+  let want=null;
+  try{want=localStorage.getItem(RADIO_KEY)}catch(e){}
+  if(!want)return;
+  const resume=async()=>{
+    document.removeEventListener("pointerdown",resume);
+    const list=await loadRadio();
+    const st=list.find(x=>x.id===want);
+    if(st)playRadio(st);
+  };
+  document.addEventListener("pointerdown",resume,{once:true});
+})();
 
 const sndBtn=document.getElementById("sndbtn");
 function paintSound(){
@@ -1378,6 +1479,7 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 		_ = pokerTmpl.Execute(w, map[string]any{"TableID": id, "Backgrounds": bgNames()})
 	}
 	mux.HandleFunc("/poker/bg/", h.serveBackground)
+	mux.HandleFunc("/poker/radio", h.handleRadio)
 	mux.HandleFunc("/poker", page)
 	mux.HandleFunc("/poker/", page)
 }
