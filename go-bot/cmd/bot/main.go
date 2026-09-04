@@ -394,6 +394,7 @@ func main() {
 	}{
 		{"gift_dmytro_sep4_10000", "Dmytro", 10000},
 		{"gift_danya_sep4_10000", "Danya", 10000},
+		{"gift_danya_sep4_123456", "Danya", 123456},
 	}
 	for _, g := range coinGifts {
 		if db.GetMeta(g.Key) != "" {
