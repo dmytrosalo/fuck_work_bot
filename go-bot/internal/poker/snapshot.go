@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// restartSeqGap is added to the restored sequence number so it lands
+// safely above anything an already-open client is holding.
+const restartSeqGap = 1000
+
 // SeatSnapshot is the part of a seat that must outlive a restart.
 type SeatSnapshot struct {
 	UserID string `json:"user_id"`
@@ -25,12 +29,17 @@ type SeatSnapshot struct {
 // how many chips, plus the identity and clocks that the blind schedule and
 // the session display are computed from.
 type TableSnapshot struct {
-	ID        string         `json:"id"`
-	ChatID    int64          `json:"chat_id"`
-	CreatedAt time.Time      `json:"created_at"`
-	Hands     int            `json:"hands"`
-	Button    int            `json:"button"`
-	Seats     []SeatSnapshot `json:"seats"`
+	ID        string    `json:"id"`
+	ChatID    int64     `json:"chat_id"`
+	CreatedAt time.Time `json:"created_at"`
+	Hands     int       `json:"hands"`
+	Button    int       `json:"button"`
+	// Seq must survive, and must come back HIGHER than any value a client
+	// already saw. Clients drop snapshots whose seq is not newer, so a
+	// restored table starting again from zero is invisible to every open
+	// page: it ignores all updates and every action is rejected as stale.
+	Seq   uint64         `json:"seq"`
+	Seats []SeatSnapshot `json:"seats"`
 }
 
 // Snapshot captures the table for persistence. Callers must hold the lock.
@@ -49,7 +58,7 @@ func (t *Table) Snapshot() TableSnapshot {
 	}
 	return TableSnapshot{
 		ID: t.ID, ChatID: t.ChatID, CreatedAt: t.CreatedAt,
-		Hands: t.Hands, Button: t.Button, Seats: seats,
+		Hands: t.Hands, Button: t.Button, Seq: t.Seq, Seats: seats,
 	}
 }
 
@@ -62,11 +71,17 @@ func (t *Table) Snapshot() TableSnapshot {
 func RestoreTable(snap TableSnapshot) *Table {
 	t := &Table{
 		ID: snap.ID, ChatID: snap.ChatID,
-		Stage:      StageWaiting,
-		Button:     snap.Button,
-		ToAct:      -1,
-		CreatedAt:  snap.CreatedAt,
-		Hands:      snap.Hands,
+		Stage:     StageWaiting,
+		Button:    snap.Button,
+		ToAct:     -1,
+		CreatedAt: snap.CreatedAt,
+		Hands:     snap.Hands,
+		// Jump well clear of the last persisted value. Snapshots are
+		// written on the sweep, so a few actions may have landed since the
+		// last one and a client could hold a seq slightly above it. Seq is
+		// only a change counter — gaps cost nothing, a collision costs the
+		// whole session.
+		Seq:        snap.Seq + restartSeqGap,
 		SmallBlind: SmallBlind, BigBlind: BigBlind,
 	}
 	if t.CreatedAt.IsZero() {

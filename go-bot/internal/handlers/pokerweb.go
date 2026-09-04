@@ -2213,7 +2213,16 @@ func (h *PokerHub) sweepOnce() {
 			// their seatedAt claims exactly as item 3 was written to fix.
 			// Only a real join or a real player action (handleJoin,
 			// handleAction) may refresh idleness.
-		case tbl.Stage == poker.StageShowdown && h.showdownReady(id):
+		// StageWaiting is reached two ways: a brand-new table nobody has
+		// joined yet, and — the case this exists for — a table restored
+		// after a restart, whose players are already seated. handleJoin's
+		// auto-start cannot help there: a seated player takes the reconnect
+		// fast path and returns before ever reaching it, so without this
+		// the table sits at "Очікування" forever with nobody to deal it.
+		// hasActiveHuman keeps a fresh empty table from seating bots to
+		// play against themselves.
+		case tbl.Stage == poker.StageWaiting && hasActiveHuman(tbl),
+			tbl.Stage == poker.StageShowdown && h.showdownReady(id):
 			// At least one full sweepInterval has passed since settle()
 			// transitioned this table into showdown (see
 			// showdownAt/showdownReady) — checking merely "prevStage was
