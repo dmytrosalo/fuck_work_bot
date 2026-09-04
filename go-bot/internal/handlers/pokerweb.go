@@ -63,8 +63,8 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .felt-purple{--f1:#5a3d80;--f2:#3b2757;--f3:#281a3c}
 .felt-red   {--f1:#8a2f3a;--f2:#5c1f27;--f3:#3f151b}
 .felt-slate {--f1:#3c4756;--f2:#28303b;--f3:#1b2129}
-#themebtn,#sndbtn,#radiobtn,#avbtn,#histbtn{background:none;border:0;padding:0 2px;font-size:13px;
- cursor:pointer;flex:0 0 auto}
+#themebtn,#sndbtn,#radiobtn,#avbtn,#histbtn,#leavebtn{background:none;border:0;padding:0 2px;
+ font-size:13px;cursor:pointer;flex:0 0 auto}
 #history{display:none;padding:8px 10px;background:#151c2b;max-height:210px;overflow-y:auto}
 #history.open{display:block}
 .hand{padding:6px 2px 7px;border-bottom:1px solid #1d2740}
@@ -236,7 +236,8 @@ button:disabled{opacity:.35}
  <button id="sndbtn" title="Звук">🔊</button>
  <button id="radiobtn" title="Лоу-фай радіо">📻</button>
  <button id="avbtn" title="Аватар">🙂</button>
- <button id="histbtn" title="Останні роздачі">🕘</button><span id="stage"></span></div>
+ <button id="histbtn" title="Останні роздачі">🕘</button>
+ <button id="leavebtn" title="Встати з-за столу">🚪</button><span id="stage"></span></div>
 <div id="history"></div>
 <div id="avatars"></div>
 <div id="radio">
@@ -1169,6 +1170,38 @@ document.getElementById("histbtn").onclick=async()=>{
   if(histBox.classList.contains("open"))await loadHistory();
 };
 
+// Leaving the table. Frees the seat for someone else and releases the
+// hub-wide claim, so the next open offers a fresh buy-in rather than
+// dropping you back into the seat you just left.
+document.getElementById("leavebtn").onclick=async()=>{
+  let r;
+  try{
+    r=await fetch("/api/poker/"+TABLE+"/leave",{
+      method:"POST",headers:{"X-Telegram-Init-Data":INIT}});
+  }catch(e){setError("Зʼєднання втрачено…");return}
+  if(!r.ok){setError(await r.text());return}
+
+  const res=await r.json();
+  if(res.pending){
+    // Chips still in a live pot: the server stands us up when the hand
+    // ends. Say so instead of opening a buy-in we cannot take yet.
+    setError("Встанеш, щойно закінчиться роздача");
+    return;
+  }
+
+  // Re-enter from the top: the join with no amount asks what we may buy in
+  // for, and the picker takes it from there.
+  let j;
+  try{j=await join(0)}catch(e){setMsg("Зʼєднання втрачено…");return}
+  if(!j.ok){setMsg(await j.text());return}
+  let view=await j.json();
+  if(view.choose_buy_in){
+    view=await pickBuyIn(view);
+    if(!view)return;
+  }
+  render(view);
+};
+
 const chatInput=document.getElementById("chatinput");
 async function sendChat(){
   const text=chatInput.value.trim();
@@ -1419,6 +1452,11 @@ type PokerHub struct {
 	// rewriting every table every five seconds. Guarded by h.mu.
 	savedSeq map[string]uint64
 
+	// leaving maps a userID to the table they asked to leave while they
+	// still had chips in a live pot. settle() stands them up once the hand
+	// ends. Guarded by h.mu.
+	leaving map[string]string
+
 	// history holds each table's recent finished hands, newest last,
 	// capped at historyDepth. Served on demand rather than broadcast.
 	// Guarded by h.mu; dropped with the table.
@@ -1456,6 +1494,7 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		lastTauntAt:     map[string]time.Time{},
 		savedSeq:        map[string]uint64{},
 		history:         map[string][]handResult{},
+		leaving:         map[string]string{},
 	}
 }
 
@@ -1691,6 +1730,8 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			h.handleAvatar(w, r, tbl, uid)
 		case "history":
 			h.handleHistory(w, tbl)
+		case "leave":
+			h.handleLeave(w, tbl, uid)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2019,6 +2060,8 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 	}
 
 	h.recordHistory(tbl, deltas)
+	// The hand is over: anyone who asked to leave mid-hand goes now.
+	h.applyPendingLeaves(tbl)
 	h.botTaunt(tbl, deltas)
 
 	// A seat busted to 0 chips in this hand must not stay locked out of
@@ -2437,6 +2480,11 @@ func (h *PokerHub) sweepOnce() {
 		delete(h.lastTauntAt, id)
 		delete(h.savedSeq, id)
 		delete(h.history, id)
+		for uid, tid := range h.leaving {
+			if tid == id {
+				delete(h.leaving, uid)
+			}
+		}
 		if h.db != nil {
 			// Reclaimed deliberately: its snapshot must go too, or the next
 			// restart would resurrect a table nobody is at.

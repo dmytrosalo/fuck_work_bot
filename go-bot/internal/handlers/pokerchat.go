@@ -225,3 +225,80 @@ func (h *PokerHub) handleAvatar(w http.ResponseWriter, r *http.Request, tbl *pok
 
 	writeJSON(w, view)
 }
+
+// handleLeave stands a player up and releases their hub-wide seat claim, so
+// the seat is free for someone else and they can sit again from scratch.
+//
+// With chips still in a live pot the leave is QUEUED rather than refused.
+// Standing up then would delete chips other players are contesting, but
+// refusing outright would make the button almost unusable: the next hand
+// starts within seconds of the last one settling, so the gap a player would
+// have to catch is a fraction of a second. Marked players are stood up by
+// settle() the moment the hand ends.
+func (h *PokerHub) handleLeave(w http.ResponseWriter, tbl *poker.Table, uid int64) {
+	userID := fmt.Sprintf("%d", uid)
+
+	tbl.Lock()
+	if tbl.SeatIndexOf(userID) < 0 {
+		tbl.Unlock()
+		h.cancelLeave(userID)
+		writeJSON(w, map[string]any{"left": true}) // already gone: not an error
+		return
+	}
+	if tbl.HasLiveStake(userID) {
+		tbl.Unlock()
+		h.mu.Lock()
+		h.leaving[userID] = tbl.ID
+		h.mu.Unlock()
+		writeJSON(w, map[string]any{"left": false, "pending": true})
+		return
+	}
+	stood := tbl.StandUp(userID)
+	if stood {
+		h.broadcast(tbl)
+	}
+	tbl.Unlock()
+
+	h.cancelLeave(userID)
+	if stood {
+		h.releaseSeatClaim(userID, tbl.ID)
+		// Persist at once rather than waiting for the sweep: a restart in
+		// between would restore the player to a seat they just left.
+		tbl.Lock()
+		h.persistTable(tbl)
+		tbl.Unlock()
+	}
+	writeJSON(w, map[string]any{"left": stood})
+}
+
+func (h *PokerHub) cancelLeave(userID string) {
+	h.mu.Lock()
+	delete(h.leaving, userID)
+	h.mu.Unlock()
+}
+
+// applyPendingLeaves stands up everyone who asked to leave mid-hand, now
+// that the hand is over. Caller must hold the table lock and not h.mu.
+func (h *PokerHub) applyPendingLeaves(tbl *poker.Table) {
+	h.mu.Lock()
+	var want []string
+	for userID, tableID := range h.leaving {
+		if tableID == tbl.ID {
+			want = append(want, userID)
+		}
+	}
+	h.mu.Unlock()
+
+	stood := false
+	for _, userID := range want {
+		if tbl.StandUp(userID) {
+			stood = true
+		}
+		h.cancelLeave(userID)
+		h.releaseSeatClaim(userID, tbl.ID)
+	}
+	if stood {
+		h.broadcast(tbl)
+		h.persistTable(tbl)
+	}
+}
