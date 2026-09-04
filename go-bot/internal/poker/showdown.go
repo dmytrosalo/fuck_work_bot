@@ -98,6 +98,13 @@ func (t *Table) recordResult() {
 		}
 	}
 
+	// Summed before the pots are distributed and Committed is cleared —
+	// afterwards there is nothing left to add up.
+	t.LastPot = 0
+	for _, s := range t.Seats {
+		t.LastPot += s.Committed
+	}
+
 	seen := map[string]bool{}
 	t.LastWinners = nil
 	t.LastHandName = ""

@@ -63,7 +63,21 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .felt-purple{--f1:#5a3d80;--f2:#3b2757;--f3:#281a3c}
 .felt-red   {--f1:#8a2f3a;--f2:#5c1f27;--f3:#3f151b}
 .felt-slate {--f1:#3c4756;--f2:#28303b;--f3:#1b2129}
-#themebtn,#sndbtn,#radiobtn{background:none;border:0;padding:0 2px;font-size:13px;cursor:pointer;flex:0 0 auto}
+#themebtn,#sndbtn,#radiobtn,#avbtn,#histbtn{background:none;border:0;padding:0 2px;font-size:13px;
+ cursor:pointer;flex:0 0 auto}
+#history{display:none;padding:8px 10px;background:#151c2b;max-height:210px;overflow-y:auto}
+#history.open{display:block}
+.hrow{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #1d2740;
+ font-size:12px}
+.hrow:last-child{border-bottom:0}
+.hrow .hno{color:#5d6b83;flex:0 0 34px;font-size:11px}
+.hrow .hb{flex:0 0 auto;display:flex;gap:2px}
+.hrow .hb span{background:#fff;color:#111;border-radius:3px;padding:0 3px;font-size:11px;font-weight:700}
+.hrow .hb span.red{color:#d62828}
+.hrow .hw{flex:1;color:#e6edf7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow .hp{color:#ffd166;font-weight:700;flex:0 0 auto}
+.hrow .hc{color:#7ddba5;font-size:11px;flex:0 0 auto}
+#history .empty{color:#5d6b83;font-size:12px;text-align:center;padding:8px}
 #radiobtn.on{filter:drop-shadow(0 0 5px #ffd166)}
 #radio{display:none;padding:8px 10px;background:#151c2b}
 #radio.open{display:block}
@@ -213,7 +227,9 @@ button:disabled{opacity:.35}
  <button id="themebtn" title="Колір столу">🎨</button>
  <button id="sndbtn" title="Звук">🔊</button>
  <button id="radiobtn" title="Лоу-фай радіо">📻</button>
- <button id="avbtn" title="Аватар">🙂</button><span id="stage"></span></div>
+ <button id="avbtn" title="Аватар">🙂</button>
+ <button id="histbtn" title="Останні роздачі">🕘</button><span id="stage"></span></div>
+<div id="history"></div>
 <div id="avatars"></div>
 <div id="radio">
   <div class="stations"></div>
@@ -1053,6 +1069,71 @@ document.getElementById("avbtn").onclick=()=>{
     b.classList.toggle("sel",Number(b.getAttribute("data-av"))===mine));
 };
 
+// Recent hands, fetched on demand. Deliberately not carried on the state
+// payload: ten boards on every broadcast would cost far more than a list
+// nobody looks at most of the time.
+const histBox=document.getElementById("history");
+function miniCard(c){
+  const su=c.slice(-1),rank=c.slice(0,-1).replace("T","10");
+  const el=document.createElement("span");
+  if(su==="h"||su==="d")el.className="red";
+  el.textContent=rank+(SUITS[su]||su);
+  return el;
+}
+async function loadHistory(){
+  histBox.textContent="";
+  let rows=[];
+  try{
+    const r=await fetch("/api/poker/"+TABLE+"/history",{headers:{"X-Telegram-Init-Data":INIT}});
+    if(r.ok)rows=await r.json();
+  }catch(e){}
+  if(!rows||!rows.length){
+    const p=document.createElement("div");
+    p.className="empty";
+    p.textContent="Ще жодної роздачі";
+    histBox.appendChild(p);
+    return;
+  }
+  rows.forEach(h=>{
+    const row=document.createElement("div");
+    row.className="hrow";
+
+    const no=document.createElement("div");
+    no.className="hno";
+    no.textContent="#"+h.hand;
+    row.appendChild(no);
+
+    const board=document.createElement("div");
+    board.className="hb";
+    (h.board||[]).forEach(c=>board.appendChild(miniCard(c)));
+    row.appendChild(board);
+
+    // Names are player-controlled, so textContent as everywhere else.
+    const who=document.createElement("div");
+    who.className="hw";
+    who.textContent=(h.winners||[]).join(", ");
+    row.appendChild(who);
+
+    if(h.combo){
+      const combo=document.createElement("div");
+      combo.className="hc";
+      combo.textContent=h.combo;
+      row.appendChild(combo);
+    }
+
+    const pot=document.createElement("div");
+    pot.className="hp";
+    pot.textContent=h.pot+" 🪙";
+    row.appendChild(pot);
+
+    histBox.appendChild(row);
+  });
+}
+document.getElementById("histbtn").onclick=async()=>{
+  histBox.classList.toggle("open");
+  if(histBox.classList.contains("open"))await loadHistory();
+};
+
 const chatInput=document.getElementById("chatinput");
 async function sendChat(){
   const text=chatInput.value.trim();
@@ -1302,6 +1383,11 @@ type PokerHub struct {
 	// sweeper only persists tables that actually moved rather than
 	// rewriting every table every five seconds. Guarded by h.mu.
 	savedSeq map[string]uint64
+
+	// history holds each table's recent finished hands, newest last,
+	// capped at historyDepth. Served on demand rather than broadcast.
+	// Guarded by h.mu; dropped with the table.
+	history map[string][]handResult
 }
 
 // membershipKey identifies one (chat, user) pair for membershipCache.
@@ -1334,6 +1420,7 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		lastChatAt:      map[string]time.Time{},
 		lastTauntAt:     map[string]time.Time{},
 		savedSeq:        map[string]uint64{},
+		history:         map[string][]handResult{},
 	}
 }
 
@@ -1567,6 +1654,8 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			h.handleChat(w, r, tbl, uid, firstName, username)
 		case "avatar":
 			h.handleAvatar(w, r, tbl, uid)
+		case "history":
+			h.handleHistory(w, tbl)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1894,6 +1983,7 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 		}
 	}
 
+	h.recordHistory(tbl)
 	h.botTaunt(tbl, deltas)
 
 	// A seat busted to 0 chips in this hand must not stay locked out of
@@ -2311,6 +2401,7 @@ func (h *PokerHub) sweepOnce() {
 		h.dropChat(id) // chat shares the table's lifetime; don't leak the log
 		delete(h.lastTauntAt, id)
 		delete(h.savedSeq, id)
+		delete(h.history, id)
 		if h.db != nil {
 			// Reclaimed deliberately: its snapshot must go too, or the next
 			// restart would resurrect a table nobody is at.

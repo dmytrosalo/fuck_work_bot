@@ -137,3 +137,10 @@ func nextBlindSeconds(t *Table) int {
 	}
 	return int(d.Seconds())
 }
+
+// BoardStrings returns the community cards as wire strings. Exported so
+// callers outside the package can record a finished board without building
+// a whole redacted view to get at it.
+func (t *Table) BoardStrings() []string {
+	return strs(t.Board)
+}
