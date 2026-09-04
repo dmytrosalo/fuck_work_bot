@@ -142,3 +142,71 @@ func TestJoinOffersNothingWhenTooPoor(t *testing.T) {
 		t.Errorf("max %v is not below min %v for a 250 balance", got["max"], got["min"])
 	}
 }
+
+// TestBustedPlayerCanBuyBackIn covers the dead end a busted player hit:
+// settlement leaves their seat in place with zero chips, StartHand only
+// deals to seats that have a stack, and handleJoin's reconnect fast path
+// short-circuits before any buy-in — so reopening the app returned them to
+// a seat they could never be dealt into again.
+func TestBustedPlayerCanBuyBackIn(t *testing.T) {
+	h, _ := buyInHub(t, 47320)
+	tbl := h.Create(-1)
+
+	join(h, tbl.ID, `{"buy_in":2500}`)
+	tbl.Lock()
+	tbl.Seats[tbl.SeatIndexOf("42")].Stack = 0 // lost it all
+	tbl.Stage = 0                              // hand over
+	tbl.Unlock()
+
+	// Reopening must now offer a fresh buy-in instead of silently handing
+	// back the dead seat.
+	rec := join(h, tbl.ID, `{}`)
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["choose_buy_in"] != true {
+		t.Fatalf("busted player was not offered a re-buy: %v", got)
+	}
+
+	// And taking it must actually seat them with chips.
+	if rec := join(h, tbl.ID, `{"buy_in":1000}`); rec.Code != http.StatusOK {
+		t.Fatalf("re-buy status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	tbl.Lock()
+	defer tbl.Unlock()
+	idx := tbl.SeatIndexOf("42")
+	if idx < 0 {
+		t.Fatal("not re-seated")
+	}
+	if got := tbl.Seats[idx].Stack; got != 1000 {
+		t.Errorf("stack after re-buy = %d, want 1000", got)
+	}
+}
+
+// A player who is all-in has zero chips but is still contesting the pot —
+// reopening then is a reconnect, not a bust, and must NOT tear their seat
+// out from under a live hand.
+func TestAllInPlayerReconnectsRatherThanRebuying(t *testing.T) {
+	h, _ := buyInHub(t, 47320)
+	tbl := h.Create(-1)
+
+	join(h, tbl.ID, `{"buy_in":2500}`)
+	tbl.Lock()
+	idx := tbl.SeatIndexOf("42")
+	tbl.Seats[idx].Stack = 0
+	tbl.Seats[idx].InHand = true
+	tbl.Seats[idx].Folded = false
+	tbl.Stage = 2 // a live betting stage
+	tbl.Unlock()
+
+	rec := join(h, tbl.ID, `{}`)
+	if strings.Contains(rec.Body.String(), "choose_buy_in") {
+		t.Error("all-in player was offered a re-buy mid-hand")
+	}
+	tbl.Lock()
+	defer tbl.Unlock()
+	if tbl.SeatIndexOf("42") < 0 {
+		t.Error("all-in player was stood up mid-hand, deleting chips from a live pot")
+	}
+}

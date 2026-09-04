@@ -1286,12 +1286,25 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, r *http.Request, tbl *poker
 	name := resolveTarget(firstName, username)
 
 	tbl.Lock()
-	if tbl.SeatIndexOf(userID) >= 0 {
-		view := h.envelope(tbl, userID)
-		tbl.Unlock()
-		h.touch(tbl.ID) // reconnecting is real player-initiated activity
-		writeJSON(w, view)
-		return
+	if idx := tbl.SeatIndexOf(userID); idx >= 0 {
+		// A seat with chips — or with none but still contesting a live pot,
+		// i.e. all-in — is a genuine reconnect: return the table as it is.
+		if tbl.Seats[idx].Stack > 0 || tbl.HasLiveStake(userID) {
+			view := h.envelope(tbl, userID)
+			tbl.Unlock()
+			h.touch(tbl.ID) // reconnecting is real player-initiated activity
+			writeJSON(w, view)
+			return
+		}
+		// Busted. The seat survives settlement with zero chips, and
+		// StartHand only deals to seats with a stack, so without this the
+		// player is pinned to a dead seat forever: the fast path above
+		// would keep short-circuiting every reopen before any buy-in could
+		// run, leaving them watching hands they can never be dealt into.
+		// Standing them up drops them through to the ordinary join below,
+		// which offers a fresh buy-in.
+		tbl.StandUp(userID)
+		h.broadcast(tbl)
 	}
 	tbl.Unlock()
 
