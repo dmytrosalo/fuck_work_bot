@@ -27,7 +27,7 @@ func TestJoinRejectsMissingInitData(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -41,7 +41,7 @@ func TestUnknownTableReturns404(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 
-	req := httptest.NewRequest("POST", "/api/poker/nope/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/nope/join", strings.NewReader(`{"buy_in":10000}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -127,7 +127,7 @@ func TestJoinSucceedsWithBuyInClampedToMaxBuyIn(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 111, "Alice", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -167,7 +167,7 @@ func TestJoinRejectsSecondSeatAtDifferentTable(t *testing.T) {
 
 	initData := userInitData(t, "test-token", 111, "Alice", "")
 
-	reqA := httptest.NewRequest("POST", "/api/poker/"+tableA.ID+"/join", nil)
+	reqA := httptest.NewRequest("POST", "/api/poker/"+tableA.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	reqA.Header.Set("X-Telegram-Init-Data", initData)
 	recA := httptest.NewRecorder()
 	mux.ServeHTTP(recA, reqA)
@@ -175,7 +175,7 @@ func TestJoinRejectsSecondSeatAtDifferentTable(t *testing.T) {
 		t.Fatalf("join tableA status = %d, want 200, body=%s", recA.Code, recA.Body.String())
 	}
 
-	reqB := httptest.NewRequest("POST", "/api/poker/"+tableB.ID+"/join", nil)
+	reqB := httptest.NewRequest("POST", "/api/poker/"+tableB.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	reqB.Header.Set("X-Telegram-Init-Data", initData)
 	recB := httptest.NewRecorder()
 	mux.ServeHTTP(recB, reqB)
@@ -204,7 +204,7 @@ func TestJoinRejectsBuyInBelowMinimum(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 222, "Bob", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -222,7 +222,7 @@ func TestJoinRejectsNonChatMember(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 333, "Carl", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -245,7 +245,7 @@ func TestJoinAllowsChatMember(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 444, "Dana", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -278,7 +278,7 @@ func TestJoinReconnectsAlreadySeatedPlayer(t *testing.T) {
 
 	initData := userInitData(t, "test-token", 111, "Alice", "")
 	join := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 		req.Header.Set("X-Telegram-Init-Data", initData)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -350,7 +350,7 @@ func TestJoinReconnectsAlreadySeatedPlayerAtFullTable(t *testing.T) {
 
 	// Seat 0's player reloads the Mini App at their now-full table.
 	initData := userInitData(t, "test-token", 1000, "U0", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -409,7 +409,7 @@ func TestJoinEvictsOneBotToMakeRoomForNewHumanAtFullTable(t *testing.T) {
 
 	// A fifth, genuinely new human tries to join the full table.
 	initData := userInitData(t, "test-token", 2000, "NewGuy", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -477,7 +477,7 @@ func TestJoinReconnectAtFullBotTableDoesNotEvictABot(t *testing.T) {
 	// exactly what TestJoinReconnectsAlreadySeatedPlayerAtFullTable does,
 	// just with bots also present this time.
 	initData := userInitData(t, "test-token", 1000, "U0", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -550,7 +550,7 @@ func TestAuthReturns503OnTransientMembershipCheckError(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 333, "Carl", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -581,7 +581,7 @@ func TestAuthCachesPositiveMembershipAcrossRequests(t *testing.T) {
 	h.Register(mux)
 
 	initData := userInitData(t, "test-token", 333, "Carl", "")
-	req1 := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req1 := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req1.Header.Set("X-Telegram-Init-Data", initData)
 	rec1 := httptest.NewRecorder()
 	mux.ServeHTTP(rec1, req1)
@@ -600,7 +600,7 @@ func TestAuthCachesPositiveMembershipAcrossRequests(t *testing.T) {
 		atomic.AddInt32(&calls, 1)
 		return false, errors.New("should never be called: cached")
 	}
-	req2 := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req2 := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req2.Header.Set("X-Telegram-Init-Data", initData)
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
@@ -629,7 +629,7 @@ func TestAuthDoesNotCacheFailedMembershipCheck(t *testing.T) {
 
 	initData := userInitData(t, "test-token", 333, "Carl", "")
 	for i := 0; i < 3; i++ {
-		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 		req.Header.Set("X-Telegram-Init-Data", initData)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -836,7 +836,7 @@ func TestStreamSendsInitialSnapshotThenBroadcastsJoin(t *testing.T) {
 
 	// Trigger a broadcast via a real join, on a separate connection.
 	joinInitData := userInitData(t, "test-token", 555, "Eve", "")
-	joinReq, err := http.NewRequest("POST", srv.URL+"/api/poker/"+tbl.ID+"/join", nil)
+	joinReq, err := http.NewRequest("POST", srv.URL+"/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func TestConcurrentJoinsRespectCapacityAndDontRace(t *testing.T) {
 			defer wg.Done()
 			uid := int64(1000 + i)
 			initData := userInitData(t, "test-token", uid, fmt.Sprintf("U%d", i), "")
-			req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+			req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 			req.Header.Set("X-Telegram-Init-Data", initData)
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)

@@ -61,6 +61,16 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #themes button.sel{border-color:#ffd166}
 /* Quick reactions: one tap sends the emoji as an ordinary chat message. */
 #quick{display:flex;gap:5px;padding:0 8px 6px;overflow-x:auto}
+/* Buy-in chooser, shown over the felt before the first sit. */
+#buyin{position:absolute;inset:0;display:none;flex-direction:column;
+ align-items:center;justify-content:center;gap:12px;background:rgba(6,14,10,.86);z-index:5}
+#buyin.on{display:flex}
+#buyin h3{margin:0;font-size:16px;color:#e6edf7}
+#buyin .opts{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:88%}
+#buyin button{flex:0 0 auto;min-width:96px;padding:12px 14px;background:#e8a33d;color:#2b1d05;
+ border-radius:10px;font-size:14px}
+#buyin button.alt{background:#243147;color:#c9d5e8}
+#buyin .bal{color:#8fa1bd;font-size:12px}
 #quick button{flex:0 0 auto;min-width:40px;padding:6px 0;font-size:18px;
  background:#1b2536;border-radius:8px}
 .seat{position:absolute;width:104px;margin-left:-52px;margin-top:-20px;text-align:center;font-size:11px;
@@ -170,7 +180,8 @@ button:disabled{opacity:.35}
   <button data-felt="felt-red"    style="background:#8a2f3a"></button>
   <button data-felt="felt-slate"  style="background:#3c4756"></button>
 </div>
-<div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div></div>
+<div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
+ <div id="buyin"><h3>Скільки береш за стіл?</h3><div class="opts"></div><div class="bal"></div></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="handline"></div>
 <div id="acts">
@@ -767,14 +778,64 @@ applyFelt(savedFelt());
 document.getElementById("chatsend").onclick=sendChat;
 chatInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();sendChat()}};
 
+function join(amount){
+  return fetch("/api/poker/"+TABLE+"/join",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
+    body:JSON.stringify({buy_in:amount||0})
+  });
+}
+
+// Offers the stack sizes this player can actually afford and resolves with
+// the seated view. The server bounds the amount again on the way back in —
+// these buttons are a convenience, not the check.
+function pickBuyIn(info){
+  return new Promise(resolve=>{
+    const box=document.getElementById("buyin");
+    const opts=box.querySelector(".opts");
+    box.querySelector(".bal").textContent="Баланс: "+info.balance+" 🪙";
+    opts.textContent="";
+
+    if(info.max<info.min){
+      box.querySelector("h3").textContent="Замало богдудіків — треба щонайменше "+info.min;
+      box.classList.add("on");
+      resolve(null);
+      return;
+    }
+
+    const steps=[1000,2500,5000,10000].filter(v=>v>=info.min&&v<info.max);
+    steps.push(info.max); // always offer everything available, last
+    steps.forEach((v,i)=>{
+      const b=document.createElement("button");
+      b.type="button";
+      if(i<steps.length-1)b.className="alt";
+      b.textContent=(i===steps.length-1?"Все: ":"")+v;
+      b.onclick=async()=>{
+        box.classList.remove("on");
+        let r;
+        try{r=await join(v)}catch(e){setMsg("Зʼєднання втрачено…");resolve(null);return}
+        if(!r.ok){setMsg(await r.text());resolve(null);return}
+        resolve(await r.json());
+      };
+      opts.appendChild(b);
+    });
+    box.classList.add("on");
+  });
+}
+
 (async()=>{
   if(!tg){setMsg("Відкрий через кнопку в чаті Telegram");return}
   let j;
   try{
-    j=await fetch("/api/poker/"+TABLE+"/join",{method:"POST",headers:{"X-Telegram-Init-Data":INIT}});
+    j=await join(0); // no amount: ask what the options are
   }catch(e){setMsg("Зʼєднання втрачено…");return}
   if(!j.ok){setMsg(await j.text());return}
-  render(await j.json());
+  let view=await j.json();
+  if(view.choose_buy_in){
+    view=await pickBuyIn(view);
+    if(!view)return; // nothing chosen, or too poor to sit
+  }
+  render(view);
 
   const es=new EventSource("/api/poker/"+TABLE+"/stream?init_data="+encodeURIComponent(INIT));
   es.onmessage=e=>{try{render(JSON.parse(e.data))}catch(err){}};
@@ -1134,7 +1195,7 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 		}
 		switch action {
 		case "join":
-			h.handleJoin(w, tbl, uid, firstName, username)
+			h.handleJoin(w, r, tbl, uid, firstName, username)
 		case "stream":
 			h.handleStream(w, r, tbl, uid)
 		case "action":
@@ -1195,7 +1256,7 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 // h.seatedAt alone would wrongly treat their reconnect to THIS table as a
 // fresh join (and then wrongly 409 them as "already at another table" once
 // they've claimed elsewhere).
-func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64, firstName, username string) {
+func (h *PokerHub) handleJoin(w http.ResponseWriter, r *http.Request, tbl *poker.Table, uid int64, firstName, username string) {
 	userID := fmt.Sprintf("%d", uid)
 	name := resolveTarget(firstName, username)
 
@@ -1235,9 +1296,39 @@ func (h *PokerHub) handleJoin(w http.ResponseWriter, tbl *poker.Table, uid int64
 	if h.db != nil {
 		balance = h.db.GetBalance(userID, name)
 	}
-	buyIn := balance
-	if buyIn > poker.MaxBuyIn {
-		buyIn = poker.MaxBuyIn
+	// The largest stack this player could sit with right now.
+	maxBuy := balance
+	if maxBuy > poker.MaxBuyIn {
+		maxBuy = poker.MaxBuyIn
+	}
+
+	// A join carrying no amount is the client asking what it may offer,
+	// not a request to be seated. Answering with the range keeps this on
+	// one endpoint: the client has no other way to learn the balance, and
+	// the server must be the one to bound it either way, since a crafted
+	// request could otherwise name any number.
+	var req struct {
+		BuyIn int `json:"buy_in"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if req.BuyIn <= 0 {
+		if fresh {
+			h.releaseSeatClaim(userID, tbl.ID)
+		}
+		writeJSON(w, map[string]any{
+			"choose_buy_in": true,
+			"balance":       balance,
+			"min":           poker.MinBuyIn,
+			"max":           maxBuy,
+		})
+		return
+	}
+
+	buyIn := req.BuyIn
+	if buyIn > maxBuy {
+		buyIn = maxBuy
 	}
 
 	tbl.Lock()

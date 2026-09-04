@@ -39,7 +39,7 @@ func TestHandleJoinAutoStartsHandOnSecondPlayer(t *testing.T) {
 
 	join := func(uid int64, name string) *httptest.ResponseRecorder {
 		initData := userInitData(t, "test-token", uid, name, "")
-		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 		req.Header.Set("X-Telegram-Init-Data", initData)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -393,7 +393,7 @@ func TestSettleReleasesSeatClaimForBustedPlayer(t *testing.T) {
 	join := func(uid int64, name string) {
 		t.Helper()
 		initData := userInitData(t, "test-token", uid, name, "")
-		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 		req.Header.Set("X-Telegram-Init-Data", initData)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -446,7 +446,7 @@ func TestSettleReleasesSeatClaimForBustedPlayer(t *testing.T) {
 	// join a DIFFERENT table now.
 	tbl2 := h.Create(2)
 	initData := userInitData(t, "test-token", 222, "Bob", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -476,7 +476,7 @@ func TestSweepOnceReclaimsIdleTableReleasesClaimsAndDropsSubscribers(t *testing.
 	// Seat one real player via the actual HTTP path so seatedAt carries a
 	// real claim, exactly as production traffic would leave it.
 	initData := userInitData(t, "test-token", 111, "Alice", "")
-	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+	req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req.Header.Set("X-Telegram-Init-Data", initData)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -526,7 +526,7 @@ func TestSweepOnceReclaimsIdleTableReleasesClaimsAndDropsSubscribers(t *testing.
 	// DIFFERENT table must now succeed, proving item 3 end-to-end rather
 	// than just inspecting the map.
 	tbl2 := h.Create(2)
-	req2 := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", nil)
+	req2 := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 	req2.Header.Set("X-Telegram-Init-Data", initData)
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
@@ -605,7 +605,7 @@ func TestSweepOnceReclaimsTableWhoseOnlyEventsAreForcedTimeouts(t *testing.T) {
 	join := func(uid int64, name string) {
 		t.Helper()
 		initData := userInitData(t, "test-token", uid, name, "")
-		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", nil)
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 		req.Header.Set("X-Telegram-Init-Data", initData)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -673,7 +673,7 @@ func TestSweepOnceReclaimsTableWhoseOnlyEventsAreForcedTimeouts(t *testing.T) {
 		name string
 	}{{111, "Alice"}, {222, "Bob"}} {
 		initData := userInitData(t, "test-token", u.id, u.name, "")
-		req := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", nil)
+		req := httptest.NewRequest("POST", "/api/poker/"+tbl2.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 		req.Header.Set("X-Telegram-Init-Data", initData)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -782,7 +782,7 @@ func TestConcurrentJoinAndSweepNeverOrphanHubState(t *testing.T) {
 		go func(j joiner) {
 			defer wg.Done()
 			initData := userInitData(t, "test-token", j.uid, fmt.Sprintf("U%d", j.uid), "")
-			req := httptest.NewRequest("POST", "/api/poker/"+j.tbl.ID+"/join", nil)
+			req := httptest.NewRequest("POST", "/api/poker/"+j.tbl.ID+"/join", strings.NewReader(`{"buy_in":10000}`))
 			req.Header.Set("X-Telegram-Init-Data", initData)
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)
