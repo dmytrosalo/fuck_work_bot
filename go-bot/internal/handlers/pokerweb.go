@@ -44,7 +44,25 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #blinds{color:#c9a25a;font-weight:700}
 #blinds.rising{color:#ffd166}
 #felt{position:relative;height:48vh;min-height:340px;
- background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
+ background:radial-gradient(ellipse at 50% 45%,var(--f1),var(--f2) 70%,var(--f3))}
+:root{--f1:#1e7350;--f2:#124b35;--f3:#0d3626}
+/* Felt themes. Purely cosmetic and per-player: the choice lives in this
+   browser only and is never sent anywhere, so two players at one table can
+   pick different colours without either seeing the other's. */
+.felt-green {--f1:#1e7350;--f2:#124b35;--f3:#0d3626}
+.felt-blue  {--f1:#1d5f86;--f2:#123f5c;--f3:#0c2b41}
+.felt-purple{--f1:#5a3d80;--f2:#3b2757;--f3:#281a3c}
+.felt-red   {--f1:#8a2f3a;--f2:#5c1f27;--f3:#3f151b}
+.felt-slate {--f1:#3c4756;--f2:#28303b;--f3:#1b2129}
+#themebtn{background:none;border:0;padding:0 2px;font-size:13px;cursor:pointer;flex:0 0 auto}
+#themes{display:none;gap:6px;padding:6px 10px;background:#151c2b;justify-content:center}
+#themes.on{display:flex}
+#themes button{flex:0 0 30px;height:24px;padding:0;border-radius:6px;border:2px solid transparent}
+#themes button.sel{border-color:#ffd166}
+/* Quick reactions: one tap sends the emoji as an ordinary chat message. */
+#quick{display:flex;gap:5px;padding:0 8px 6px;overflow-x:auto}
+#quick button{flex:0 0 auto;min-width:40px;padding:6px 0;font-size:18px;
+ background:#1b2536;border-radius:8px}
 .seat{position:absolute;width:104px;margin-left:-52px;margin-top:-20px;text-align:center;font-size:11px;
  transition:opacity .2s}
 .seat .nm{font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -143,7 +161,15 @@ button:disabled{opacity:.35}
  78%{opacity:1;transform:scale(1)}
  100%{opacity:0;transform:scale(1.02)}}
 </style></head><body>
-<div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span><span id="stage"></span></div>
+<div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
+ <button id="themebtn" title="Колір столу">🎨</button><span id="stage"></span></div>
+<div id="themes">
+  <button data-felt="felt-green"  style="background:#176b48"></button>
+  <button data-felt="felt-blue"   style="background:#1d5f86"></button>
+  <button data-felt="felt-purple" style="background:#5a3d80"></button>
+  <button data-felt="felt-red"    style="background:#8a2f3a"></button>
+  <button data-felt="felt-slate"  style="background:#3c4756"></button>
+</div>
 <div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="handline"></div>
@@ -178,6 +204,7 @@ button:disabled{opacity:.35}
 <div id="msg"></div>
 <div id="chat">
   <div id="chatlog"></div>
+  <div id="quick"></div>
   <div id="chatrow">
     <input id="chatinput" type="text" maxlength="200" placeholder="Напиши…" autocomplete="off">
     <button id="chatsend">→</button>
@@ -698,6 +725,45 @@ async function sendChat(){
     render(await r.json());
   }catch(e){setError("Зʼєднання втрачено…")}
 }
+// Quick reactions. Each is an ordinary chat message, so it goes through the
+// same endpoint, the same length cap and the same per-user cooldown — a
+// tap-happy player cannot outrun the limit any more than a typing one.
+const QUICK=["\ud83d\ude02","\ud83e\udd21","\ud83d\udd25","\ud83d\ude2d","\ud83d\ude21","\ud83e\udd14","\ud83d\udc4d","\ud83d\udca9"];
+const quickRow=document.getElementById("quick");
+QUICK.forEach(e=>{
+  const b=document.createElement("button");
+  b.type="button";
+  b.textContent=e;             // textContent, not innerHTML — same rule as chat
+  b.onclick=()=>{chatInput.value=e;sendChat()};
+  quickRow.appendChild(b);
+});
+
+// Felt colour. Stored in this browser only; nothing about it is sent to the
+// server, so it is a personal preference rather than a table setting.
+const FELT_KEY="poker.felt";
+const themesRow=document.getElementById("themes");
+function applyFelt(name){
+  document.body.className=name||"felt-green";
+  themesRow.querySelectorAll("button").forEach(b=>
+    b.classList.toggle("sel",b.getAttribute("data-felt")===(name||"felt-green")));
+}
+function savedFelt(){
+  // Private-mode webviews can throw on storage access rather than return
+  // null, so a failure here must fall back to the default, not break the
+  // page before the table ever loads.
+  try{return localStorage.getItem(FELT_KEY)}catch(e){return null}
+}
+themesRow.querySelectorAll("button").forEach(b=>{
+  b.onclick=()=>{
+    const name=b.getAttribute("data-felt");
+    applyFelt(name);
+    try{localStorage.setItem(FELT_KEY,name)}catch(e){}
+    themesRow.classList.remove("on");
+  };
+});
+document.getElementById("themebtn").onclick=()=>themesRow.classList.toggle("on");
+applyFelt(savedFelt());
+
 document.getElementById("chatsend").onclick=sendChat;
 chatInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();sendChat()}};
 
