@@ -173,3 +173,83 @@ func botName(i int) string {
 	}
 	return fmt.Sprintf("Бот %d 🤖", i)
 }
+
+// tauntChance is how often a bot says something after taking a pot, and
+// tauntCooldown is the minimum gap between two taunts at the same table.
+//
+// The cooldown is the part that actually prevents spam. A probability alone
+// still allows two taunts on consecutive hands — at 1-in-3 that happens
+// roughly every ninth win, which is exactly the burst that reads as noise.
+// The gate makes bursts impossible rather than merely unlikely, so the
+// chance can stay high enough that they still feel present.
+const (
+	tauntChance   = 0.35
+	tauntCooldown = 4 * time.Minute
+)
+
+// botTaunt drops a line into table chat when a bot wins a hand — a roast
+// aimed at whoever lost the most that hand, or one of the group's quotes.
+//
+// Reuses the same roast and quote tables the chat commands draw from, so
+// the bots speak in the group's own voice rather than in canned strings,
+// and a roast targeted at that player is preferred over a generic one
+// (GetRandomRoast falls back on its own when there is no personal line).
+//
+// Caller must hold the table lock and not h.mu: appendSystem takes h.mu,
+// the inner lock. The message is appended before settle's own broadcast, so
+// it reaches everyone with the same snapshot that shows the result.
+func (h *PokerHub) botTaunt(tbl *poker.Table, deltas map[string]int) {
+	if h.db == nil || rand.Float64() > tauntChance {
+		return
+	}
+	// Hard floor between taunts at this table, checked before any work.
+	h.mu.Lock()
+	if last, ok := h.lastTauntAt[tbl.ID]; ok && time.Since(last) < tauntCooldown {
+		h.mu.Unlock()
+		return
+	}
+	h.mu.Unlock()
+
+	// The bot that actually won this hand, and the human it hurt most.
+	var speaker string
+	victim, worst := "", 0
+	for _, s := range tbl.Seats {
+		d := deltas[s.UserID]
+		if isBotUser(s.UserID) {
+			if d > 0 && speaker == "" {
+				speaker = s.Name
+			}
+			continue
+		}
+		if d < worst {
+			victim, worst = s.Name, d
+		}
+	}
+	if speaker == "" {
+		return // no bot won: nothing to crow about
+	}
+
+	var line string
+	if victim != "" && rand.Float64() < 0.7 {
+		line = h.db.GetRandomRoast(victim)
+	}
+	if line == "" {
+		if author, text := h.db.GetRandomQuote(); text != "" {
+			line = text
+			if author != "" {
+				line += " © " + author
+			}
+		}
+	}
+	if line == "" {
+		return // empty content tables: say nothing rather than something blank
+	}
+	// Stamped only once a line is actually produced, so a hand where the
+	// content tables came back empty does not silence the bots for the next
+	// four minutes.
+	h.mu.Lock()
+	h.lastTauntAt[tbl.ID] = time.Now()
+	h.mu.Unlock()
+
+	h.appendChatFrom(tbl.ID, speaker, line)
+}

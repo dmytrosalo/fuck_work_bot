@@ -965,6 +965,11 @@ type PokerHub struct {
 	// rather than (table, user) so a spammer cannot dodge it by opening a
 	// second table. Guarded by h.mu.
 	lastChatAt map[string]time.Time
+
+	// lastTauntAt is the per-table floor between bot taunts. Keyed by table
+	// rather than by bot so two bots cannot alternate and defeat it.
+	// Guarded by h.mu; dropped with the table by dropChat's caller.
+	lastTauntAt map[string]time.Time
 }
 
 // membershipKey identifies one (chat, user) pair for membershipCache.
@@ -995,6 +1000,7 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		membershipCache: map[membershipKey]time.Time{},
 		chat:            map[string][]chatMsg{},
 		lastChatAt:      map[string]time.Time{},
+		lastTauntAt:     map[string]time.Time{},
 	}
 }
 
@@ -1547,6 +1553,8 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 		}
 	}
 
+	h.botTaunt(tbl, deltas)
+
 	// A seat busted to 0 chips in this hand must not stay locked out of
 	// every OTHER table hub-wide until this table itself goes 30 minutes
 	// idle (idleTableTimeout). releaseSeatClaim takes h.mu, the INNER lock
@@ -1938,6 +1946,7 @@ func (h *PokerHub) sweepOnce() {
 		delete(h.lastActivity, id)
 		delete(h.showdownAt, id)
 		h.dropChat(id) // chat shares the table's lifetime; don't leak the log
+		delete(h.lastTauntAt, id)
 		for _, sub := range h.subs[id] {
 			close(sub.done)
 		}

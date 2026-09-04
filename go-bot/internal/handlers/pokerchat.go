@@ -108,15 +108,7 @@ func (h *PokerHub) handleChat(w http.ResponseWriter, r *http.Request, tbl *poker
 		return
 	}
 	h.lastChatAt[userID] = now
-	msgs := append(h.chat[tbl.ID], chatMsg{
-		Name: resolveTarget(firstName, username),
-		Text: text,
-		At:   now.Unix(),
-	})
-	if len(msgs) > chatHistory {
-		msgs = msgs[len(msgs)-chatHistory:]
-	}
-	h.chat[tbl.ID] = msgs
+	h.appendChatLocked(tbl.ID, resolveTarget(firstName, username), text, now)
 	h.mu.Unlock()
 
 	// Same ordering as every other write path: take the table lock, then
@@ -166,4 +158,33 @@ func (h *PokerHub) AdjustStack(userID string, delta int) {
 		h.broadcast(tbl)
 	}
 	tbl.Unlock()
+}
+
+// appendChatLocked adds one message and trims the log to chatHistory.
+// Caller must hold h.mu.
+func (h *PokerHub) appendChatLocked(tableID, name, text string, at time.Time) {
+	msgs := append(h.chat[tableID], chatMsg{Name: name, Text: text, At: at.Unix()})
+	if len(msgs) > chatHistory {
+		msgs = msgs[len(msgs)-chatHistory:]
+	}
+	h.chat[tableID] = msgs
+}
+
+// appendChatFrom posts a message attributed to name without going through
+// the HTTP path — used for bot chatter, which has no request, no initData
+// and no cooldown of its own. It deliberately reuses the same log and the
+// same cap, so a talkative bot pushes out old lines rather than growing the
+// payload every state broadcast carries.
+//
+// Takes h.mu itself, so callers must hold the TABLE lock and not h.mu.
+func (h *PokerHub) appendChatFrom(tableID, name, text string) {
+	if text == "" {
+		return
+	}
+	if utf8.RuneCountInString(text) > chatMaxLen {
+		text = string([]rune(text)[:chatMaxLen])
+	}
+	h.mu.Lock()
+	h.appendChatLocked(tableID, name, strings.Join(strings.Fields(text), " "), time.Now())
+	h.mu.Unlock()
 }
