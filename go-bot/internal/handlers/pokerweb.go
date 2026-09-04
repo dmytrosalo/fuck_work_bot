@@ -43,7 +43,7 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 #bar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #blinds{color:#c9a25a;font-weight:700}
 #blinds.rising{color:#ffd166}
-#felt{position:relative;height:42vh;min-height:260px;
+#felt{position:relative;height:46vh;min-height:300px;
  background:radial-gradient(ellipse at 50% 45%,#1e7350,#124b35 70%,#0d3626)}
 .seat{position:absolute;width:74px;margin-left:-37px;margin-top:-20px;text-align:center;font-size:11px;
  transition:opacity .2s}
@@ -57,15 +57,28 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
 .chip{display:inline-block;background:#e8a33d;color:#3a2708;border-radius:8px;padding:0 5px;
  font-size:10px;font-weight:700;margin-top:1px}
 .oppHole{margin:2px 0}
-.oppHole .card{width:16px;height:22px;line-height:22px;font-size:9px;margin:0 1px;border-radius:3px}
+.oppHole .card{width:21px;height:29px;line-height:29px;font-size:12px;margin:0 1px;border-radius:4px}
 .card.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d);border:1px solid #3f6199}
+/* Director Bo hides behind a pair of diamond jacks. */
+.card.back.bo{background:#fff;border:1px solid #d9c48a;color:#d62828;
+ font-weight:800;box-shadow:0 0 6px rgba(217,196,138,.4)}
+/* Android God: gold leaf with the droid on it. */
+.card.back.droid{background:linear-gradient(150deg,#f6d879,#c99a2e 60%,#8f6a12);
+ border:1px solid #ffe9a8;display:inline-flex;align-items:center;justify-content:center;
+ box-shadow:0 0 8px rgba(246,216,121,.45)}
+.card.back.droid svg{width:64%;height:64%;fill:#3a2a05}
 #centre{position:absolute;top:30%;left:0;right:0;text-align:center}
-.card{display:inline-block;background:#fff;border-radius:4px;width:26px;height:36px;line-height:36px;
- text-align:center;font-size:14px;font-weight:700;margin:0 2px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.card{display:inline-block;background:#fff;border-radius:5px;width:34px;height:47px;line-height:47px;
+ text-align:center;font-size:18px;font-weight:700;margin:0 2px;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+/* A card that is part of your current best five. */
+.card.made{outline:2px solid #7ddba5;box-shadow:0 0 10px rgba(125,219,165,.55)}
 .card.red{color:#d62828}
 #pot{display:inline-block;color:#ffd166;font-weight:700;margin-top:10px;
  background:rgba(4,20,12,.55);border-radius:12px;padding:2px 12px}
 #mine{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0d1220}
+#handline{text-align:center;padding:5px 10px;background:#0d1220;font-size:13px;
+ color:#7ddba5;font-weight:700;min-height:19px}
+#handline.result{color:#ffd166}
 #me{font-weight:700;color:#fff}
 #stack{color:#7ddba5;font-size:12px;margin-left:6px}
 #acts{display:flex;gap:6px;padding:10px;background:#121927}
@@ -91,12 +104,12 @@ button:disabled{opacity:.35}
 .waitTag{display:block;margin-top:2px;color:#8fa1bd;font-size:9px;font-style:italic}
 /* Table chat */
 #chat{background:#0d1220;border-top:1px solid #1a2233}
-#chatlog{height:74px;overflow-y:auto;padding:6px 10px;font-size:12px;line-height:1.45}
+#chatlog{height:89px;overflow-y:auto;padding:7px 12px;font-size:14px;line-height:1.45}
 .cline{margin:1px 0;word-break:break-word}
 .cwho{color:#7ddba5;font-weight:700}
 #chatrow{display:flex;gap:6px;padding:6px 8px 8px}
-#chatinput{flex:1;min-width:0;padding:9px 10px;border:0;border-radius:8px;
- background:#1b2536;color:#e6edf7;font-size:13px}
+#chatinput{flex:1;min-width:0;padding:11px 12px;border:0;border-radius:8px;
+ background:#1b2536;color:#e6edf7;font-size:16px}
 #chatinput::placeholder{color:#5d6b83}
 #chatsend{flex:0 0 52px;padding:9px 0}
 /* Raise controls. window.prompt() is unavailable inside Telegram's webview —
@@ -125,6 +138,7 @@ button:disabled{opacity:.35}
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span><span id="stage"></span></div>
 <div id="felt"><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
+<div id="handline"></div>
 <div id="acts">
   <button id="btn-fold" class="dng" disabled>Пас</button>
   <button id="btn-check" disabled>Чек</button>
@@ -187,17 +201,34 @@ const STAGE_UA={waiting:"Очікування",preflop:"Префлоп",flop:"Ф
 // suit symbols, so this is purely a display transform. It only ever reads
 // rank/suit LETTERS out of a server-controlled card string, never anything
 // player-supplied, so building its markup via string concatenation is safe.
-function card(s){
+function card(s,made){
   if(!s)return "";
   const suitLetter=s.slice(-1);
   const rank=s.slice(0,-1).replace("T","10");
   const red=suitLetter==="h"||suitLetter==="d";
-  return '<span class="card'+(red?' red':'')+'">'+rank+(SUITS[suitLetter]||suitLetter)+'</span>';
+  return '<span class="card'+(red?' red':'')+(made?' made':'')+'">'+rank+(SUITS[suitLetter]||suitLetter)+'</span>';
 }
-// Face-down card back markup, built once from a fixed constant — never from
-// anything derived from another player's data.
+// The five cards making the viewer's current best hand, as a lookup. Server
+// sends them for the VIEWER'S OWN seat only, so highlighting can never
+// reveal anything about an opponent.
+let madeSet=new Set();
+function cardMaybeMade(s){return card(s,madeSet.has(s))}
+// Face-down card backs. Each is a FIXED constant; backFor picks between
+// them using only the seat's user_id, never anything derived from that
+// seat's cards, so a face-down hand still cannot leak through its artwork.
 const CARD_BACK='<span class="card back"></span>';
-const CARD_BACKS=CARD_BACK+CARD_BACK;
+const CARD_BACK_BO='<span class="card back bo">J\u2666</span>';
+const DROID='<svg viewBox="0 0 24 18" aria-hidden="true">'+
+  '<path d="M5.6 4.2 4.3 2.1a.5.5 0 0 1 .85-.5L6.5 3.8a8.7 8.7 0 0 1 7 0l1.35-2.2a.5.5 0 0 1 .85.5l-1.3 2.1A7.6 7.6 0 0 1 18 10.2H2A7.6 7.6 0 0 1 5.6 4.2Z"/>'+
+  '<circle cx="7" cy="7.2" r=".95" fill="#f6d879"/><circle cx="13" cy="7.2" r=".95" fill="#f6d879"/>'+
+  '<rect x="2" y="11.2" width="16" height="5.4" rx="1.6"/></svg>';
+const CARD_BACK_DROID='<span class="card back droid">'+DROID+'</span>';
+function backFor(userID){
+  if(userID==="bot:1")return CARD_BACK_BO;
+  if(userID==="bot:2")return CARD_BACK_DROID;
+  return CARD_BACK;
+}
+function backsFor(userID){const b=backFor(userID);return b+b}
 
 function clip(n){n=n||"";return n.length>10?n.slice(0,10)+"…":n}
 
@@ -396,7 +427,8 @@ function render(v){
   const potShown=v.pot>0?v.pot:lastPot;
 
   document.getElementById("stage").textContent=STAGE_UA[v.stage]||v.stage;
-  document.getElementById("board").innerHTML=v.board.map(card).join("");
+  madeSet=new Set(v.hand_cards||[]);
+  document.getElementById("board").innerHTML=v.board.map(cardMaybeMade).join("");
   document.getElementById("pot").textContent="🪙 Банк "+potShown;
 
   const felt=document.getElementById("felt");
@@ -413,6 +445,7 @@ function render(v){
   // preserved because only the starting offset changes. A spectator with no
   // seat (you_seat < 0) falls back to seat 0 at the bottom.
   const meIdx=v.you_seat>=0?v.you_seat:0;
+  const myUserID=v.you_seat>=0?seats[v.you_seat].user_id:null;
   seats.forEach((s,i)=>{
     const ang=(Math.PI/2)+(2*Math.PI*((i-meIdx+n)%n)/n);
     const isActive=live&&s.to_act;
@@ -443,7 +476,7 @@ function render(v){
     if(s.in_hand&&!s.folded&&v.stage!=="waiting"){
       const hole=document.createElement("div");
       hole.className="oppHole";
-      hole.innerHTML=s.hole?s.hole.map(card).join(""):CARD_BACKS;
+      hole.innerHTML=s.hole?s.hole.map(c=>card(c,s.user_id===myUserID&&madeSet.has(c))).join(""):backsFor(s.user_id);
       d.appendChild(hole);
     }else if(!s.in_hand&&v.stage!=="waiting"){
       const wait=document.createElement("div");
@@ -476,6 +509,22 @@ function render(v){
   });
 
   const me=v.you_seat>=0?seats[v.you_seat]:null;
+  // Showdown result outranks the running hand read: at showdown the point
+  // is who won, not what you were holding.
+  const handEl=document.getElementById("handline");
+  if(v.stage==="showdown"&&v.winners&&v.winners.length){
+    handEl.classList.add("result");
+    handEl.textContent=v.winners.join(", ")+
+      (v.winners.length>1?" ділять банк":" виграє")+
+      (v.win_hand?" · "+v.win_hand:"");
+  }else if(v.hand_name&&live){
+    handEl.classList.remove("result");
+    handEl.textContent="У тебе: "+v.hand_name;
+  }else{
+    handEl.classList.remove("result");
+    handEl.textContent="";
+  }
+
   // Showdown can render more than once (the action response and a broadcast
   // both carry it, and later bookkeeping bumps seq again), so the banner is
   // latched and only rearmed once the next hand leaves showdown.
@@ -489,7 +538,7 @@ function render(v){
   document.getElementById("stack").textContent=me?me.stack:"";
   const holeEl=document.getElementById("hole");
   if(me&&me.hole&&me.hole.length){
-    holeEl.innerHTML=me.hole.map(card).join("");
+    holeEl.innerHTML=me.hole.map(cardMaybeMade).join("");
   }else if(me&&!me.in_hand&&live){
     // Sat down after the deal: explain the empty hand instead of leaving a
     // blank space that reads as a failure to load.

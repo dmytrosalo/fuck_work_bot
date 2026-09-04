@@ -162,8 +162,10 @@ func (h *PokerHub) actBots(tbl *poker.Table) bool {
 	return true
 }
 
-// botNames are the display names bots use, in order.
-var botNames = []string{"Вася 🤖", "Петро 🤖"}
+// botNames are the display names bots use, in order. The client keys each
+// bot's card back off its seat user_id (bot:1, bot:2), not off these
+// strings, so renaming a bot never silently changes its artwork.
+var botNames = []string{"Director Bo", "Android God"}
 
 func botName(i int) string {
 	if i-1 < len(botNames) && i >= 1 {

@@ -64,8 +64,14 @@ type Table struct {
 	// stakes underneath a hand that is already being played.
 	SmallBlind int
 	BigBlind   int
-	settled    bool // true after Showdown() to prevent re-settlement
-	mu         sync.Mutex
+	// LastWinners / LastHandName describe the hand just finished, for the
+	// showdown line. LastHandName is empty when the pot was won without a
+	// showdown — everyone else folded, so no hand was ever revealed and
+	// naming one would expose a holding nobody paid to see.
+	LastWinners  []string
+	LastHandName string
+	settled      bool // true after Showdown() to prevent re-settlement
+	mu           sync.Mutex
 }
 
 var (
@@ -187,6 +193,7 @@ func (t *Table) StartHand() error {
 	t.Stage = StagePreflop
 	// Blinds are locked in for the whole hand here, at the level the clock
 	// says right now — never re-read mid-hand.
+	t.LastWinners, t.LastHandName = nil, ""
 	t.SmallBlind, t.BigBlind = BlindsAt(t.Elapsed())
 	t.MinRaise = t.BigBlind
 	t.Hands++

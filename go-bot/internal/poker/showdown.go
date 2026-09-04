@@ -27,6 +27,8 @@ func (t *Table) Showdown() map[string]int {
 		}
 	}
 
+	t.recordResult()
+
 	deltas := make(map[string]int, len(t.Seats))
 	for _, s := range t.Seats {
 		if s.InHand {
@@ -79,4 +81,45 @@ func firstLeftOfButton(t *Table, winners []int) int {
 		}
 	}
 	return winners[0]
+}
+
+// recordResult captures who won and with what, for the showdown line. Called
+// from Showdown after the pots have been awarded but before Committed is
+// cleared, so contested() still sees the hand as it was played.
+//
+// A hand is only NAMED when at least two players reached showdown. If
+// everyone else folded, the last player standing never revealed anything,
+// and naming their holding would leak a hand nobody paid to see.
+func (t *Table) recordResult() {
+	shown := 0
+	for _, s := range t.Seats {
+		if s.InHand && !s.Folded {
+			shown++
+		}
+	}
+
+	seen := map[string]bool{}
+	t.LastWinners = nil
+	t.LastHandName = ""
+	best := int32(-1)
+
+	for _, pot := range BuildPots(t.Seats) {
+		for _, idx := range bestOf(t, pot.Eligible) {
+			w := t.Seats[idx]
+			if !seen[w.UserID] {
+				seen[w.UserID] = true
+				t.LastWinners = append(t.LastWinners, w.Name)
+			}
+			// Name the strongest winning hand across pots: with a single
+			// pot — the ordinary case — that is simply the winner's hand.
+			if shown >= 2 && len(t.Board) >= 3 && len(w.Hole) == 2 {
+				if r := Best(w.Hole, t.Board); best == -1 || r < best {
+					best = r
+					if name, _ := HandName(w.Hole, t.Board); name != "" {
+						t.LastHandName = name
+					}
+				}
+			}
+		}
+	}
 }

@@ -55,6 +55,16 @@ type TableView struct {
 	// NextBlindIn is seconds until the blinds next double, or -1 once the
 	// schedule has reached its cap and they never move again.
 	NextBlindIn int `json:"next_blind_in"`
+	// HandName and HandCards describe THE VIEWER'S OWN best hand and the
+	// five cards forming it. They are computed only from the seat matching
+	// the requesting user, so this view can never carry a read on someone
+	// else's holding — the same isolation rule Hole follows.
+	HandName  string   `json:"hand_name,omitempty"`
+	HandCards []string `json:"hand_cards,omitempty"`
+	// Winners and WinHand describe the hand just finished. WinHand is empty
+	// when the pot was taken without a showdown.
+	Winners []string `json:"winners,omitempty"`
+	WinHand string   `json:"win_hand,omitempty"`
 }
 
 var stageNames = map[Stage]string{
@@ -82,6 +92,7 @@ func (t *Table) ViewFor(userID string) TableView {
 		Board: strs(t.Board), Pot: pot, YouSeat: -1,
 		Deadline: t.Deadline.Unix(),
 		MinRaise: t.MinRaise, HighBet: t.highBet(),
+		Winners: t.LastWinners, WinHand: t.LastHandName,
 		Hands:      t.Hands,
 		Elapsed:    int(t.Elapsed().Seconds()),
 		SmallBlind: t.SmallBlind, BigBlind: t.BigBlind,
@@ -98,6 +109,13 @@ func (t *Table) ViewFor(userID string) TableView {
 		if s.UserID == userID {
 			sv.Hole = strs(s.Hole)
 			v.YouSeat = i
+			// Derived from THIS seat only — never from any other seat's
+			// Hole — so it cannot leak an opponent's hand.
+			if s.InHand && !s.Folded {
+				if name, used := HandName(s.Hole, t.Board); name != "" {
+					v.HandName, v.HandCards = name, strs(used)
+				}
+			}
 		} else if t.Stage == StageShowdown && !s.Folded && s.InHand {
 			sv.Hole = strs(s.Hole) // cards are public at showdown
 		}
