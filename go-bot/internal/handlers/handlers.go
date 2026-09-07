@@ -271,32 +271,45 @@ func (b *Bot) handleUnmute(c tele.Context) error {
 	return c.Reply("🔊 Ти розмучений. Всі команди доступні!")
 }
 
+// pendingGift is a one-time grant handed to a user the next time they write
+// in chat. Coins > 0 makes it a богдудіки gift and the card fields are unused;
+// otherwise it grants the card named by CardID.
 type pendingGift struct {
 	Key      string
 	Username string
 	CardID   int
 	CardName string
 	Rarity   int
+	Coins    int
 }
 
 var pendingGifts = []pendingGift{
-	{"gift_data_emerald", "kondzhariia_data", 604, "Смарагдове небо", 5},
-	{"gift_data_emerald", "kondzhariia", 604, "Смарагдове небо", 5},
-	{"gift_data_terpila", "kondzhariia_data", 608, "Тєрпіла", 2},
-	{"gift_data_terpila", "kondzhariia", 608, "Тєрпіла", 2},
-	{"gift_bo_terpila", "facethestrange", 608, "Тєрпіла", 2},
+	{Key: "gift_data_emerald", Username: "kondzhariia_data", CardID: 604, CardName: "Смарагдове небо", Rarity: 5},
+	{Key: "gift_data_emerald", Username: "kondzhariia", CardID: 604, CardName: "Смарагдове небо", Rarity: 5},
+	{Key: "gift_data_terpila", Username: "kondzhariia_data", CardID: 608, CardName: "Тєрпіла", Rarity: 2},
+	{Key: "gift_data_terpila", Username: "kondzhariia", CardID: 608, CardName: "Тєрпіла", Rarity: 2},
+	{Key: "gift_bo_terpila", Username: "facethestrange", CardID: 608, CardName: "Тєрпіла", Rarity: 2},
+	{Key: "gift_danya_million", Username: "Dany_ro", Coins: 1000000},
 }
 
 func (b *Bot) checkPendingGifts(c tele.Context, userID, userName string) {
 	username := c.Sender().Username
 	for _, g := range pendingGifts {
-		if username != g.Username {
+		// Telegram usernames are case-insensitive.
+		if !strings.EqualFold(username, g.Username) {
 			continue
 		}
 		if b.db.GetMeta(g.Key) != "" {
 			continue
 		}
 		b.db.EnsureUser(userID, userName)
+		if g.Coins > 0 {
+			b.db.UpdateBalance(userID, userName, g.Coins)
+			b.db.LogTransaction(userID, userName, "gift", g.Coins)
+			b.db.SetMeta(g.Key, "done")
+			c.Send(fmt.Sprintf("🎁 %s отримує подарунок: *%d богдудіків* 🪙!", userName, g.Coins), &tele.SendOptions{ParseMode: tele.ModeMarkdown})
+			continue
+		}
 		b.db.AddToCollection(userID, g.CardID)
 		b.db.SetMeta(g.Key, "done")
 		stars := rarityStars[g.Rarity]
@@ -429,7 +442,6 @@ func (b *Bot) handleMarkNotWork(c tele.Context) error {
 	log.Printf("[feedback] /notwork: %q", text)
 	return c.Reply("❌ Позначено як не робота (+10 🪙)")
 }
-
 
 // DailyReport sends a daily stats report to all active chats and resets daily stats.
 func (b *Bot) DailyReport(bot *tele.Bot) {
