@@ -312,6 +312,30 @@ func main() {
 			db.SetMeta(may12gift3, "done")
 		}
 	}
+	// Gift Danya 1000000 coins. Delivered here rather than from a message
+	// handler so it does not depend on him sending a plain-text message —
+	// commands, stickers and media never reach handleText.
+	danyaMillion := "gift_danya_million"
+	if db.GetMeta(danyaMillion) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 1000000)
+			db.LogTransaction(danyaID, "Danya", "gift", 1000000)
+			db.SetMeta(danyaMillion, "done")
+			log.Println("Gifted Danya +1000000 coins")
+
+			chats, _ := db.GetActiveChats()
+			for _, chatID := range chats {
+				id, err := strconv.ParseInt(chatID, 10, 64)
+				if err != nil {
+					continue
+				}
+				bot.Send(&tele.Chat{ID: id}, "🎁 Danya отримує подарунок: 1000000 богдудіків 🪙!")
+			}
+		} else {
+			log.Println("Danya not found in balances, gift deferred to next boot")
+		}
+	}
+
 	may12gift2 := "gift_bo_may12_7000"
 	if db.GetMeta(may12gift2) == "" {
 		if boID, found := db.FindUserByName("Bo"); found {
