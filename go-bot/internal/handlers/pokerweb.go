@@ -230,6 +230,42 @@ button:disabled{opacity:.35}
  32%{transform:scale(1)}
  78%{opacity:1;transform:scale(1)}
  100%{opacity:0;transform:scale(1.02)}}
+/* Data Android God keeps a hookah at his seat, and puffs it when he takes a
+   pot. Both layers are decoration only: pointer-transparent and stacked
+   under the cards, so neither can swallow a tap meant for the table --
+   the same guarantee #win documents above. */
+.hookah{position:absolute;right:-20px;bottom:0;width:24px;height:31px;
+ opacity:.9;pointer-events:none;z-index:2}
+.hookah svg{width:100%;height:100%;display:block}
+/* Two puffs off the bowl, the second offset so they read as a rhythm
+   rather than one blob. They hang off the seat, which render() rebuilds
+   every snapshot -- see smokeUntil for why that is safe. */
+.hookah::before,.hookah::after{content:"";position:absolute;left:7px;top:-7px;
+ width:11px;height:11px;border-radius:50%;background:rgba(226,238,255,.55);
+ /* The blur is what turns these from two grey dots into smoke. */
+ filter:blur(3px);opacity:0;pointer-events:none}
+.seat.smoking .hookah::before{animation:hookahpuff 3.4s ease-out}
+.seat.smoking .hookah::after{animation:hookahpuff 3.4s ease-out .8s}
+@keyframes hookahpuff{
+ 0%{opacity:0;transform:translate(0,0) scale(.4)}
+ 20%{opacity:.8}
+ 100%{opacity:0;transform:translate(-13px,-54px) scale(3.2)}}
+/* The haze is one wide, very soft band drifting across the felt. It is
+   static markup rather than a per-render node so it survives the seat
+   rebuild, and sits directly after #oval so it floats over the table but
+   under the board cards and the seat plaques. */
+.haze{position:absolute;inset:0;pointer-events:none;opacity:0;filter:blur(7px);
+ background:radial-gradient(58% 42% at 50% 56%,rgba(214,232,255,.34),
+  rgba(214,232,255,.13) 55%,transparent 76%)}
+.haze.go{animation:hookahhaze 4.2s ease-out}
+@keyframes hookahhaze{
+ 0%{opacity:0;transform:translate(-13%,7%) scale(.72)}
+ 26%{opacity:1}
+ 68%{opacity:.72}
+ 100%{opacity:0;transform:translate(11%,-5%) scale(1.34)}}
+@media (prefers-reduced-motion:reduce){
+ .seat.smoking .hookah::before,.seat.smoking .hookah::after{animation:none}
+ .haze.go{animation:none}}
 </style></head><body>
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
  <button id="themebtn" title="Колір столу">🎨</button>
@@ -252,7 +288,7 @@ button:disabled{opacity:.35}
   <button data-felt="felt-slate"  style="background:#3c4756"></button>
   <button data-felt="" id="feltrandom" title="Випадкове фото">🎲</button>
 </div>
-<div id="felt"><div id="oval"></div><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
+<div id="felt"><div id="oval"></div><div id="haze" class="haze"></div><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
  <div id="buyin"><h3>Скільки береш за стіл?</h3><div class="opts"></div><div class="bal"></div></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="handline"></div>
@@ -549,6 +585,16 @@ const DROID='<svg viewBox="0 0 24 18" aria-hidden="true">'+
   '<circle cx="7" cy="7.2" r=".95" fill="#f6d879"/><circle cx="13" cy="7.2" r=".95" fill="#f6d879"/>'+
   '<rect x="2" y="11.2" width="16" height="5.4" rx="1.6"/></svg>';
 const CARD_BACK_DROID='<span class="card back droid">'+DROID+'</span>';
+// The hookah standing at Data Android God's seat. Brass over smoked glass,
+// to sit with the gold leaf of his card back.
+const HOOKAH='<svg viewBox="0 0 16 24" aria-hidden="true">'+
+  '<ellipse cx="8" cy="18" rx="4.6" ry="5" fill="#2f4f74" stroke="#c9a253" stroke-width=".7"/>'+
+  '<ellipse cx="6.6" cy="16.4" rx="1.5" ry="2" fill="rgba(255,255,255,.16)"/>'+
+  '<rect x="7.1" y="6.4" width="1.8" height="7.2" fill="#c9a253"/>'+
+  '<rect x="5.7" y="4.6" width="4.6" height="2" rx=".5" fill="#8f6a12"/>'+
+  '<rect x="6.5" y="3.2" width="3" height="1.6" rx=".5" fill="#c9a253"/>'+
+  '<path d="M9.2 11.6c3.5.7 4.9 2.7 4.3 5.4" stroke="#c9a253" stroke-width="1" '+
+    'fill="none" stroke-linecap="round"/></svg>';
 function backFor(userID){
   if(userID==="bot:1")return CARD_BACK_BO;
   if(userID==="bot:2")return CARD_BACK_DROID;
@@ -633,6 +679,49 @@ let lastPot=0;
 let lastStage=null;
 // Latch so the win banner plays once per hand — see render().
 let winShown=false;
+
+// Data Android God's hookah smoke. render() rebuilds every .seat from
+// scratch on each snapshot, so a class dropped straight onto his seat would
+// vanish on the next one mid-puff. smokeUntil is the state instead: render()
+// re-applies .smoking for as long as it is still in the future, the same way
+// it re-derives .folded and .act rather than remembering them. The haze layer
+// is static markup and survives the rebuild, so it only needs replaying.
+let smokeUntil=0;
+const SMOKE_MS=4200;
+
+// He takes a lot of pots, so the smoke is rationed rather than automatic.
+// Same shape and same reasoning as tauntChance/tauntCooldown in
+// pokerbots.go: the probability is for variety, but the cooldown is what
+// actually prevents two puffs on consecutive hands, which is the burst that
+// would read as noise. The gate is shorter than the taunt one because a
+// drifting haze is far quieter than a chat line.
+//
+// The roll is per-client, so two people at the same table can disagree about
+// whether he smoked this hand. That is deliberate: it keeps the effect
+// entirely in the page and costs the protocol nothing. Moving it to the
+// server would take one bool on TableView if we ever want it shared.
+const SMOKE_CHANCE=0.35;
+const SMOKE_COOLDOWN_MS=90*1000;
+let lastSmokeAt=0;
+function maybeHookahSmoke(){
+  const now=Date.now();
+  if(now-lastSmokeAt<SMOKE_COOLDOWN_MS)return;
+  if(Math.random()>=SMOKE_CHANCE)return;
+  lastSmokeAt=now;
+  startHookahSmoke();
+}
+function startHookahSmoke(){
+  smokeUntil=Date.now()+SMOKE_MS;
+  // The seat for this snapshot is already in the DOM by the time the
+  // showdown block runs, so light it now; later renders read smokeUntil.
+  const seat=document.querySelector(".seat.droidseat");
+  if(seat)seat.classList.add("smoking");
+  const hz=document.getElementById("haze");
+  // Same reflow-between-remove-and-add restart trick showWin() documents.
+  hz.classList.remove("go");
+  void hz.offsetWidth;
+  hz.classList.add("go");
+}
 
 // Queued action to play the moment it becomes our turn: null | "fold" |
 // "checkfold" | "call". preAmt records the call price AT ARM TIME so a raise
@@ -792,6 +881,17 @@ function render(v){
     const isActive=live&&s.to_act;
     const d=document.createElement("div");
     d.className="seat"+(s.folded?" folded":"")+(isActive?" act":"");
+    // Keyed off user_id, never the display name — botNames is editable
+    // prose and his card back and avatar already key off "bot:2" for the
+    // same reason (see pokerbots.go).
+    if(s.user_id==="bot:2"){
+      d.classList.add("droidseat");
+      if(Date.now()<smokeUntil)d.classList.add("smoking");
+      const hk=document.createElement("div");
+      hk.className="hookah";
+      hk.innerHTML=HOOKAH;
+      d.appendChild(hk);
+    }
     d.style.left=(cx+rx*Math.cos(ang))+"%";
     d.style.top=(cy+ry*Math.sin(ang))+"%";
 
@@ -903,6 +1003,10 @@ function render(v){
     winShown=true;
     const won=me?(me.won||0):0;
     if(won>0)showWin(won);
+    // Independent of the banner: he can take a pot in a hand you also
+    // won a piece of, and both should play.
+    const droid=seats.find(s=>s.user_id==="bot:2");
+    if(droid&&(droid.won||0)>0)maybeHookahSmoke();
   }
   document.getElementById("me").textContent=me?clip(me.name):"";
   document.getElementById("stack").textContent=me?me.stack:"";

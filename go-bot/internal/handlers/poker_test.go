@@ -153,3 +153,53 @@ func TestPokerPageNoRedirectWithoutSlash(t *testing.T) {
 		t.Errorf("shell served without the start_param fallback")
 	}
 }
+
+// TestHookahIsKeyedToBotUserID pins Data Android God's hookah — and the
+// smoke it puffs when he takes a pot — to his seat user_id rather than his
+// display name. botNames in pokerbots.go is editable prose, and the rest of
+// his artwork (card back, avatar) already keys off "bot:2" for exactly this
+// reason: a rename must not silently hand the hookah to another seat or
+// drop it altogether.
+func TestHookahIsKeyedToBotUserID(t *testing.T) {
+	var b strings.Builder
+	if err := pokerTmpl.Execute(&b, map[string]string{"TableID": "a1b2c3d4e5f60718"}); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	out := b.String()
+
+	for _, want := range []string{
+		".hookah{",              // the prop itself
+		"@keyframes hookahpuff", // puffs rising off the bowl
+		"@keyframes hookahhaze", // the drift across the felt
+		"const HOOKAH=",         // inline SVG, same shape as DROID
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page is missing %q", want)
+		}
+	}
+
+	// The seat that gets the hookah must be selected by user_id. If the
+	// display name leaks into the client, renaming the bot breaks the art.
+	if strings.Contains(out, "Data Android God") {
+		t.Errorf("hookah/smoke must not be keyed off the bot's display name")
+	}
+
+	// Decorative overlays must never swallow a tap meant for the table,
+	// the same guarantee #win already documents.
+	if !strings.Contains(out, ".haze{") || !strings.Contains(out, "pointer-events:none") {
+		t.Errorf("haze layer missing or not pointer-transparent")
+	}
+
+	if !strings.Contains(out, "prefers-reduced-motion") {
+		t.Errorf("smoke has no reduced-motion guard")
+	}
+
+	// He wins often, so the smoke is rationed the same way bot taunts are
+	// (pokerbots.go): a probability for variety, and a cooldown, which is
+	// the part that actually stops two puffs on consecutive hands.
+	for _, want := range []string{"SMOKE_CHANCE", "SMOKE_COOLDOWN_MS", "Math.random()"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("smoke is not rationed: missing %q", want)
+		}
+	}
+}
