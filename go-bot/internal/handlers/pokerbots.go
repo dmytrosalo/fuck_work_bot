@@ -26,10 +26,12 @@ func isBotUser(userID string) bool {
 
 // hasActiveHuman reports whether tbl has at least one non-bot seat with
 // chips to play, i.e. someone bots could actually play against. The caller
-// MUST hold the table lock.
+// MUST hold the table lock. A sleeping player counts as absent: they are not
+// available to play until they wake, so bots dealing hands to each other would
+// be pointless.
 func hasActiveHuman(tbl *poker.Table) bool {
 	for _, s := range tbl.Seats {
-		if !isBotUser(s.UserID) && s.Stack > 0 {
+		if !isBotUser(s.UserID) && s.Stack > 0 && !s.Asleep {
 			return true
 		}
 	}
