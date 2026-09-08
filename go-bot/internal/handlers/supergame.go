@@ -66,3 +66,29 @@ func superDelta(stake int, outcome string) int {
 		return 0
 	}
 }
+
+// superCandidate finds the single human who won this hand, if there is
+// exactly one and their win clears superMinBlinds.
+//
+// A split pot -- more than one seat with a positive delta -- offers no game
+// at all, bots included. That is stricter than picking the largest winner,
+// and deliberately so: it means there is no tie-breaking rule to get wrong
+// and the table can never be held twice for one hand.
+func superCandidate(deltas map[string]int, bigBlind int) (string, int, bool) {
+	winners := 0
+	user, stake := "", 0
+	for id, d := range deltas {
+		if d <= 0 {
+			continue
+		}
+		winners++
+		user, stake = id, d
+	}
+	if winners != 1 || isBotUser(user) {
+		return "", 0, false
+	}
+	if stake < superMinBlinds*bigBlind {
+		return "", 0, false
+	}
+	return user, stake, true
+}

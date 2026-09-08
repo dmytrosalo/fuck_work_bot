@@ -69,3 +69,32 @@ func TestSuperDeltaIgnoresAnUnknownOutcome(t *testing.T) {
 		t.Errorf("superDelta(1000, unknown) = %d, want 0 — an unknown outcome must move no money", got)
 	}
 }
+
+func TestSuperCandidate(t *testing.T) {
+	const bb = 100
+	for _, tc := range []struct {
+		name     string
+		deltas   map[string]int
+		wantUser string
+		wantOK   bool
+	}{
+		{"one big human winner", map[string]int{"u1": 1500, "u2": -1500}, "u1", true},
+		{"win under ten blinds", map[string]int{"u1": 900, "u2": -900}, "", false},
+		{"exactly ten blinds qualifies", map[string]int{"u1": 1000, "u2": -1000}, "u1", true},
+		{"split pot offers nothing", map[string]int{"u1": 1200, "u2": 1200, "u3": -2400}, "", false},
+		{"bot winner is skipped", map[string]int{"bot:2": 5000, "u1": -5000}, "", false},
+		{"split between human and bot", map[string]int{"u1": 1200, "bot:1": 1200, "u2": -2400}, "", false},
+		{"nobody won", map[string]int{}, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user, stake, ok := superCandidate(tc.deltas, bb)
+			if ok != tc.wantOK || user != tc.wantUser {
+				t.Fatalf("superCandidate = (%q, %d, %v), want (%q, _, %v)",
+					user, stake, ok, tc.wantUser, tc.wantOK)
+			}
+			if ok && stake != tc.deltas[tc.wantUser] {
+				t.Errorf("stake = %d, want %d", stake, tc.deltas[tc.wantUser])
+			}
+		})
+	}
+}
