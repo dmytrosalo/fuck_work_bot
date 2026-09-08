@@ -1,6 +1,9 @@
 package handlers
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestDiceOutcomeThresholds(t *testing.T) {
 	for _, tc := range []struct {
@@ -96,5 +99,56 @@ func TestSuperCandidate(t *testing.T) {
 				t.Errorf("stake = %d, want %d", stake, tc.deltas[tc.wantUser])
 			}
 		})
+	}
+}
+
+func TestSuperHoldsBlocksTheNextHandUntilResolved(t *testing.T) {
+	h := &PokerHub{super: map[string]*superGame{}}
+
+	if h.superHolds("t1") {
+		t.Errorf("no game pending, must not hold")
+	}
+
+	h.setSuper("t1", &superGame{
+		UserID:   "u1",
+		State:    "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	if !h.superHolds("t1") {
+		t.Errorf("an offered game inside its window must hold the table")
+	}
+
+	// Resolved games still hold, so everyone gets to watch the result.
+	h.setSuper("t1", &superGame{
+		UserID:   "u1",
+		State:    "resolved",
+		Deadline: time.Now().Add(superResultHold),
+	})
+	if !h.superHolds("t1") {
+		t.Errorf("a resolved game must hold for the result window")
+	}
+
+	// An expired deadline must never wedge a table, whatever the state.
+	h.setSuper("t1", &superGame{
+		UserID:   "u1",
+		State:    "offered",
+		Deadline: time.Now().Add(-time.Second),
+	})
+	if h.superHolds("t1") {
+		t.Errorf("an expired game must release the table")
+	}
+}
+
+func TestShowdownReadyIsFalseWhileASuperGameHolds(t *testing.T) {
+	h := &PokerHub{
+		showdownAt: map[string]time.Time{"t1": time.Now().Add(-time.Minute)},
+		super:      map[string]*superGame{},
+	}
+	if !h.showdownReady("t1") {
+		t.Fatalf("without a super game an old showdown is ready")
+	}
+	h.setSuper("t1", &superGame{State: "offered", Deadline: time.Now().Add(superDecideWindow)})
+	if h.showdownReady("t1") {
+		t.Errorf("showdownReady must be false while a super game holds")
 	}
 }

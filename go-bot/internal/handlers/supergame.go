@@ -92,3 +92,50 @@ func superCandidate(deltas map[string]int, bigBlind int) (string, int, bool) {
 	}
 	return user, stake, true
 }
+
+// superGame is one pending Супер гра. It lives on the hub rather than on
+// poker.Table: the stage machine is the money-critical part, and a hold in
+// the handler layer cannot corrupt a hand.
+type superGame struct {
+	UserID   string
+	Name     string
+	Stake    int
+	State    string // "offered" | "resolved"
+	Game     string // "dice" | "color"
+	Pick     string // "red" | "black", colour game only
+	Outcome  string // "double" | "keep" | "half" | "bust"
+	Card     string
+	Dice     [2]int
+	Delta    int
+	Deadline time.Time
+}
+
+func (h *PokerHub) superFor(tableID string) *superGame {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	g, ok := h.super[tableID]
+	if !ok {
+		return nil
+	}
+	cp := *g
+	return &cp
+}
+
+func (h *PokerHub) setSuper(tableID string, g *superGame) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if g == nil {
+		delete(h.super, tableID)
+		return
+	}
+	h.super[tableID] = g
+}
+
+// superHolds reports whether tableID must not deal the next hand yet. An
+// expired deadline releases the hold whatever the state, so a crashed or
+// abandoned game can never wedge a table -- the same defence showdownReady
+// already applies to a missing showdown timestamp.
+func (h *PokerHub) superHolds(tableID string) bool {
+	g := h.superFor(tableID)
+	return g != nil && time.Now().Before(g.Deadline)
+}

@@ -1654,6 +1654,12 @@ type PokerHub struct {
 	// it exists for). Guarded by h.mu, same as lastActivity/seatedAt/subs.
 	showdownAt map[string]time.Time
 
+	// super holds the pending Супер гра per table id, if any. Guarded by
+	// h.mu like the other per-table maps. Deliberately NOT part of the
+	// table snapshot: a deploy mid-game drops it, which is the only
+	// outcome that cannot half-apply money.
+	super map[string]*superGame
+
 	// membershipCache maps a (chatID, userID) pair to the wall-clock time
 	// its last POSITIVE Telegram chat-membership check succeeded. auth()
 	// consults it before ever calling isMember again, so a network blip or
@@ -1721,6 +1727,7 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		seatedAt:        map[string]string{},
 		lastActivity:    map[string]time.Time{},
 		showdownAt:      map[string]time.Time{},
+		super:           map[string]*superGame{},
 		membershipCache: map[membershipKey]time.Time{},
 		chat:            map[string][]chatMsg{},
 		lastChatAt:      map[string]time.Time{},
@@ -2316,6 +2323,11 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 // every transition into StageShowdown), so a missing timestamp must never
 // wedge a table in showdown forever.
 func (h *PokerHub) showdownReady(tableID string) bool {
+	// A pending Супер гра holds the showdown open past the usual interval
+	// so the winner can decide and everyone can watch the result.
+	if h.superHolds(tableID) {
+		return false
+	}
 	h.mu.Lock()
 	at, ok := h.showdownAt[tableID]
 	h.mu.Unlock()
