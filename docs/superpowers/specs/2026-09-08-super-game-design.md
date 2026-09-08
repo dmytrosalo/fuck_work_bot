@@ -125,6 +125,8 @@ The payout is a two-party transfer: the player gains (or loses) `Delta`, and `ba
 
 Money moves **once**, after the roll, inside that single transaction. Nothing is written on offer, and nothing is written on skip or timeout.
 
+**Reaching the felt.** `storage.DB.OnBalanceChange` is wired to `PokerHub.AdjustStack`, which mirrors any outside balance change onto a seated player's chips — that hook is how `/rob`, `/slots`, gifts and quiz rewards reach the table instead of silently diverging from the number on screen. But the hook only fires from `UpdateBalance`, and `SettlePoker` — the call Супер гра uses — deliberately bypasses it: for an ordinary poker hand the chips already moved inside the engine, so firing the hook there would double-count the pot. Супер гра's winnings never touched the engine at all (they are created against `bank:house`), so nothing mirrors them onto the felt on its own. `resolveSuper` therefore calls `h.AdjustStack(userID, Delta)` explicitly, once, right after a successful `SettlePoker`, from a point holding neither `h.mu` nor the table lock — the same locking contract `AdjustStack` already requires of its `OnBalanceChange` callers. This only runs when a payout actually happened: `Delta == 0` (a pass or a dice "keep") and a `SettlePoker` failure (downgraded to `Outcome "skip"`, `Delta 0`) both leave chips untouched, exactly like they leave the balance untouched. If the player has since left the table, `AdjustStack`'s existing not-seated check makes the mirror a no-op — they still keep the balance change, just not at a table.
+
 ## Animations
 
 Two beats inside the 4 s result window, both server-driven off the published result — the client animates a known outcome, it never decides one.

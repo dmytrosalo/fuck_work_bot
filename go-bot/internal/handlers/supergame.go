@@ -302,6 +302,12 @@ func (h *PokerHub) resolveSuper(tableID, userID, choice string) (*superGame, err
 	cp := *g
 	h.mu.Unlock()
 
+	// paidOut tracks whether cp.Delta was actually written to the ledger,
+	// as opposed to merely computed. It gates the AdjustStack mirror below:
+	// a Delta that was never persisted (h.db == nil, test-only) or that
+	// SettlePoker rolled back must move no chips either, same as it moved
+	// no balance.
+	paidOut := false
 	if cp.Delta != 0 && h.db != nil {
 		// Two parties, one transaction, exactly like the bot-chip entries
 		// in settle(): the player's gain is the bank's loss and the pair
@@ -332,6 +338,29 @@ func (h *PokerHub) resolveSuper(tableID, userID, choice string) (*superGame, err
 
 			return &cp, fmt.Errorf("супер гра payout failed: %w", err)
 		}
+		paidOut = true
+	}
+
+	if paidOut {
+		// SettlePoker only ever moves богдудіки, not chips: the win it
+		// just wrote for the player was created against bank:house, not
+		// inside the poker engine, so nothing about a normal hand's
+		// settlement touched this seat's stack. OnBalanceChange does not
+		// fire here either -- it is UpdateBalance's hook, and SettlePoker
+		// deliberately bypasses it (see the doc comment on
+		// OnBalanceChange/AdjustStack) because for an ordinary poker hand
+		// the chips already moved inside the engine and firing it would
+		// double-count. Супер гра has no such double-count risk -- its
+		// winnings never touched the engine -- so it is the one caller
+		// that must mirror the delta onto the felt itself, explicitly,
+		// exactly the way the hook would have if it fired. Called with
+		// neither h.mu nor the table lock held (h.mu was released above,
+		// and the payout-failure branch above always re-locks/unlocks and
+		// returns before reaching here), matching AdjustStack's own
+		// locking contract. A no-longer-seated player (they left between
+		// the offer and the resolve) is a no-op inside AdjustStack: only
+		// the balance change above applies to them.
+		h.AdjustStack(cp.UserID, cp.Delta)
 	}
 
 	return &cp, nil

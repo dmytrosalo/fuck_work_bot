@@ -596,6 +596,226 @@ func TestSuperViewHidesAnExpiredGame(t *testing.T) {
 	}
 }
 
+// superSeatedHub builds a real hub, wired with a real db and a real table,
+// with u1 seated at buyIn chips and holding a pending colour-game offer for
+// stake. "color" is used throughout this file's chip-mirroring tests for the
+// same reason the existing money tests use it: its outcome is always
+// "double" or "bust" (never dice's zero-delta "keep"), so Delta is
+// guaranteed non-zero and every call here actually attempts a payout.
+func superSeatedHub(t *testing.T, buyIn, stake int) (*PokerHub, *poker.Table, *storage.DB) {
+	t.Helper()
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "tok")
+	tbl := h.Create(-1)
+	tbl.Lock()
+	if err := tbl.Sit("u1", "Danya", buyIn); err != nil {
+		tbl.Unlock()
+		t.Fatalf("Sit: %v", err)
+	}
+	tbl.Unlock()
+	h.mu.Lock()
+	h.seatedAt["u1"] = tbl.ID
+	h.mu.Unlock()
+	h.setSuper(tbl.ID, &superGame{
+		UserID: "u1", Name: "Danya", Stake: stake, State: "offered", Game: "color",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	return h, tbl, db
+}
+
+func seatStack(tbl *poker.Table, userID string) int {
+	tbl.Lock()
+	defer tbl.Unlock()
+	for _, s := range tbl.Seats {
+		if s.UserID == userID {
+			return s.Stack
+		}
+	}
+	return -1
+}
+
+// TestResolveSuperWinningPayoutReachesTheChips proves the fix: a double must
+// raise BOTH the balance and the seated player's stack, by the same amount.
+// Before this fix the balance moved and the felt did not.
+func TestResolveSuperWinningPayoutReachesTheChips(t *testing.T) {
+	const buyIn, stake = 5000, 1000
+	for attempt := 0; attempt < 50; attempt++ {
+		h, tbl, db := superSeatedHub(t, buyIn, stake)
+		balBefore := db.GetBalance("u1", "Danya")
+		stackBefore := seatStack(tbl, "u1")
+
+		g, err := h.resolveSuper(tbl.ID, "u1", "red")
+		if err != nil {
+			t.Fatalf("resolveSuper: %v", err)
+		}
+		if g.Outcome != "double" {
+			continue // wrong branch of the 50/50 this attempt; try again
+		}
+
+		balAfter := db.GetBalance("u1", "Danya")
+		stackAfter := seatStack(tbl, "u1")
+
+		if g.Delta <= 0 {
+			t.Fatalf("double outcome with Delta = %d, want > 0", g.Delta)
+		}
+		if balAfter-balBefore != g.Delta {
+			t.Errorf("balance moved %d, want %d", balAfter-balBefore, g.Delta)
+		}
+		if stackAfter-stackBefore != g.Delta {
+			t.Errorf("stack moved %d, want %d — the win never reached the felt", stackAfter-stackBefore, g.Delta)
+		}
+		return
+	}
+	t.Fatal("never rolled a double in 50 attempts")
+}
+
+// TestResolveSuperLosingPayoutReachesTheChips is the mirror of the winning
+// case: a bust must lower BOTH the balance and the stack, by the same
+// amount.
+func TestResolveSuperLosingPayoutReachesTheChips(t *testing.T) {
+	const buyIn, stake = 5000, 1000
+	for attempt := 0; attempt < 50; attempt++ {
+		h, tbl, db := superSeatedHub(t, buyIn, stake)
+		balBefore := db.GetBalance("u1", "Danya")
+		stackBefore := seatStack(tbl, "u1")
+
+		g, err := h.resolveSuper(tbl.ID, "u1", "red")
+		if err != nil {
+			t.Fatalf("resolveSuper: %v", err)
+		}
+		if g.Outcome != "bust" {
+			continue // wrong branch of the 50/50 this attempt; try again
+		}
+
+		balAfter := db.GetBalance("u1", "Danya")
+		stackAfter := seatStack(tbl, "u1")
+
+		if g.Delta >= 0 {
+			t.Fatalf("bust outcome with Delta = %d, want < 0", g.Delta)
+		}
+		if balAfter-balBefore != g.Delta {
+			t.Errorf("balance moved %d, want %d", balAfter-balBefore, g.Delta)
+		}
+		if stackAfter-stackBefore != g.Delta {
+			t.Errorf("stack moved %d, want %d — a loss must also leave the felt", stackAfter-stackBefore, g.Delta)
+		}
+		return
+	}
+	t.Fatal("never rolled a bust in 50 attempts")
+}
+
+// TestResolveSuperSkipMovesNoChips is TestResolveSuperSkipMovesNoMoney's
+// counterpart for the felt: a deliberate pass (Delta == 0) must move no
+// chips, exactly as it moves no balance.
+func TestResolveSuperSkipMovesNoChips(t *testing.T) {
+	h, tbl, db := superSeatedHub(t, 5000, 1000)
+	balBefore := db.GetBalance("u1", "Danya")
+	stackBefore := seatStack(tbl, "u1")
+
+	g, err := h.resolveSuper(tbl.ID, "u1", "skip")
+	if err != nil {
+		t.Fatalf("resolveSuper: %v", err)
+	}
+	if g.Delta != 0 {
+		t.Fatalf("skip Delta = %d, want 0", g.Delta)
+	}
+	if got := db.GetBalance("u1", "Danya"); got != balBefore {
+		t.Errorf("balance moved on skip: %d -> %d", balBefore, got)
+	}
+	if got := seatStack(tbl, "u1"); got != stackBefore {
+		t.Errorf("stack moved on skip: %d -> %d", stackBefore, got)
+	}
+}
+
+// TestResolveSuperPayoutFailureMovesNoChips extends
+// TestResolveSuperPayoutFailureDowngradesToNoGain to the felt: when
+// SettlePoker fails (here, a closed db, same technique as that test) neither
+// the balance nor the seated player's chips may move, whatever Outcome was
+// rolled before the downgrade.
+func TestResolveSuperPayoutFailureMovesNoChips(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "supergame-payout-fail-chips.db")
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	db.UpdateBalance("u1", "Danya", 400) // 100 starting + 400 = 500, matches the buy-in seed below
+	balBefore := db.GetBalance("u1", "Danya")
+
+	h := NewPokerHub(db, nil, "tok")
+	tbl := h.Create(-1)
+	tbl.Lock()
+	if err := tbl.Sit("u1", "Danya", 5000); err != nil {
+		tbl.Unlock()
+		t.Fatalf("Sit: %v", err)
+	}
+	tbl.Unlock()
+	h.mu.Lock()
+	h.seatedAt["u1"] = tbl.ID
+	h.mu.Unlock()
+	stackBefore := seatStack(tbl, "u1")
+
+	h.setSuper(tbl.ID, &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered", Game: "color",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+
+	// Close the db so SettlePoker's db.Begin() fails for real, exactly as
+	// TestResolveSuperPayoutFailureDowngradesToNoGain does.
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	g, err := h.resolveSuper(tbl.ID, "u1", "red")
+	if err == nil {
+		t.Fatalf("resolveSuper succeeded despite a closed database")
+	}
+	if g.Delta != 0 {
+		t.Errorf("downgraded game Delta = %d, want 0", g.Delta)
+	}
+	if got := seatStack(tbl, "u1"); got != stackBefore {
+		t.Errorf("stack moved despite the payout failing: %d -> %d", stackBefore, got)
+	}
+
+	db2, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("storage.New (reopen): %v", err)
+	}
+	defer db2.Close()
+	if after := db2.GetBalance("u1", "Danya"); after != balBefore {
+		t.Errorf("persisted balance moved despite the payout failing: %d -> %d", balBefore, after)
+	}
+}
+
+// TestResolveSuperUnseatedPlayerStillGetsBalance covers a player who left
+// the table between the offer and the resolve (or was never seated through
+// this hub at all, e.g. h.seatedAt has no entry for them): the balance
+// change must still land, with no panic, and AdjustStack's own not-seated
+// branch must simply no-op rather than move chips at some other table.
+func TestResolveSuperUnseatedPlayerStillGetsBalance(t *testing.T) {
+	db := setupTestDB(t)
+	h := NewPokerHub(db, nil, "tok")
+	// Deliberately no h.seatedAt entry and no table for u1 -- they stood up
+	// (or never sat) after the offer was made.
+	h.setSuper("t1", &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered", Game: "color",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	balBefore := db.GetBalance("u1", "Danya")
+
+	g, err := h.resolveSuper("t1", "u1", "red")
+	if err != nil {
+		t.Fatalf("resolveSuper: %v", err)
+	}
+	if g.Delta == 0 {
+		t.Fatalf("colour outcome must be double or bust, got Delta 0 (Outcome %q)", g.Outcome)
+	}
+	if got := db.GetBalance("u1", "Danya"); got-balBefore != g.Delta {
+		t.Errorf("balance moved %d, want %d — an unseated player must still be paid", got-balBefore, g.Delta)
+	}
+	// Reaching here at all is the proof against a panic: AdjustStack must
+	// have found no table for u1 and returned without touching anything.
+}
+
 // A deploy mid-game must lose the offer, not resume it. Resuming would mean
 // deciding, after the fact, whether money that was never written should be —
 // and there is no safe answer. Dropping it leaves the player with the
