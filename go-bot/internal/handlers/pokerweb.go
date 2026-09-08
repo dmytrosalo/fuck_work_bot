@@ -1659,6 +1659,14 @@ type PokerHub struct {
 	// table snapshot: a deploy mid-game drops it, which is the only
 	// outcome that cannot half-apply money.
 	super map[string]*superGame
+	// superLast is the last time each user actually played a Супер гра,
+	// keyed by user id. Only a game that was offered updates it, so a
+	// missed chance roll does not start the cooldown.
+	superLast map[string]time.Time
+	// superRoll returns a number in [0,1) for the chance gate. A field so
+	// tests can make the roll deterministic; production leaves it nil and
+	// falls back to rand.Float64.
+	superRoll func() float64
 
 	// membershipCache maps a (chatID, userID) pair to the wall-clock time
 	// its last POSITIVE Telegram chat-membership check succeeded. auth()
@@ -1728,6 +1736,7 @@ func NewPokerHub(db *storage.DB, bot *tele.Bot, token string) *PokerHub {
 		lastActivity:    map[string]time.Time{},
 		showdownAt:      map[string]time.Time{},
 		super:           map[string]*superGame{},
+		superLast:       map[string]time.Time{},
 		membershipCache: map[membershipKey]time.Time{},
 		chat:            map[string][]chatMsg{},
 		lastChatAt:      map[string]time.Time{},
@@ -2303,6 +2312,11 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 	// The hand is over: anyone who asked to leave mid-hand goes now.
 	h.applyPendingLeaves(tbl)
 	h.botTaunt(tbl, deltas)
+
+	// Offered only after the hand has fully settled, so the stake is a
+	// balance the player already holds and the payout is a clean second
+	// transaction rather than an edit to the settlement.
+	h.offerSuper(tbl, deltas)
 
 	// A seat busted to 0 chips in this hand must not stay locked out of
 	// every OTHER table hub-wide until this table itself goes 30 minutes

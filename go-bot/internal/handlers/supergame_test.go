@@ -3,7 +3,26 @@ package handlers
 import (
 	"testing"
 	"time"
+
+	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
 )
+
+// seatedTable builds a fresh two-seat table for offerSuper tests. It uses
+// its own throwaway hub only to reach Create; the hub each test exercises
+// is the *PokerHub literal built in the test itself, not this one. Mirrors
+// historyTable in pokerhistory_test.go but parameterised on user ids since
+// offerSuper needs specific ones to line up with the deltas map.
+func seatedTable(t *testing.T, u1, u2 string) *poker.Table {
+	t.Helper()
+	h := NewPokerHub(nil, nil, "tok")
+	tbl := h.Create(-1)
+	tbl.Lock()
+	_ = tbl.Sit(u1, u1, 100000)
+	_ = tbl.Sit(u2, u2, 100000)
+	tbl.BigBlind = 100
+	tbl.Unlock()
+	return tbl
+}
 
 func TestDiceOutcomeThresholds(t *testing.T) {
 	for _, tc := range []struct {
@@ -150,5 +169,52 @@ func TestShowdownReadyIsFalseWhileASuperGameHolds(t *testing.T) {
 	h.setSuper("t1", &superGame{State: "offered", Deadline: time.Now().Add(superDecideWindow)})
 	if h.showdownReady("t1") {
 		t.Errorf("showdownReady must be false while a super game holds")
+	}
+}
+
+func TestOfferSuperRespectsCooldown(t *testing.T) {
+	h := &PokerHub{
+		super:     map[string]*superGame{},
+		superLast: map[string]time.Time{"u1": time.Now()},
+		superRoll: func() float64 { return 0 }, // always inside the chance
+	}
+	tbl := seatedTable(t, "u1", "u2")
+	h.offerSuper(tbl, map[string]int{"u1": 5000, "u2": -5000})
+	if h.superFor(tbl.ID) != nil {
+		t.Errorf("a player on cooldown must not be offered a game")
+	}
+}
+
+func TestOfferSuperCreatesAnOfferedGame(t *testing.T) {
+	h := &PokerHub{
+		super:     map[string]*superGame{},
+		superLast: map[string]time.Time{},
+		superRoll: func() float64 { return 0 },
+	}
+	tbl := seatedTable(t, "u1", "u2")
+	h.offerSuper(tbl, map[string]int{"u1": 5000, "u2": -5000})
+
+	g := h.superFor(tbl.ID)
+	if g == nil {
+		t.Fatal("expected an offered game")
+	}
+	if g.UserID != "u1" || g.Stake != 5000 || g.State != "offered" {
+		t.Errorf("game = %+v, want u1 / 5000 / offered", g)
+	}
+	if !h.superHolds(tbl.ID) {
+		t.Errorf("a fresh offer must hold the table")
+	}
+}
+
+func TestOfferSuperSkipsWhenTheRollMisses(t *testing.T) {
+	h := &PokerHub{
+		super:     map[string]*superGame{},
+		superLast: map[string]time.Time{},
+		superRoll: func() float64 { return 0.99 }, // outside the chance
+	}
+	tbl := seatedTable(t, "u1", "u2")
+	h.offerSuper(tbl, map[string]int{"u1": 5000, "u2": -5000})
+	if h.superFor(tbl.ID) != nil {
+		t.Errorf("a missed roll must offer nothing")
 	}
 }

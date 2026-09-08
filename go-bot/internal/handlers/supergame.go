@@ -1,6 +1,11 @@
 package handlers
 
-import "time"
+import (
+	"math/rand"
+	"time"
+
+	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
+)
 
 // Супер гра is a double-or-nothing on a poker win. See
 // docs/superpowers/specs/2026-09-08-super-game-design.md for the maths
@@ -138,4 +143,47 @@ func (h *PokerHub) setSuper(tableID string, g *superGame) {
 func (h *PokerHub) superHolds(tableID string) bool {
 	g := h.superFor(tableID)
 	return g != nil && time.Now().Before(g.Deadline)
+}
+
+// offerSuper opens a Супер гра on tbl if this hand qualifies. Caller must
+// hold tbl.Lock(), same as settle() itself.
+func (h *PokerHub) offerSuper(tbl *poker.Table, deltas map[string]int) {
+	user, stake, ok := superCandidate(deltas, tbl.BigBlind)
+	if !ok {
+		return
+	}
+
+	h.mu.Lock()
+	last := h.superLast[user]
+	h.mu.Unlock()
+	if time.Since(last) < superCooldown {
+		return
+	}
+
+	roll := h.superRoll
+	if roll == nil {
+		roll = rand.Float64
+	}
+	if roll() >= superChance {
+		return
+	}
+
+	name := user
+	for _, s := range tbl.Seats {
+		if s.UserID == user {
+			name = s.Name
+			break
+		}
+	}
+
+	h.mu.Lock()
+	h.superLast[user] = time.Now()
+	h.super[tbl.ID] = &superGame{
+		UserID:   user,
+		Name:     name,
+		Stake:    stake,
+		State:    "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	}
+	h.mu.Unlock()
 }
