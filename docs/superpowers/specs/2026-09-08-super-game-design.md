@@ -87,7 +87,9 @@ type superGame struct {
 }
 ```
 
-`TableView` gains an optional `super` object carrying the same fields. It is shared, not per-client: everyone must see one result.
+The wire format gains an optional `super` object carrying the same fields. It is shared, not per-client: everyone must see one result.
+
+It hangs off `tableEnvelope` (`pokerchat.go:46`), which already embeds `poker.TableView` and adds its own `chat` field — not off `TableView` itself. Супер гра is economy and presentation, so `internal/poker` stays untouched, same reasoning as keeping the hold out of the stage machine.
 
 New endpoint: `POST /api/poker/{id}/super` with `{"game":"dice"}`, `{"game":"color","pick":"red"}`, or `{"game":"skip"}`. Authenticated exactly like `/act`. Rejected unless the caller is the named winner and the state is still `offered`.
 
