@@ -2287,7 +2287,7 @@ func (h *PokerHub) settle(tbl *poker.Table) {
 		// (some credited, some not) — SettlePoker wraps every entry in one
 		// database transaction so it commits all-or-nothing. See
 		// internal/storage/sqlite.go.
-		if err := h.db.SettlePoker(entries); err != nil {
+		if err := h.db.SettlePoker(entries, "poker"); err != nil {
 			log.Printf("[poker] settle tx failed for table %s: %v", tbl.ID, err)
 		}
 	}

@@ -253,7 +253,7 @@ func TestSettlementDoesNotReenterTheHook(t *testing.T) {
 	if err := db.SettlePoker([]storage.PokerDelta{
 		{UserID: "1", Name: "", Amount: 500},
 		{UserID: "2", Name: "", Amount: -500},
-	}); err != nil {
+	}, "poker"); err != nil {
 		t.Fatalf("SettlePoker: %v", err)
 	}
 	if fired != 0 {

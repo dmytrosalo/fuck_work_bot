@@ -86,7 +86,7 @@ func TestSettlePokerAppliesAllDeltasInOneCall(t *testing.T) {
 	if err := db.SettlePoker([]PokerDelta{
 		{UserID: "u1", Name: "Alice", Amount: 200},
 		{UserID: "u2", Name: "Bob", Amount: -200},
-	}); err != nil {
+	}, "poker"); err != nil {
 		t.Fatalf("SettlePoker: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestSettlePokerPreservesDisplayNameButLogsItOnTransactions(t *testing.T) {
 
 	if err := db.SettlePoker([]PokerDelta{
 		{UserID: "u1", Name: "StaleSeatName", Amount: 50},
-	}); err != nil {
+	}, "poker"); err != nil {
 		t.Fatalf("SettlePoker: %v", err)
 	}
 
@@ -164,7 +164,7 @@ func TestSettlePokerRollsBackAllEntriesOnMidTransactionFailure(t *testing.T) {
 	err := db.SettlePoker([]PokerDelta{
 		{UserID: "u1", Name: "Alice", Amount: 500},          // would succeed if applied in isolation
 		{UserID: "u2", Name: "Bob", Amount: sentinelAmount}, // forced failure
-	})
+	}, "poker")
 	if err == nil {
 		t.Fatal("SettlePoker: want an error from the forced trigger failure, got nil")
 	}
@@ -182,7 +182,7 @@ func TestSettlePokerRollsBackAllEntriesOnMidTransactionFailure(t *testing.T) {
 // database or erroring.
 func TestSettlePokerEmptyIsNoop(t *testing.T) {
 	db := newTestDB(t)
-	if err := db.SettlePoker(nil); err != nil {
+	if err := db.SettlePoker(nil, "poker"); err != nil {
 		t.Fatalf("SettlePoker(nil): %v", err)
 	}
 }
@@ -325,5 +325,24 @@ func TestGetTopBalancesExcludesBotsAndBank(t *testing.T) {
 	}
 	if !found {
 		t.Error("real player missing from leaderboard")
+	}
+}
+
+func TestSettlePokerRecordsTheGivenActivity(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SettlePoker([]PokerDelta{
+		{UserID: "u1", Name: "Danya", Amount: 500},
+		{UserID: "bank:house", Name: "Банк", Amount: -500},
+	}, "supergame"); err != nil {
+		t.Fatalf("SettlePoker: %v", err)
+	}
+
+	var activity string
+	err := db.db.QueryRow(`SELECT activity FROM transactions WHERE user_id = 'u1'`).Scan(&activity)
+	if err != nil {
+		t.Fatalf("read transaction: %v", err)
+	}
+	if activity != "supergame" {
+		t.Errorf("activity = %q, want %q", activity, "supergame")
 	}
 }

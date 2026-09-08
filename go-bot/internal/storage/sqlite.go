@@ -698,7 +698,7 @@ type PokerDelta struct {
 // settlement time. Zero-amount deltas are expected to already be filtered
 // out by the caller, same as the previous loop did — SettlePoker does not
 // re-filter them itself.
-func (d *DB) SettlePoker(deltas []PokerDelta) error {
+func (d *DB) SettlePoker(deltas []PokerDelta, activity string) error {
 	if len(deltas) == 0 {
 		return nil
 	}
@@ -714,7 +714,7 @@ func (d *DB) SettlePoker(deltas []PokerDelta) error {
 			return fmt.Errorf("poker settle: update balance for %s: %w", delta.UserID, err)
 		}
 		if _, err := tx.Exec(`INSERT INTO transactions (user_id, name, activity, amount) VALUES (?, ?, ?, ?)`,
-			delta.UserID, delta.Name, "poker", delta.Amount); err != nil {
+			delta.UserID, delta.Name, activity, delta.Amount); err != nil {
 			return fmt.Errorf("poker settle: log transaction for %s: %w", delta.UserID, err)
 		}
 	}
