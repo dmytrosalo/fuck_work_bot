@@ -276,6 +276,22 @@ func (h *PokerHub) handleLeave(w http.ResponseWriter, tbl *poker.Table, uid int6
 	writeJSON(w, map[string]any{"left": stood})
 }
 
+// handleWake clears a timed-out player's sleeping flag so they are dealt
+// back into the next hand. Same auth as leave/action: the table lock guards
+// the mutation and the broadcast carries it to every open client.
+func (h *PokerHub) handleWake(w http.ResponseWriter, tbl *poker.Table, uid int64) {
+	userID := fmt.Sprintf("%d", uid)
+
+	tbl.Lock()
+	tbl.Wake(userID)
+	view := h.envelope(tbl, userID)
+	h.broadcast(tbl)
+	tbl.Unlock()
+	h.touch(tbl.ID) // waking up is real player-initiated activity
+
+	writeJSON(w, view)
+}
+
 func (h *PokerHub) cancelLeave(userID string) {
 	h.mu.Lock()
 	delete(h.leaving, userID)

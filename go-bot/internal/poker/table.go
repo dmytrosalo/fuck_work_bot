@@ -34,6 +34,12 @@ type Seat struct {
 	InHand          bool
 	startStack      int // stack when the hand began, for settlement deltas
 	actedThisStreet bool
+	// Asleep marks a seat that timed out its turn clock and is being skipped
+	// rather than repeatedly auto-folded: not dealt in, posts no blinds, sits
+	// out until Wake clears it. Chips stay exactly where they are — a
+	// sleeping seat is treated everywhere the engine already knows how to
+	// treat a seat with no chips.
+	Asleep bool
 }
 
 type Pot struct {
@@ -106,6 +112,9 @@ func (t *Table) Elapsed() time.Duration {
 	return time.Since(t.CreatedAt)
 }
 
+// Sit seats a fresh player, or a busted one re-buying after handleJoin's
+// StandUp — either way a brand-new *Seat, whose Asleep is the zero value
+// (false). Sitting down, fresh or again, must never start asleep.
 func (t *Table) Sit(userID, name string, buyIn int) error {
 	if buyIn < MinBuyIn {
 		return ErrBuyInTooLow
@@ -167,7 +176,7 @@ func (t *Table) SeatIndexOf(userID string) int {
 func (t *Table) SeatedCount() int {
 	n := 0
 	for _, s := range t.Seats {
-		if s.Stack > 0 {
+		if s.Stack > 0 && !s.Asleep {
 			n++
 		}
 	}
@@ -206,12 +215,14 @@ func (t *Table) StartHand() error {
 
 	for _, s := range t.Seats {
 		s.Hole = nil
-		s.Folded = s.Stack <= 0
 		s.AllIn = false
 		s.Committed = 0
 		s.Bet = 0
 		s.actedThisStreet = false
-		s.InHand = s.Stack > 0
+		// A sleeping seat is excluded the same way a busted one is: no
+		// chips risked, no cards dealt, no blind posted.
+		s.InHand = s.Stack > 0 && !s.Asleep
+		s.Folded = !s.InHand
 		s.startStack = s.Stack
 	}
 
@@ -247,12 +258,15 @@ func (t *Table) draw() pk.Card {
 	return c
 }
 
-// nextOccupied returns the next seat index with chips, wrapping around.
+// nextOccupied returns the next seat index with chips, wrapping around. A
+// sleeping seat is skipped even though it still has chips — without this the
+// button/blind rotation would post a blind for a player who timed out and is
+// no longer being dealt in, silently bleeding their stack every hand.
 func (t *Table) nextOccupied(from int) int {
 	n := len(t.Seats)
 	for i := 1; i <= n; i++ {
 		idx := (from + i%n + n) % n
-		if t.Seats[idx].Stack > 0 || t.Seats[idx].InHand {
+		if (t.Seats[idx].Stack > 0 || t.Seats[idx].InHand) && !t.Seats[idx].Asleep {
 			return idx
 		}
 	}
