@@ -44,6 +44,20 @@ One card off a fresh deck; the player calls the colour. Hit pays ×2, miss pays 
 
 **EV = 0.5 × 2 = 1.000** — exactly fair.
 
+### Which game you get is not your choice
+
+The server picks the game at offer time, 50/50, and publishes it with the offer.
+The player never chooses between dice and colour — the only decisions left are
+whether to play at all, and, when the colour game comes up, which colour to call.
+
+This also closes a class of bug by construction: the request cannot influence
+the rules, only the player's own call within a game the server already fixed.
+
+| Game drawn | What the player does |
+|---|---|
+| Кубики | Кинути, or Пас |
+| Червоне/чорне | Червоне, Чорне, or Пас |
+
 ### Known asymmetry
 
 Червоне/чорне is EV-optimal, so a player optimising for expected value should always pick it. Кубики survives as the **lower-variance** option: it keeps half the stake 58% of the time instead of zeroing it 50% of the time. The choice is temperament, not arithmetic.
@@ -78,7 +92,7 @@ type superGame struct {
     Stake    int
     Deadline time.Time
     State    string // "offered" | "resolved" | "skipped"
-    Game     string // "dice" | "color"
+    Game     string // "dice" | "color" — drawn by the server at offer time
     Pick     string // "red" | "black", colour game only
     Dice     [2]int
     Card     string // e.g. "K♦"
@@ -91,7 +105,7 @@ The wire format gains an optional `super` object carrying the same fields. It is
 
 It hangs off `tableEnvelope` (`pokerchat.go:46`), which already embeds `poker.TableView` and adds its own `chat` field — not off `TableView` itself. Супер гра is economy and presentation, so `internal/poker` stays untouched, same reasoning as keeping the hold out of the stage machine.
 
-New endpoint: `POST /api/poker/{id}/super` with `{"game":"dice"}`, `{"game":"color","pick":"red"}`, or `{"game":"skip"}`. Authenticated exactly like `/act`. Rejected unless the caller is the named winner and the state is still `offered`.
+New endpoint: `POST /api/poker/{id}/super` with `{"choice":"..."}` where choice is `roll`, `red`, `black` or `skip`. The game itself is NOT in the request — it was fixed by the server at offer time. A choice that does not belong to the drawn game (`red` on a dice game, `roll` on a colour game) is a bad request. Authenticated exactly like `/act`. Rejected unless the caller is the named winner and the state is still `offered`.
 
 **Idempotency:** the transition out of `offered` happens once, under the table lock, before any money moves. A double-tap or a retried request finds a state that is no longer `offered` and is refused. This is the single most important guard in the feature.
 
