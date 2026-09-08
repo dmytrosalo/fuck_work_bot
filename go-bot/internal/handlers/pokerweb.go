@@ -745,15 +745,18 @@ const SMOKE_MS=4200;
 // Same shape and same reasoning as tauntChance/tauntCooldown in
 // pokerbots.go: the probability is for variety, but the cooldown is what
 // actually prevents two puffs on consecutive hands, which is the burst that
-// would read as noise. The gate is shorter than the taunt one because a
-// drifting haze is far quieter than a chat line.
+// would read as noise. The gate is much shorter than the taunt one: a
+// drifting haze is far quieter than a chat line, and TurnTimeout is only
+// the ceiling on ONE turn, so real hands finish well inside it -- at 90s
+// the cooldown was swallowing wins faster than the roll was granting them,
+// which made the effect rarer than the 35% suggests.
 //
 // The roll is per-client, so two people at the same table can disagree about
 // whether he smoked this hand. That is deliberate: it keeps the effect
 // entirely in the page and costs the protocol nothing. Moving it to the
 // server would take one bool on TableView if we ever want it shared.
 const SMOKE_CHANCE=0.35;
-const SMOKE_COOLDOWN_MS=90*1000;
+const SMOKE_COOLDOWN_MS=45*1000;
 let lastSmokeAt=0;
 function maybeHookahSmoke(){
   const now=Date.now();
