@@ -45,7 +45,8 @@ type chatMsg struct {
 // repair, so a single dropped frame would lose a message permanently.
 type tableEnvelope struct {
 	poker.TableView
-	Chat []chatMsg `json:"chat"`
+	Chat  []chatMsg  `json:"chat"`
+	Super *superView `json:"super,omitempty"`
 }
 
 // chatSnapshot returns a copy of a table's chat log. Takes h.mu itself, so
@@ -74,7 +75,11 @@ func (h *PokerHub) chatLocked(tableID string) []chatMsg {
 // called with the TABLE lock held and h.mu NOT held, matching the ordering
 // rule the rest of the hub follows: table lock outer, hub mutex inner.
 func (h *PokerHub) envelope(tbl *poker.Table, userID string) tableEnvelope {
-	return tableEnvelope{TableView: tbl.ViewFor(userID), Chat: h.chatSnapshot(tbl.ID)}
+	return tableEnvelope{
+		TableView: tbl.ViewFor(userID),
+		Chat:      h.chatSnapshot(tbl.ID),
+		Super:     h.superView(tbl.ID),
+	}
 }
 
 // handleChat records one message and broadcasts the updated log.

@@ -451,3 +451,50 @@ func TestResolveSuperPayoutFailureDowngradesToNoGain(t *testing.T) {
 		t.Errorf("persisted balance moved despite the payout failing: %d -> %d", before, after)
 	}
 }
+
+// TestEnvelopeCarriesTheSuperGameToEveryone proves the block is published
+// on the envelope, identically to the winner and to a bystander, and
+// disappears once nothing is pending.
+func TestEnvelopeCarriesTheSuperGameToEveryone(t *testing.T) {
+	h := &PokerHub{super: map[string]*superGame{}, chat: map[string][]chatMsg{}}
+	tbl := seatedTable(t, "u1", "u2")
+	h.setSuper(tbl.ID, &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1500, State: "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+
+	// The winner and a bystander must both receive it, identically.
+	for _, viewer := range []string{"u1", "u2"} {
+		env := h.envelope(tbl, viewer)
+		if env.Super == nil {
+			t.Fatalf("viewer %s got no super block", viewer)
+		}
+		if env.Super.UserID != "u1" || env.Super.Stake != 1500 || env.Super.State != "offered" {
+			t.Errorf("viewer %s got %+v, want u1 / 1500 / offered", viewer, env.Super)
+		}
+	}
+
+	h.setSuper(tbl.ID, nil)
+	if env := h.envelope(tbl, "u1"); env.Super != nil {
+		t.Errorf("no pending game must serialise no super block")
+	}
+}
+
+// TestSuperViewHidesAnExpiredGame pins the carried-over fix: nothing else
+// deletes a finished or timed-out game from h.super, so superView(Locked)
+// itself must stop publishing one once its Deadline has passed -- whatever
+// State says -- or the client's panel would never disappear.
+func TestSuperViewHidesAnExpiredGame(t *testing.T) {
+	h := &PokerHub{super: map[string]*superGame{}}
+	h.setSuper("t1", &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "resolved",
+		Outcome: "double", Deadline: time.Now().Add(-time.Second),
+	})
+
+	if v := h.superView("t1"); v != nil {
+		t.Errorf("superView of an expired game = %+v, want nil", v)
+	}
+	if v := h.superViewLocked("t1"); v != nil {
+		t.Errorf("superViewLocked of an expired game = %+v, want nil", v)
+	}
+}

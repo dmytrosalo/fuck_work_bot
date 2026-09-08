@@ -2447,9 +2447,15 @@ func (h *PokerHub) broadcast(tbl *poker.Table) {
 	// sync.Mutex is not reentrant. One read serves every subscriber because
 	// chat, unlike the table view, is not redacted per viewer.
 	msgs := h.chatLocked(tbl.ID)
+	// Same reasoning as chatLocked above: superView would try to take h.mu
+	// a second time and deadlock, so read the super game once here under
+	// the lock we already hold via superViewLocked. Building the envelope
+	// this way -- not via envelope() -- also guarantees a broadcast and a
+	// fresh SSE snapshot never disagree about what "super" says.
+	super := h.superViewLocked(tbl.ID)
 	for _, s := range h.subs[tbl.ID] {
 		select {
-		case s.ch <- tableEnvelope{TableView: tbl.ViewFor(s.userID), Chat: msgs}:
+		case s.ch <- tableEnvelope{TableView: tbl.ViewFor(s.userID), Chat: msgs, Super: super}:
 		default: // slow consumer: drop, the next snapshot repairs it
 		}
 	}

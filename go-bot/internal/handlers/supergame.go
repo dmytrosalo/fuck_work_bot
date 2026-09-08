@@ -329,3 +329,60 @@ func (h *PokerHub) handleSuper(w http.ResponseWriter, r *http.Request, tbl *poke
 	h.broadcast(tbl)
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// superView is the wire form of a pending game. It hangs off tableEnvelope
+// rather than poker.TableView so internal/poker stays untouched, and it is
+// identical for every viewer -- the whole point is that the table watches
+// one result together.
+type superView struct {
+	UserID  string `json:"user_id"`
+	Name    string `json:"name"`
+	Stake   int    `json:"stake"`
+	State   string `json:"state"`
+	Game    string `json:"game,omitempty"`
+	Pick    string `json:"pick,omitempty"`
+	Dice    []int  `json:"dice,omitempty"`
+	Card    string `json:"card,omitempty"`
+	Outcome string `json:"outcome,omitempty"`
+	Delta   int    `json:"delta,omitempty"`
+	Left    int    `json:"left"` // seconds remaining on the current phase
+}
+
+// superView builds tableID's published game state. Takes h.mu itself, so
+// callers must NOT already hold it -- inside broadcast(), which does, use
+// superViewLocked instead. Matches the chatSnapshot/chatLocked split in
+// pokerchat.go for the same reason: sync.Mutex is not reentrant.
+func (h *PokerHub) superView(tableID string) *superView {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.superViewLocked(tableID)
+}
+
+// superViewLocked builds tableID's published game state. Caller must hold
+// h.mu.
+//
+// Returns nil once g.Deadline has passed, whatever State says. Nothing else
+// removes a finished or timed-out game from h.super, so without this check
+// a resolved game (or an offer nobody acted on) would keep being published
+// forever and the client's panel would never disappear. The deadline is
+// exactly the moment superHolds releases the table, so this makes the panel
+// vanish in lockstep with the hold -- one rule, two consumers.
+func (h *PokerHub) superViewLocked(tableID string) *superView {
+	g, ok := h.super[tableID]
+	if !ok || !time.Now().Before(g.Deadline) {
+		return nil
+	}
+	left := int(time.Until(g.Deadline).Seconds())
+	if left < 0 {
+		left = 0
+	}
+	v := &superView{
+		UserID: g.UserID, Name: g.Name, Stake: g.Stake, State: g.State,
+		Game: g.Game, Pick: g.Pick, Card: g.Card,
+		Outcome: g.Outcome, Delta: g.Delta, Left: left,
+	}
+	if g.Dice[0] != 0 {
+		v.Dice = []int{g.Dice[0], g.Dice[1]}
+	}
+	return v
+}
