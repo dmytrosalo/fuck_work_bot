@@ -18,8 +18,8 @@ This is the first feature in the Mini App that moves real богдудіки out
 | Flow | **Blocking — the table waits and everyone watches** | Needs a hard timeout and a Пас button, or one AFK player freezes the game |
 | Decision window | **10 s**, then **4 s** to show the result | Worst-case table pause ~14 s |
 | Frequency | **15% of qualifying wins**, per-player cooldown **10 min** | Roughly one Супер гра per player per 15–30 min of play |
-| Minimum stake | **win ≥ 5 × big blind** | Keeps it an event rather than a coin-flip on pocket change |
-| Split pots | **Largest winner only**, ties by seat order | The table can never be blocked twice for one hand |
+| Minimum stake | **win ≥ 10 × big blind** | Keeps it an event rather than a coin-flip on pocket change |
+| Split pots | **No Супер гра at all** | One winner or nothing — no tie-breaking rule to get wrong |
 | RNG | **Server-side only** | Client RNG is editable from the console, and this is real currency |
 | Money path | **Separate transaction against `bank:house`** | `SettlePoker`'s player-vs-player zero-sum stays untouched |
 | Pending game at restart | **Dropped, treated as skipped** | A deploy mid-game cannot half-apply money |
@@ -53,7 +53,7 @@ If the two should be exactly equal instead, the fix is one number: the Куби�
 ## Flow
 
 1. Hand reaches showdown and settles normally through `SettlePoker`. Nothing about this step changes.
-2. The hub picks the largest human winner. If `won ≥ 5 × big_blind`, the player is off cooldown, and a 15% roll passes, a Супер гра is opened on the table.
+2. The hub looks for **exactly one** human winner. If the pot was split — more than one seat with `won > 0` — no Супер гра is offered at all. Otherwise, if `won ≥ 10 × big_blind`, the player is off cooldown, and a 15% roll passes, a Супер гра is opened on the table.
 3. The table view now carries a `super` block. Every client renders it: the winner sees three buttons (Кубики / Червоне-чорне / Пас), everyone else sees "«Ім'я» грає Супер гру" and the same countdown.
 4. The winner picks within **10 s**. Pressing Пас resolves immediately so nobody waits.
 5. The server rolls, applies the money, and publishes the result. Clients play the process animation, then the outcome animation, for **4 s**.
@@ -116,7 +116,8 @@ Both respect `prefers-reduced-motion`: the result appears without the tumble or 
 |---|---|
 | Winner disconnects after the offer | Timeout fires, resolves as `skipped`, table advances |
 | Winner busts to 0 on the same hand | Cannot happen — the offer requires `won > 0` |
-| Split pot | Only the largest winner is offered a game |
+| Split pot | No game is offered; the hand ends normally |
+| Winner is a bot, split with a human | Still a split — more than one seat won, so no game |
 | Deploy / SIGTERM mid-game | Snapshot does not persist `super`; on restore there is no pending game and no money moved |
 | Table reclaimed by the idle sweeper | Pending game discarded with the table; no money moved |
 | Double-tap / replayed request | Refused: state is no longer `offered` |
@@ -130,6 +131,8 @@ Both respect `prefers-reduced-motion`: the result appears without the tumble or 
 - Timeout: an unanswered offer releases the hold and moves no money.
 - Hold: `showdownReady` stays false while a game is pending and true once it resolves.
 - Bots are never offered a game.
+- A split pot offers no game, including when the split is between a human and a bot.
+- A win under 10 × big blind offers no game.
 - The rendered page pins the button labels and the two game ids, in the style of the existing `TestBlameLinesAreKeyedToBotUserIDs`.
 
 ## Out of scope
