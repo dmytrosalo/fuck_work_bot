@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -216,5 +217,147 @@ func TestOfferSuperSkipsWhenTheRollMisses(t *testing.T) {
 	h.offerSuper(tbl, map[string]int{"u1": 5000, "u2": -5000})
 	if h.superFor(tbl.ID) != nil {
 		t.Errorf("a missed roll must offer nothing")
+	}
+}
+
+func TestResolveSuperPaysExactlyOnce(t *testing.T) {
+	db := setupTestDB(t)
+	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	h.setSuper("t1", &superGame{
+		UserID:   "u1",
+		Name:     "Danya",
+		Stake:    1000,
+		State:    "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+
+	before := db.GetBalance("u1", "Danya")
+	bankBefore := db.GetBalance(bankUserID, "Банк")
+
+	g, err := h.resolveSuper("t1", "u1", "dice", "")
+	if err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+
+	// A second resolve must be refused, not applied again.
+	if _, err := h.resolveSuper("t1", "u1", "dice", ""); err == nil {
+		t.Fatalf("second resolve was accepted; money would be applied twice")
+	}
+
+	after := db.GetBalance("u1", "Danya")
+	bankAfter := db.GetBalance(bankUserID, "Банк")
+
+	if after-before != g.Delta {
+		t.Errorf("player moved %d, want %d", after-before, g.Delta)
+	}
+	if (after-before)+(bankAfter-bankBefore) != 0 {
+		t.Errorf("player %+d and bank %+d do not cancel — zero-sum broken",
+			after-before, bankAfter-bankBefore)
+	}
+}
+
+func TestResolveSuperRejectsTheWrongPlayer(t *testing.T) {
+	h := &PokerHub{super: map[string]*superGame{}}
+	h.setSuper("t1", &superGame{
+		UserID: "u1", Stake: 1000, State: "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	if _, err := h.resolveSuper("t1", "u2", "dice", ""); err == nil {
+		t.Errorf("a player who did not win must not be able to resolve the game")
+	}
+}
+
+func TestResolveSuperSkipMovesNoMoney(t *testing.T) {
+	db := setupTestDB(t)
+	h := &PokerHub{db: db, super: map[string]*superGame{}}
+	h.setSuper("t1", &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	before := db.GetBalance("u1", "Danya")
+
+	g, err := h.resolveSuper("t1", "u1", "skip", "")
+	if err != nil {
+		t.Fatalf("skip: %v", err)
+	}
+	if g.Delta != 0 {
+		t.Errorf("skip delta = %d, want 0", g.Delta)
+	}
+	if g.Outcome != "skip" {
+		t.Errorf("skip outcome = %q, want %q", g.Outcome, "skip")
+	}
+	if g.State != "resolved" {
+		t.Errorf("skip state = %q, want %q — there is no \"skipped\" state", g.State, "resolved")
+	}
+	if got := db.GetBalance("u1", "Danya"); got != before {
+		t.Errorf("balance moved on skip: %d -> %d", before, got)
+	}
+}
+
+// TestResolveSuperConcurrentCallsPayExactlyOnce is stronger than the
+// sequential double-resolve check above: it fires two resolveSuper calls at
+// the same table/user/game truly concurrently (both goroutines released by
+// the same channel close, no ordering between them) and requires that
+// exactly one wins the idempotency guard and the balance moves by exactly
+// one payout, never zero and never two. Run with -race: correction (1) in
+// the brief exists specifically so this cannot torn-write the shared
+// *superGame that superFor lets other goroutines read concurrently.
+func TestResolveSuperConcurrentCallsPayExactlyOnce(t *testing.T) {
+	db := setupTestDB(t)
+	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	h.setSuper("t1", &superGame{
+		UserID:   "u1",
+		Name:     "Danya",
+		Stake:    1000,
+		State:    "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+
+	before := db.GetBalance("u1", "Danya")
+	bankBefore := db.GetBalance(bankUserID, "Банк")
+
+	const n = 8
+	start := make(chan struct{})
+	results := make(chan error, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := h.resolveSuper("t1", "u1", "dice", "")
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	oks, fails := 0, 0
+	for err := range results {
+		if err == nil {
+			oks++
+		} else {
+			fails++
+		}
+	}
+	if oks != 1 {
+		t.Fatalf("resolveSuper succeeded %d times concurrently, want exactly 1 (failed %d)", oks, fails)
+	}
+
+	g := h.superFor("t1")
+	if g == nil {
+		t.Fatal("expected a resolved game to remain")
+	}
+
+	after := db.GetBalance("u1", "Danya")
+	bankAfter := db.GetBalance(bankUserID, "Банк")
+
+	if after-before != g.Delta {
+		t.Errorf("player moved %d, want %d (the single winning resolve's delta)", after-before, g.Delta)
+	}
+	if (after-before)+(bankAfter-bankBefore) != 0 {
+		t.Errorf("player %+d and bank %+d do not cancel — money moved more than once",
+			after-before, bankAfter-bankBefore)
 	}
 }

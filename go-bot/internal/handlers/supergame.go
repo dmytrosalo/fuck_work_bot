@@ -1,10 +1,16 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
 	"math/rand"
+	"net/http"
 	"time"
 
 	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
+	"github.com/dmytrosalo/fuck-work-bot/internal/storage"
 )
 
 // Супер гра is a double-or-nothing on a poker win. See
@@ -186,4 +192,109 @@ func (h *PokerHub) offerSuper(tbl *poker.Table, deltas map[string]int) {
 		Deadline: time.Now().Add(superDecideWindow),
 	}
 	h.mu.Unlock()
+}
+
+// errSuperUnavailable is returned by resolveSuper whenever there is nothing
+// left to resolve: no pending game, the wrong player, an expired offer, or
+// a game that has already been resolved. It doubles as the idempotency
+// guard's refusal and as the HTTP handler's "already gone" response, so its
+// Ukrainian text is what a double-tap or a retried request sees.
+var errSuperUnavailable = errors.New("Супер гра недоступна")
+
+// resolveSuper plays out tableID's pending game and applies the money.
+//
+// The transition out of "offered" happens under h.mu BEFORE anything is
+// rolled or written, so a double-tap or a retried request finds a state
+// that is no longer offered and is refused. Unlike a design that releases
+// the lock before rolling, every mutation of g -- state, the roll itself,
+// the outcome, and the delta -- happens while h.mu is still held. rand is
+// mutex-protected internally and does no I/O, so holding the lock across it
+// is cheap, and it keeps the *superGame that other goroutines can reach
+// through superFor always in a self-consistent state: nobody can ever
+// observe a game whose State is "resolved" but whose Outcome or Delta is
+// still zero-valued from a half-finished write. Only the database call --
+// the one thing that can genuinely be slow -- happens after the lock is
+// released, using values copied out under the lock.
+func (h *PokerHub) resolveSuper(tableID, userID, game, pick string) (*superGame, error) {
+	h.mu.Lock()
+	g, ok := h.super[tableID]
+	if !ok || g.State != "offered" || g.UserID != userID || time.Now().After(g.Deadline) {
+		h.mu.Unlock()
+		return nil, errSuperUnavailable
+	}
+	if game == "color" && pick != "red" && pick != "black" {
+		h.mu.Unlock()
+		return nil, errSuperUnavailable
+	}
+
+	g.State = "resolved"
+	g.Game = game
+	g.Pick = pick
+	g.Deadline = time.Now().Add(superResultHold)
+
+	switch game {
+	case "dice":
+		a, b := rand.Intn(6)+1, rand.Intn(6)+1
+		g.Dice = [2]int{a, b}
+		g.Outcome = diceOutcome(a, b)
+	case "color":
+		red := rand.Intn(2) == 0
+		suits := map[bool][]string{true: {"♥", "♦"}, false: {"♠", "♣"}}[red]
+		ranks := []string{"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}
+		g.Card = ranks[rand.Intn(len(ranks))] + suits[rand.Intn(len(suits))]
+		g.Outcome = colorOutcome(red, pick)
+	default: // "skip"
+		// A deliberate pass, not a keep. superDelta has no "skip" branch so
+		// this moves no money, but it stays distinguishable from a rolled
+		// 8 in the audit log and in the UI -- there is no "skipped" State,
+		// only a resolved game whose Outcome records that the player
+		// declined to play.
+		g.Outcome = "skip"
+	}
+	g.Delta = superDelta(g.Stake, g.Outcome)
+
+	cp := *g
+	h.mu.Unlock()
+
+	if cp.Delta != 0 && h.db != nil {
+		// Two parties, one transaction, exactly like the bot-chip entries
+		// in settle(): the player's gain is the bank's loss and the pair
+		// sums to zero.
+		if err := h.db.SettlePoker([]storage.PokerDelta{
+			{UserID: cp.UserID, Name: cp.Name, Amount: cp.Delta},
+			{UserID: bankUserID, Name: "Банк", Amount: -cp.Delta},
+		}, "supergame"); err != nil {
+			log.Printf("[poker] super game payout failed for table %s: %v", tableID, err)
+		}
+	}
+
+	return &cp, nil
+}
+
+// handleSuper is the HTTP action for resolving a pending Супер гра: the
+// player's choice of game (and, for "color", their pick) arrives here,
+// resolveSuper does the roll and the payout, and the result reaches every
+// client -- including the player who just acted -- through the normal
+// broadcast rather than the response body.
+func (h *PokerHub) handleSuper(w http.ResponseWriter, r *http.Request, tbl *poker.Table, uid int64) {
+	var body struct {
+		Game string `json:"game"`
+		Pick string `json:"pick"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Некоректний запит", http.StatusBadRequest)
+		return
+	}
+	switch body.Game {
+	case "dice", "color", "skip":
+	default:
+		http.Error(w, "Невідома гра", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.resolveSuper(tbl.ID, fmt.Sprintf("%d", uid), body.Game, body.Pick); err != nil {
+		http.Error(w, "Супер гра вже завершена", http.StatusConflict)
+		return
+	}
+	h.broadcast(tbl)
+	w.WriteHeader(http.StatusNoContent)
 }

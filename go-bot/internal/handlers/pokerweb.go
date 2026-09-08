@@ -1981,6 +1981,8 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			h.handleHistory(w, tbl)
 		case "leave":
 			h.handleLeave(w, tbl, uid)
+		case "super":
+			h.handleSuper(w, r, tbl, uid)
 		default:
 			http.NotFound(w, r)
 		}
