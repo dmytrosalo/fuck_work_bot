@@ -203,3 +203,37 @@ func TestHookahIsKeyedToBotUserID(t *testing.T) {
 		}
 	}
 }
+
+// TestBlameLinesAreKeyedToBotUserIDs pins each bot's blame bubble to its
+// seat user_id, for the same reason the hookah and the card backs are:
+// botNames in pokerbots.go is editable prose, and a rename must never move
+// Bo's line onto the Android's seat. Also pins the lines themselves — they
+// are the whole joke, and a silent edit would not fail anything else.
+func TestBlameLinesAreKeyedToBotUserIDs(t *testing.T) {
+	var b strings.Builder
+	if err := pokerTmpl.Execute(&b, map[string]string{"TableID": "a1b2c3d4e5f60718"}); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	out := b.String()
+
+	for _, want := range []string{
+		`"bot:1":"Це все Делна!"`,
+		`"bot:2":"Це все бекенд!"`,
+		"const BUBBLE=",
+		".blame{",
+		"@keyframes blamepop",
+		"BLAME_CHANCE",
+		"BLAME_COOLDOWN_MS",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page is missing %q", want)
+		}
+	}
+
+	// A blind posted and folded is not a loss worth blaming anyone for, so
+	// the trigger is a loss bigger than the big blind rather than any
+	// negative result at all.
+	if !strings.Contains(out, "big_blind") {
+		t.Errorf("blame trigger does not reference big_blind")
+	}
+}

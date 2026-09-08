@@ -165,6 +165,11 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  .card{width:34px;height:47px;line-height:47px;font-size:18px;margin:0 2px}
  .oppHole .card{width:21px;height:29px;line-height:29px;font-size:12px}
  .seat{width:74px;margin-left:-37px}
+ /* #felt clips (overflow:hidden) and bottoms out at min-height:420px, which
+    leaves only ~92px above a top-row seat. At the desktop size the bubble
+    lost its top edge to that clip, so it shrinks here to stay whole. */
+ .blame{width:84px;height:84px}
+ .blame b{font-size:10px;line-height:1.1}
 }
 /* A card that is part of your current best five. */
 .card.made{outline:2px solid #7ddba5;box-shadow:0 0 10px rgba(125,219,165,.55)}
@@ -274,9 +279,32 @@ button:disabled{opacity:.35}
  14%{opacity:1}
  68%{opacity:1}
  100%{opacity:0;transform:translate(13%,-6%) scale(1.42)}}
+/* When a hand goes badly a bot blames someone who is not at the table.
+   The bubble is decoration like the smoke: pointer-transparent, under the
+   cards, and rationed so it stays a joke rather than a ticker. It is filled
+   rather than left as bare outline -- the source icon is a stroke-only
+   shape, and unfilled it is unreadable over the felt. */
+.blame{position:absolute;left:50%;bottom:calc(100% - 8px);
+ transform:translateX(-50%);width:116px;height:116px;
+ pointer-events:none;z-index:4;opacity:0;color:#cfe0f5;
+ filter:drop-shadow(0 3px 7px rgba(0,0,0,.55))}
+.blame svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+/* The icon's box runs 4..20 by 4..16 in a 24x24 viewBox, so the text sits
+   in that band and never spills onto the tail. */
+.blame b{position:absolute;left:16.7%;right:16.7%;top:16.7%;height:50%;
+ display:flex;align-items:center;justify-content:center;text-align:center;
+ font-size:12px;font-weight:700;line-height:1.15;color:#eaf2ff;padding:0 3px}
+.seat.blaming .blame{animation:blamepop 3.6s ease-out}
+@keyframes blamepop{
+ 0%{opacity:0;transform:translateX(-50%) translateY(7px) scale(.82)}
+ 12%{opacity:1;transform:translateX(-50%) translateY(0) scale(1.05)}
+ 20%{transform:translateX(-50%) translateY(0) scale(1)}
+ 84%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+ 100%{opacity:0;transform:translateX(-50%) translateY(-7px) scale(1)}}
 @media (prefers-reduced-motion:reduce){
  .seat.smoking .hookah::before,.seat.smoking .hookah::after{animation:none}
- .haze.go{animation:none}}
+ .haze.go{animation:none}
+ .seat.blaming .blame{animation:none}}
 </style></head><body>
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
  <button id="themebtn" title="Колір столу">🎨</button>
@@ -647,6 +675,16 @@ const HOOKAH='<svg viewBox="0 0 512 512" aria-hidden="true">'+
   'd="M337.031,473.087h-47.196c17.455,0,31.605,14.149,31.605,31.605V512h40.33 '+
   'c3.914,0,7.088-3.174,7.088-7.088l0,0C368.857,487.336,354.608,473.087,337.031,473.087z"/>'+
   '</svg>';
+// The speech bubble a bot blames from. Stroke-only in the source icon, so
+// it takes a fill here to stay readable over the felt.
+const BUBBLE='<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'+
+  '<path d="M20 4H4V16H7V21L12 16H20V4Z" fill="rgba(9,17,27,.86)" '+
+  'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '+
+  'stroke-linejoin="round"/></svg>';
+// What each bot blames when it loses a pot. Keyed by seat user_id for the
+// reason pokerbots.go documents about the card backs: botNames is editable
+// prose, and renaming a bot must not move its line onto another seat.
+const BLAME={"bot:1":"Це все Делна!","bot:2":"Це все бекенд!"};
 function backFor(userID){
   if(userID==="bot:1")return CARD_BACK_BO;
   if(userID==="bot:2")return CARD_BACK_DROID;
@@ -764,6 +802,23 @@ function maybeHookahSmoke(){
   if(Math.random()>=SMOKE_CHANCE)return;
   lastSmokeAt=now;
   startHookahSmoke();
+}
+// Blame bubbles are rationed exactly like the smoke, but on their own
+// clocks: one bot's bubble must not ration the other's, and both bots can
+// lose the same hand. blameUntil mirrors smokeUntil -- render() rebuilds
+// every .seat, so the class has to be re-derived rather than remembered.
+const BLAME_CHANCE=0.35;
+const BLAME_COOLDOWN_MS=45*1000;
+const BLAME_MS=3600;
+const lastBlameAt={},blameUntil={};
+function maybeBlame(userID){
+  const now=Date.now();
+  if(now-(lastBlameAt[userID]||0)<BLAME_COOLDOWN_MS)return;
+  if(Math.random()>=BLAME_CHANCE)return;
+  lastBlameAt[userID]=now;
+  blameUntil[userID]=now+BLAME_MS;
+  const seat=document.querySelector('.seat[data-bot="'+userID+'"]');
+  if(seat)seat.classList.add("blaming");
 }
 function startHookahSmoke(){
   smokeUntil=Date.now()+SMOKE_MS;
@@ -939,6 +994,20 @@ function render(v){
     // Keyed off user_id, never the display name — botNames is editable
     // prose and his card back and avatar already key off "bot:2" for the
     // same reason (see pokerbots.go).
+    const blameLine=BLAME[s.user_id];
+    if(blameLine){
+      d.dataset.bot=s.user_id;
+      if(Date.now()<(blameUntil[s.user_id]||0))d.classList.add("blaming");
+      const bl=document.createElement("div");
+      bl.className="blame";
+      bl.innerHTML=BUBBLE;
+      const t=document.createElement("b");
+      // Fixed strings from BLAME, but set as text anyway so the bubble can
+      // never become an injection point if a line ever comes from data.
+      t.textContent=blameLine;
+      bl.appendChild(t);
+      d.appendChild(bl);
+    }
     if(s.user_id==="bot:2"){
       d.classList.add("droidseat");
       if(Date.now()<smokeUntil)d.classList.add("smoking");
@@ -1062,6 +1131,11 @@ function render(v){
     // won a piece of, and both should play.
     const droid=seats.find(s=>s.user_id==="bot:2");
     if(droid&&(droid.won||0)>0)maybeHookahSmoke();
+    // A blind posted and folded is not a loss worth blaming anyone for,
+    // so this wants a real dent rather than any negative result at all.
+    for(const s of seats){
+      if(BLAME[s.user_id]&&(s.won||0)< -(v.big_blind||0))maybeBlame(s.user_id);
+    }
   }
   document.getElementById("me").textContent=me?clip(me.name):"";
   document.getElementById("stack").textContent=me?me.stack:"";
