@@ -316,6 +316,10 @@ button:disabled{opacity:.35}
  box-shadow:0 10px 34px rgba(0,0,0,.6)}
 .sgtitle{font-size:15px;font-weight:800;color:#ffd166;letter-spacing:.02em}
 .sgstake{color:#7ddba5;font-weight:700;font-size:13px;margin-top:2px}
+/* Names the game the server drew, before the player decides anything --
+   "which game you get is not your choice", so this has to be visible ahead
+   of the buttons, not discovered by which ones happen to be showing. */
+.sggame{color:#8fa1bd;font-weight:700;font-size:12px;margin-top:2px}
 .sgbody{min-height:66px;display:flex;flex-direction:column;align-items:center;
  justify-content:center;gap:6px;margin:10px 0}
 .sgdice{display:flex;gap:10px;justify-content:center}
@@ -407,11 +411,12 @@ button:disabled{opacity:.35}
 <div id="supergame"><div class="sgbox">
   <div class="sgtitle">Супер гра</div>
   <div class="sgstake"></div>
+  <div class="sggame"></div>
   <div class="sgbody"></div>
   <div class="sgacts">
-    <button data-sg="dice">Кубики</button>
-    <button data-sg="red">Червоне</button>
-    <button data-sg="black">Чорне</button>
+    <button data-sg="roll" data-sg-game="dice">Кинути</button>
+    <button data-sg="red" data-sg-game="color">Червоне</button>
+    <button data-sg="black" data-sg-game="color">Чорне</button>
     <button data-sg="skip" class="ghost">Пас</button>
   </div>
   <div class="sgwait"></div>
@@ -1423,7 +1428,19 @@ function render(v){
   }else{
     sgEl.classList.add("on");
     const mine=g.user_id===myUserID;
+    // Which game the server drew, named before any choice is made -- the
+    // player never picks between them, only whether/how to play the one
+    // that came up. Left set through the resolved state too so the result
+    // reads in context ("Кубики" / dice tumble both say the same game).
+    sgEl.querySelector(".sggame").textContent=
+      g.game==="dice"?"Кубики":g.game==="color"?"Червоне чи чорне":"";
     sgEl.querySelector(".sgacts").style.display=(mine&&g.state==="offered")?"":"none";
+    // Only the buttons for the drawn game are shown -- «Пас» (no
+    // data-sg-game) is common to both, «Кинути» only makes sense for dice,
+    // «Червоне»/«Чорне» only for colour.
+    sgEl.querySelectorAll("#supergame [data-sg-game]").forEach(btn=>{
+      btn.style.display=btn.dataset.sgGame===g.game?"":"none";
+    });
     if(g.state==="offered"){
       // g.left is seconds remaining AS OF THIS SNAPSHOT, not a live tick —
       // resync the absolute local deadline every time one arrives (never
@@ -1630,13 +1647,12 @@ document.getElementById("avbtn").onclick=()=>{
 document.querySelectorAll("#supergame [data-sg]").forEach(btn=>{
   btn.addEventListener("click",async()=>{
     const k=btn.dataset.sg;
-    const body=k==="dice"?{game:"dice"}:k==="skip"?{game:"skip"}:{game:"color",pick:k};
     document.querySelector("#supergame .sgacts").style.display="none";
     try{
       const r=await fetch("/api/poker/"+TABLE+"/super",{
         method:"POST",
         headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
-        body:JSON.stringify(body)
+        body:JSON.stringify({choice:k})
       });
       // Never re-post on failure: 409 means it's already resolved, 500
       // means the payout failed server-side — either way the next
@@ -2002,6 +2018,11 @@ type PokerHub struct {
 	// tests can make the roll deterministic; production leaves it nil and
 	// falls back to rand.Float64.
 	superRoll func() float64
+	// superGameRoll returns a number in [0,1) for which game gets drawn at
+	// offer time: below 0.5 is "color", otherwise "dice" -- see offerSuper.
+	// A sibling field to superRoll, same reasoning: tests need to force
+	// either branch, production falls back to rand.Float64.
+	superGameRoll func() float64
 
 	// membershipCache maps a (chatID, userID) pair to the wall-clock time
 	// its last POSITIVE Telegram chat-membership check succeeded. auth()

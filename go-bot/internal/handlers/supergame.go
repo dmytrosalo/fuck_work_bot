@@ -153,6 +153,12 @@ func (h *PokerHub) superHolds(tableID string) bool {
 
 // offerSuper opens a Супер гра on tbl if this hand qualifies. Caller must
 // hold tbl.Lock(), same as settle() itself.
+//
+// It also draws which game the table gets -- dice or colour, 50/50 -- and
+// stores that on the offer itself. The design is deliberate: "which game you
+// get is not your choice" (see the spec), so the draw happens here, at offer
+// time, using the same injectable-RNG pattern as the chance gate below, and
+// is published as part of the offer rather than withheld until resolution.
 func (h *PokerHub) offerSuper(tbl *poker.Table, deltas map[string]int) {
 	user, stake, ok := superCandidate(deltas, tbl.BigBlind)
 	if !ok {
@@ -182,6 +188,15 @@ func (h *PokerHub) offerSuper(tbl *poker.Table, deltas map[string]int) {
 		}
 	}
 
+	draw := h.superGameRoll
+	if draw == nil {
+		draw = rand.Float64
+	}
+	game := "dice"
+	if draw() < 0.5 {
+		game = "color"
+	}
+
 	h.mu.Lock()
 	h.superLast[user] = time.Now()
 	h.super[tbl.ID] = &superGame{
@@ -189,6 +204,7 @@ func (h *PokerHub) offerSuper(tbl *poker.Table, deltas map[string]int) {
 		Name:     name,
 		Stake:    stake,
 		State:    "offered",
+		Game:     game,
 		Deadline: time.Now().Add(superDecideWindow),
 	}
 	h.mu.Unlock()
@@ -201,7 +217,20 @@ func (h *PokerHub) offerSuper(tbl *poker.Table, deltas map[string]int) {
 // Ukrainian text is what a double-tap or a retried request sees.
 var errSuperUnavailable = errors.New("Супер гра недоступна")
 
-// resolveSuper plays out tableID's pending game and applies the money.
+// errSuperBadChoice is returned by resolveSuper when choice does not belong
+// to the game the server already drew at offer time (e.g. "red" against a
+// dice game, or "roll" against a colour game). Unlike errSuperUnavailable,
+// this must NOT consume the game: the offer is left exactly as it was, still
+// "offered" and still resolvable, so a client bug or a stray request cannot
+// burn the player's one shot at it.
+var errSuperBadChoice = errors.New("Такого вибору немає в цій грі")
+
+// resolveSuper plays out tableID's pending game and applies the money. The
+// game itself is never an input here -- it was fixed by offerSuper -- only
+// the player's choice within it: "roll" or "skip" for dice, "red"/"black"/
+// "skip" for colour. A choice that does not belong to the drawn game is
+// refused via errSuperBadChoice without touching g at all, so the offer
+// stays live for a corrected retry.
 //
 // The transition out of "offered" happens under h.mu BEFORE anything is
 // rolled or written, so a double-tap or a retried request finds a state
@@ -215,41 +244,58 @@ var errSuperUnavailable = errors.New("Супер гра недоступна")
 // still zero-valued from a half-finished write. Only the database call --
 // the one thing that can genuinely be slow -- happens after the lock is
 // released, using values copied out under the lock.
-func (h *PokerHub) resolveSuper(tableID, userID, game, pick string) (*superGame, error) {
+func (h *PokerHub) resolveSuper(tableID, userID, choice string) (*superGame, error) {
 	h.mu.Lock()
 	g, ok := h.super[tableID]
 	if !ok || g.State != "offered" || g.UserID != userID || time.Now().After(g.Deadline) {
 		h.mu.Unlock()
 		return nil, errSuperUnavailable
 	}
-	if game == "color" && pick != "red" && pick != "black" {
+
+	var pick string
+	switch g.Game {
+	case "dice":
+		if choice != "roll" && choice != "skip" {
+			h.mu.Unlock()
+			return nil, errSuperBadChoice
+		}
+	case "color":
+		switch choice {
+		case "red", "black":
+			pick = choice
+		case "skip":
+		default:
+			h.mu.Unlock()
+			return nil, errSuperBadChoice
+		}
+	default:
+		// offerSuper always sets Game to "dice" or "color"; anything else
+		// means the offer is malformed and there is nothing safe to resolve.
 		h.mu.Unlock()
-		return nil, errSuperUnavailable
+		return nil, errSuperBadChoice
 	}
 
 	g.State = "resolved"
-	g.Game = game
 	g.Pick = pick
 	g.Deadline = time.Now().Add(superResultHold)
 
-	switch game {
-	case "dice":
-		a, b := rand.Intn(6)+1, rand.Intn(6)+1
-		g.Dice = [2]int{a, b}
-		g.Outcome = diceOutcome(a, b)
-	case "color":
-		red := rand.Intn(2) == 0
-		suits := map[bool][]string{true: {"♥", "♦"}, false: {"♠", "♣"}}[red]
-		ranks := []string{"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}
-		g.Card = ranks[rand.Intn(len(ranks))] + suits[rand.Intn(len(suits))]
-		g.Outcome = colorOutcome(red, pick)
-	default: // "skip"
+	if choice == "skip" {
 		// A deliberate pass, not a keep. superDelta has no "skip" branch so
 		// this moves no money, but it stays distinguishable from a rolled
 		// 8 in the audit log and in the UI -- there is no "skipped" State,
 		// only a resolved game whose Outcome records that the player
 		// declined to play.
 		g.Outcome = "skip"
+	} else if g.Game == "dice" {
+		a, b := rand.Intn(6)+1, rand.Intn(6)+1
+		g.Dice = [2]int{a, b}
+		g.Outcome = diceOutcome(a, b)
+	} else {
+		red := rand.Intn(2) == 0
+		suits := map[bool][]string{true: {"♥", "♦"}, false: {"♠", "♣"}}[red]
+		ranks := []string{"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}
+		g.Card = ranks[rand.Intn(len(ranks))] + suits[rand.Intn(len(suits))]
+		g.Outcome = colorOutcome(red, pick)
 	}
 	g.Delta = superDelta(g.Stake, g.Outcome)
 
@@ -292,27 +338,32 @@ func (h *PokerHub) resolveSuper(tableID, userID, game, pick string) (*superGame,
 }
 
 // handleSuper is the HTTP action for resolving a pending Супер гра: the
-// player's choice of game (and, for "color", their pick) arrives here,
-// resolveSuper does the roll and the payout, and the result reaches every
-// client -- including the player who just acted -- through the normal
-// broadcast rather than the response body.
+// player's choice arrives here, resolveSuper does the roll and the payout,
+// and the result reaches every client -- including the player who just
+// acted -- through the normal broadcast rather than the response body.
+//
+// The game itself is never in the request: it was fixed by the server at
+// offer time (see offerSuper), so the wire only ever carries the player's
+// choice within that game.
 func (h *PokerHub) handleSuper(w http.ResponseWriter, r *http.Request, tbl *poker.Table, uid int64) {
 	var body struct {
-		Game string `json:"game"`
-		Pick string `json:"pick"`
+		Choice string `json:"choice"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Некоректний запит", http.StatusBadRequest)
 		return
 	}
-	switch body.Game {
-	case "dice", "color", "skip":
+	switch body.Choice {
+	case "roll", "red", "black", "skip":
 	default:
-		http.Error(w, "Невідома гра", http.StatusBadRequest)
+		http.Error(w, "Невідомий вибір", http.StatusBadRequest)
 		return
 	}
-	_, err := h.resolveSuper(tbl.ID, fmt.Sprintf("%d", uid), body.Game, body.Pick)
+	_, err := h.resolveSuper(tbl.ID, fmt.Sprintf("%d", uid), body.Choice)
 	switch {
+	case errors.Is(err, errSuperBadChoice):
+		http.Error(w, "Такого вибору немає в цій грі", http.StatusBadRequest)
+		return
 	case errors.Is(err, errSuperUnavailable):
 		http.Error(w, "Супер гра вже завершена", http.StatusConflict)
 		return

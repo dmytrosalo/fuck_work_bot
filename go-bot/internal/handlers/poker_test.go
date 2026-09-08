@@ -252,6 +252,8 @@ func TestSuperGamePanelIsRenderedAndServerDriven(t *testing.T) {
 	for _, want := range []string{
 		"Супер гра",
 		"Кубики",
+		"Кинути",
+		"Червоне чи чорне",
 		"Червоне",
 		"Чорне",
 		"Пас",
@@ -259,6 +261,7 @@ func TestSuperGamePanelIsRenderedAndServerDriven(t *testing.T) {
 		"@keyframes dicetumble",
 		"@keyframes superwin",
 		`"/super"`,
+		"choice:k",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered page is missing %q", want)

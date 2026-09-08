@@ -225,6 +225,86 @@ func TestOfferSuperSkipsWhenTheRollMisses(t *testing.T) {
 	}
 }
 
+// TestOfferSuperDrawsTheGame pins "which game you get is not your choice":
+// the server draws dice-or-colour at offer time, not the player, and the
+// draw is published on the offer itself (State "offered") rather than held
+// back until resolution. superGameRoll is forced both ways so both branches
+// of the 50/50 actually run.
+func TestOfferSuperDrawsTheGame(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		roll float64
+		want string
+	}{
+		{"low roll draws colour", 0.0, "color"},
+		{"high roll draws dice", 0.999, "dice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &PokerHub{
+				super:         map[string]*superGame{},
+				superLast:     map[string]time.Time{},
+				superRoll:     func() float64 { return 0 }, // always inside the chance
+				superGameRoll: func() float64 { return tc.roll },
+			}
+			tbl := seatedTable(t, "u1", "u2")
+			h.offerSuper(tbl, map[string]int{"u1": 5000, "u2": -5000})
+
+			g := h.superFor(tbl.ID)
+			if g == nil {
+				t.Fatal("expected an offered game")
+			}
+			if g.State != "offered" {
+				t.Errorf("state = %q, want offered", g.State)
+			}
+			if g.Game != tc.want {
+				t.Errorf("drawn game = %q, want %q -- must be published while still offered", g.Game, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveSuperRejectsAChoiceFromTheOtherGame proves that a choice which
+// does not belong to the game the server already drew is refused as a bad
+// request AND, critically, does not consume the offer: the game must still
+// be "offered" and still resolvable with a valid choice afterwards. This is
+// what closes the door on the request influencing which rules apply -- the
+// player's only real decision is within the game the server fixed.
+func TestResolveSuperRejectsAChoiceFromTheOtherGame(t *testing.T) {
+	db := setupTestDB(t)
+
+	// A dice game must reject "red".
+	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	h.setSuper("t1", &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered", Game: "dice",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	if _, err := h.resolveSuper("t1", "u1", "red"); !errors.Is(err, errSuperBadChoice) {
+		t.Fatalf("dice game accepted %q: err = %v, want errSuperBadChoice", "red", err)
+	}
+	if g := h.superFor("t1"); g == nil || g.State != "offered" {
+		t.Fatalf("game after a rejected choice = %+v, want still offered", g)
+	}
+	if _, err := h.resolveSuper("t1", "u1", "roll"); err != nil {
+		t.Fatalf("resolving with a valid choice after the rejection: %v", err)
+	}
+
+	// A colour game must reject "roll".
+	h2 := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	h2.setSuper("t1", &superGame{
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered", Game: "color",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+	if _, err := h2.resolveSuper("t1", "u1", "roll"); !errors.Is(err, errSuperBadChoice) {
+		t.Fatalf("colour game accepted %q: err = %v, want errSuperBadChoice", "roll", err)
+	}
+	if g := h2.superFor("t1"); g == nil || g.State != "offered" {
+		t.Fatalf("game after a rejected choice = %+v, want still offered", g)
+	}
+	if _, err := h2.resolveSuper("t1", "u1", "red"); err != nil {
+		t.Fatalf("resolving with a valid choice after the rejection: %v", err)
+	}
+}
+
 func TestResolveSuperPaysExactlyOnce(t *testing.T) {
 	db := setupTestDB(t)
 	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
@@ -233,19 +313,20 @@ func TestResolveSuperPaysExactlyOnce(t *testing.T) {
 		Name:     "Danya",
 		Stake:    1000,
 		State:    "offered",
+		Game:     "dice",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
 
 	before := db.GetBalance("u1", "Danya")
 	bankBefore := db.GetBalance(bankUserID, "Банк")
 
-	g, err := h.resolveSuper("t1", "u1", "dice", "")
+	g, err := h.resolveSuper("t1", "u1", "roll")
 	if err != nil {
 		t.Fatalf("first resolve: %v", err)
 	}
 
 	// A second resolve must be refused, not applied again.
-	if _, err := h.resolveSuper("t1", "u1", "dice", ""); err == nil {
+	if _, err := h.resolveSuper("t1", "u1", "roll"); err == nil {
 		t.Fatalf("second resolve was accepted; money would be applied twice")
 	}
 
@@ -264,10 +345,10 @@ func TestResolveSuperPaysExactlyOnce(t *testing.T) {
 func TestResolveSuperRejectsTheWrongPlayer(t *testing.T) {
 	h := &PokerHub{super: map[string]*superGame{}}
 	h.setSuper("t1", &superGame{
-		UserID: "u1", Stake: 1000, State: "offered",
+		UserID: "u1", Stake: 1000, State: "offered", Game: "dice",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
-	if _, err := h.resolveSuper("t1", "u2", "dice", ""); err == nil {
+	if _, err := h.resolveSuper("t1", "u2", "roll"); err == nil {
 		t.Errorf("a player who did not win must not be able to resolve the game")
 	}
 }
@@ -276,12 +357,12 @@ func TestResolveSuperSkipMovesNoMoney(t *testing.T) {
 	db := setupTestDB(t)
 	h := &PokerHub{db: db, super: map[string]*superGame{}}
 	h.setSuper("t1", &superGame{
-		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered",
+		UserID: "u1", Name: "Danya", Stake: 1000, State: "offered", Game: "dice",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
 	before := db.GetBalance("u1", "Danya")
 
-	g, err := h.resolveSuper("t1", "u1", "skip", "")
+	g, err := h.resolveSuper("t1", "u1", "skip")
 	if err != nil {
 		t.Fatalf("skip: %v", err)
 	}
@@ -315,6 +396,7 @@ func TestResolveSuperConcurrentCallsPayExactlyOnce(t *testing.T) {
 		Name:     "Danya",
 		Stake:    1000,
 		State:    "offered",
+		Game:     "dice",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
 
@@ -330,7 +412,7 @@ func TestResolveSuperConcurrentCallsPayExactlyOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := h.resolveSuper("t1", "u1", "dice", "")
+			_, err := h.resolveSuper("t1", "u1", "roll")
 			results <- err
 		}()
 	}
@@ -407,10 +489,11 @@ func TestResolveSuperPayoutFailureDowngradesToNoGain(t *testing.T) {
 		Name:     "Danya",
 		Stake:    1000,
 		State:    "offered",
+		Game:     "color",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
 
-	g, err := h.resolveSuper("t1", "u1", "color", "red")
+	g, err := h.resolveSuper("t1", "u1", "red")
 	if err == nil {
 		t.Fatalf("resolveSuper succeeded despite a closed database -- payout failure was not detected")
 	}
