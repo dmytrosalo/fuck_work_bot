@@ -264,7 +264,27 @@ func (h *PokerHub) resolveSuper(tableID, userID, game, pick string) (*superGame,
 			{UserID: cp.UserID, Name: cp.Name, Amount: cp.Delta},
 			{UserID: bankUserID, Name: "Банк", Amount: -cp.Delta},
 		}, "supergame"); err != nil {
-			log.Printf("[poker] super game payout failed for table %s: %v", tableID, err)
+			// SettlePoker's transaction rolled back, so no money moved --
+			// but g is already State "resolved" with the winning Outcome
+			// and Delta, and that is what superFor and the broadcast are
+			// about to hand every client at the table. Left alone, the
+			// table would render "doubled!" for a payout that never
+			// happened. Downgrade the stored game to a no-gain result
+			// under the same lock discipline as the rest of this function
+			// so what gets published matches what actually moved in the
+			// ledger: nothing. Re-opening State to "offered" is not an
+			// option -- that would reopen the double-resolve window the
+			// idempotency guard above exists to close.
+			log.Printf("[poker] SUPER GAME PAYOUT FAILED table=%s user=%s amount=%d NOT credited (outcome %q downgraded to skip): %v",
+				tableID, cp.UserID, cp.Delta, cp.Outcome, err)
+
+			h.mu.Lock()
+			g.Outcome = "skip"
+			g.Delta = 0
+			cp = *g
+			h.mu.Unlock()
+
+			return &cp, fmt.Errorf("супер гра payout failed: %w", err)
 		}
 	}
 
@@ -291,8 +311,19 @@ func (h *PokerHub) handleSuper(w http.ResponseWriter, r *http.Request, tbl *poke
 		http.Error(w, "Невідома гра", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.resolveSuper(tbl.ID, fmt.Sprintf("%d", uid), body.Game, body.Pick); err != nil {
+	_, err := h.resolveSuper(tbl.ID, fmt.Sprintf("%d", uid), body.Game, body.Pick)
+	switch {
+	case errors.Is(err, errSuperUnavailable):
 		http.Error(w, "Супер гра вже завершена", http.StatusConflict)
+		return
+	case err != nil:
+		// The game was resolved and downgraded to a no-gain result (see
+		// resolveSuper), so the table still needs the broadcast -- without
+		// it every other client is stuck looking at a stale "offered"
+		// panel. Only the HTTP response tells the acting player their
+		// payout did not go through.
+		h.broadcast(tbl)
+		http.Error(w, "Не вдалося зарахувати виграш", http.StatusInternalServerError)
 		return
 	}
 	h.broadcast(tbl)

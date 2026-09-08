@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dmytrosalo/fuck-work-bot/internal/poker"
+	"github.com/dmytrosalo/fuck-work-bot/internal/storage"
 )
 
 // seatedTable builds a fresh two-seat table for offerSuper tests. It uses
@@ -359,5 +362,92 @@ func TestResolveSuperConcurrentCallsPayExactlyOnce(t *testing.T) {
 	if (after-before)+(bankAfter-bankBefore) != 0 {
 		t.Errorf("player %+d and bank %+d do not cancel — money moved more than once",
 			after-before, bankAfter-bankBefore)
+	}
+}
+
+// TestResolveSuperPayoutFailureDowngradesToNoGain proves the review fix: if
+// SettlePoker fails after the game is already State "resolved" with a
+// winning Outcome and Delta, resolveSuper must not let that winning result
+// reach superFor/broadcast. It induces a *real* SettlePoker failure -- not a
+// simulated one -- by closing the underlying *storage.DB before calling
+// resolveSuper, so db.Begin() itself returns an error and the transaction
+// never runs. "color" is used instead of "dice" because dice can roll a
+// "keep" (Delta == 0), which would skip the SettlePoker call entirely and
+// make the test flaky; color's outcome is always "double" or "bust", so
+// Delta is always non-zero and a payout attempt (and failure) is guaranteed
+// regardless of the random draw.
+func TestResolveSuperPayoutFailureDowngradesToNoGain(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "supergame-payout-fail.db")
+	db, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+
+	// Seed a known balance while the db is still open, so we have a real
+	// figure to check against after the failed payout -- not just the
+	// closed-db fallback value.
+	db.UpdateBalance("u1", "Danya", 400) // 100 starting + 400 = 500
+	before := db.GetBalance("u1", "Danya")
+	if before != 500 {
+		t.Fatalf("seed balance = %d, want 500", before)
+	}
+
+	// Close the db so SettlePoker's db.Begin() fails for real -- this is
+	// not a simulated error, it is the actual storage layer refusing the
+	// write.
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	h.setSuper("t1", &superGame{
+		UserID:   "u1",
+		Name:     "Danya",
+		Stake:    1000,
+		State:    "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+
+	g, err := h.resolveSuper("t1", "u1", "color", "red")
+	if err == nil {
+		t.Fatalf("resolveSuper succeeded despite a closed database -- payout failure was not detected")
+	}
+	if errors.Is(err, errSuperUnavailable) {
+		t.Fatalf("resolveSuper returned the idempotency-guard error, not a payout-failure error: %v", err)
+	}
+	if g == nil {
+		t.Fatal("resolveSuper returned a nil game alongside the payout error; the caller has nothing to broadcast")
+	}
+	if g.Delta != 0 {
+		t.Errorf("downgraded game Delta = %d, want 0 -- a failed payout must publish no gain", g.Delta)
+	}
+	if g.Outcome == "double" {
+		t.Errorf("downgraded game Outcome = %q, must not still claim a win", g.Outcome)
+	}
+	if g.State != "resolved" {
+		t.Errorf("downgraded game State = %q, want %q -- must not reopen the double-resolve window", g.State, "resolved")
+	}
+
+	// The game stored on the hub (what superFor/broadcast would hand every
+	// other client) must show the same downgrade, not just the copy
+	// returned to the caller.
+	stored := h.superFor("t1")
+	if stored == nil {
+		t.Fatal("expected the resolved game to remain on the hub")
+	}
+	if stored.Delta != 0 || stored.Outcome == "double" {
+		t.Errorf("stored game = %+v, want Delta 0 and Outcome != double", stored)
+	}
+
+	// Reopen the same database file and check the real, persisted balance
+	// -- not the closed-db fallback -- to confirm SettlePoker's rolled-back
+	// transaction moved nothing.
+	db2, err := storage.New(dbPath)
+	if err != nil {
+		t.Fatalf("storage.New (reopen): %v", err)
+	}
+	defer db2.Close()
+	if after := db2.GetBalance("u1", "Danya"); after != before {
+		t.Errorf("persisted balance moved despite the payout failing: %d -> %d", before, after)
 	}
 }
