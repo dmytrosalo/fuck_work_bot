@@ -308,19 +308,25 @@ func TestResolveSuperRejectsAChoiceFromTheOtherGame(t *testing.T) {
 func TestResolveSuperPaysExactlyOnce(t *testing.T) {
 	db := setupTestDB(t)
 	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	// "color" is used instead of "dice": dice can roll a "keep" (Delta ==
+	// 0), which would short-circuit the cp.Delta != 0 guard below and skip
+	// SettlePoker entirely, collapsing this test's zero-sum assertion to a
+	// vacuous 0 == 0 on roughly one run in seven. Colour's outcome is
+	// always "double" or "bust", so Delta is always non-zero and a payout
+	// is guaranteed regardless of the random draw.
 	h.setSuper("t1", &superGame{
 		UserID:   "u1",
 		Name:     "Danya",
 		Stake:    1000,
 		State:    "offered",
-		Game:     "dice",
+		Game:     "color",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
 
 	before := db.GetBalance("u1", "Danya")
 	bankBefore := db.GetBalance(bankUserID, "Банк")
 
-	g, err := h.resolveSuper("t1", "u1", "roll")
+	g, err := h.resolveSuper("t1", "u1", "red")
 	if err != nil {
 		t.Fatalf("first resolve: %v", err)
 	}
@@ -391,12 +397,18 @@ func TestResolveSuperSkipMovesNoMoney(t *testing.T) {
 func TestResolveSuperConcurrentCallsPayExactlyOnce(t *testing.T) {
 	db := setupTestDB(t)
 	h := &PokerHub{db: db, super: map[string]*superGame{}, superLast: map[string]time.Time{}}
+	// "color" is used instead of "dice": dice can roll a "keep" (Delta ==
+	// 0), which would short-circuit the cp.Delta != 0 guard in resolveSuper
+	// and skip SettlePoker entirely, collapsing this test's zero-sum
+	// assertion to a vacuous 0 == 0 on roughly one run in seven. Colour's
+	// outcome is always "double" or "bust", so Delta is always non-zero and
+	// a payout is guaranteed regardless of the random draw.
 	h.setSuper("t1", &superGame{
 		UserID:   "u1",
 		Name:     "Danya",
 		Stake:    1000,
 		State:    "offered",
-		Game:     "dice",
+		Game:     "color",
 		Deadline: time.Now().Add(superDecideWindow),
 	})
 
@@ -412,7 +424,7 @@ func TestResolveSuperConcurrentCallsPayExactlyOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := h.resolveSuper("t1", "u1", "roll")
+			_, err := h.resolveSuper("t1", "u1", "red")
 			results <- err
 		}()
 	}

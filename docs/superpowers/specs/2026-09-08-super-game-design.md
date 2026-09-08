@@ -81,7 +81,7 @@ pays **11/21 ≈ 52%** instead of 50%. Deliberately not done — the user chose 
 5. The server rolls, applies the money, and publishes the result. Clients play the process animation, then the outcome animation, for **4 s**.
 6. The hold releases and the next hand starts as usual.
 
-If the 10 s elapse with no decision, the game resolves with outcome `skip`: no money moves and the player keeps their winnings.
+If the 10 s elapse with no decision, the offer simply lapses: nothing is resolved and nothing is published, no money moves, and the player keeps their winnings. Because there is no result to show, the table does not wait out the 4 s result window either — it advances the instant the deadline passes.
 
 ## How it holds the table
 
@@ -138,7 +138,7 @@ Both respect `prefers-reduced-motion`: the result appears without the tumble or 
 
 | Case | Behaviour |
 |---|---|
-| Winner disconnects after the offer | Timeout fires, resolves with outcome `skip`, table advances |
+| Winner disconnects after the offer | Deadline passes, the offer lapses unresolved — no money moves, nothing is published — table advances immediately |
 | Winner busts to 0 on the same hand | Cannot happen — the offer requires `won > 0` |
 | Split pot | No game is offered; the hand ends normally |
 | Winner is a bot, split with a human | Still a split — more than one seat won, so no game |

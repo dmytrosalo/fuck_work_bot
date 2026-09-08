@@ -2010,9 +2010,11 @@ type PokerHub struct {
 	// table snapshot: a deploy mid-game drops it, which is the only
 	// outcome that cannot half-apply money.
 	super map[string]*superGame
-	// superLast is the last time each user actually played a Супер гра,
-	// keyed by user id. Only a game that was offered updates it, so a
-	// missed chance roll does not start the cooldown.
+	// superLast records, per user id, when they were last OFFERED a Супер
+	// гра -- set at offer time, not when they actually play it. That is
+	// deliberate: an offer the player lets lapse still consumed their one
+	// shot at it for this win, so it should still gate the next offer. A
+	// missed chance roll (no offer made at all) leaves it untouched.
 	superLast map[string]time.Time
 	// superRoll returns a number in [0,1) for the chance gate. A field so
 	// tests can make the roll deterministic; production leaves it nil and
@@ -3103,6 +3105,7 @@ func (h *PokerHub) sweepOnce() {
 		delete(h.lastTauntAt, id)
 		delete(h.savedSeq, id)
 		delete(h.history, id)
+		delete(h.super, id) // pending Супер гра, if any, dies with the table
 		for uid, tid := range h.leaving {
 			if tid == id {
 				delete(h.leaving, uid)
