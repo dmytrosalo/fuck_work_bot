@@ -328,14 +328,21 @@ button:disabled{opacity:.35}
  box-shadow:0 2px 8px rgba(0,0,0,.5)}
 .sgcard.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d)}
 .sgcard.red{color:#d62828}
-.sgcard.flip{animation:cardflip 1.2s ease-in-out}
+/* Duration must equal SG_PROCESS_MS below (1.0s = 1000ms) -- the JS swaps
+   the face at SG_PROCESS_MS/2, timed to land on this keyframe's midpoint. */
+.sgcard.flip{animation:cardflip 1.0s ease-in-out}
 .sglabel{color:#8fa1bd;font-size:11px}
 .sgoutcome{font-size:18px;font-weight:800;color:#ffd166}
 .sgdelta{font-size:15px;font-weight:700;color:#7ddba5}
-.sgbody.win{animation:superwin 2.8s ease-out}
-.sgbody.bust,.sgbody.half{animation:superlose 2.8s ease-out forwards}
+/* These three durations must equal SG_OUTCOME_MS below (2.4s = 2400ms) --
+   sgAnimateDelta paces the counting delta to finish exactly when the
+   animation does. Kept at 1000ms process + 2400ms outcome (~3400ms, under
+   the server's 4s superResultHold) so the panel never tears down mid-count
+   -- see the finding this fixes for the exact math. */
+.sgbody.win{animation:superwin 2.4s ease-out}
+.sgbody.bust,.sgbody.half{animation:superlose 2.4s ease-out forwards}
 .sgbody.bust .sgdelta,.sgbody.half .sgdelta{color:#e08a9a}
-.sgbody.push{animation:sgpulse 2.8s ease-out}
+.sgbody.push{animation:sgpulse 2.4s ease-out}
 .sgbody.skip{animation:sgfade 1s ease-out}
 .sgacts{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .sgacts button{flex:0 0 auto;min-width:84px}
@@ -859,6 +866,26 @@ let winShown=false;
 // only moment a NEW game can legitimately reuse the same outcome value.
 let sgShown=null;
 
+// Live countdown for the "offered" decide window. g.left is seconds
+// remaining AS OF the last snapshot, not a ticking value -- broadcasts are
+// event-driven (see sseKeepaliveInterval) so a 10s window with nobody
+// acting can go the whole time with no new snapshot to redraw it. Fixed
+// the same way the main hand clock at v.deadline is: convert the server's
+// relative "left" into an absolute local deadline once per snapshot, then
+// tick the displayed number down locally between snapshots. Re-synced (not
+// just set once) on every snapshot that carries "offered" so local drift
+// never accumulates and a newer server value always wins.
+let sgDeadlineMs=0,sgWaitMine=false,sgWaitName="",sgCountdownIv=null;
+function sgRenderWait(){
+  const el=document.querySelector("#supergame .sgwait");
+  if(!el)return;
+  const left=Math.max(0,Math.ceil((sgDeadlineMs-Date.now())/1000));
+  el.textContent=sgWaitMine?("Обирай — "+left+" с"):("«"+sgWaitName+"» грає Супер гру — "+left+" с");
+}
+function sgStopCountdown(){
+  if(sgCountdownIv){clearInterval(sgCountdownIv);sgCountdownIv=null}
+}
+
 // Data Android God's hookah smoke. render() rebuilds every .seat from
 // scratch on each snapshot, so a class dropped straight onto his seat would
 // vanish on the next one mid-puff. smokeUntil is the state instead: render()
@@ -971,10 +998,60 @@ function showWin(n){
 const DICE_FACE=["","⚀","⚁","⚂","⚃","⚄","⚅"];
 const SUPER_OUTCOME_UA={double:"×2! Подвоєння",keep:"×1 — без змін",
   half:"×½ — половина",bust:"Банкрут",skip:"Пас"};
-const SG_PROCESS_MS=1200,SG_OUTCOME_MS=2800;
+// Kept at 1000ms + 2400ms (~3400ms total, ~600ms margin) so the process +
+// outcome animation always finishes before the server's 4s
+// superResultHold tears the panel down -- see .sgcard.flip and the
+// .sgbody.win/superlose/sgpulse rule above, whose durations must match
+// these two numbers exactly.
+const SG_PROCESS_MS=1000,SG_OUTCOME_MS=2400;
 // Fixed cycling order for the dice "tumble" before it lands on the real
 // v.super.dice — decoration only, see the block comment above.
 const SG_TUMBLE_SEQ=[2,5,3,6,1,4,2,6,3,5,1,4];
+
+// Every setInterval/setTimeout/requestAnimationFrame handle the Супер гра
+// panel starts (dice tumble, card flip, delta counting, the offer
+// countdown) is tracked here and cancelled as one unit in sgTeardown().
+// Without this, an interval or rAF loop started for one game keeps
+// running against detached DOM once v.super goes away mid-animation --
+// leaving the panel not just wasteful but capable of stomping on the next
+// game's freshly-reset DOM.
+let sgTimers=[];
+function sgTrackTimeout(fn,ms){
+  const id=setTimeout(fn,ms);
+  sgTimers.push(["timeout",id]);
+  return id;
+}
+function sgTrackInterval(fn,ms){
+  const id=setInterval(fn,ms);
+  sgTimers.push(["interval",id]);
+  return id;
+}
+function sgTrackRAF(fn){
+  const id=requestAnimationFrame(fn);
+  sgTimers.push(["raf",id]);
+  return id;
+}
+function sgClearTimers(){
+  sgTimers.forEach(([kind,id])=>{
+    if(kind==="timeout")clearTimeout(id);
+    else if(kind==="interval")clearInterval(id);
+    else cancelAnimationFrame(id);
+  });
+  sgTimers=[];
+}
+
+// Single teardown path for when v.super goes away, called from render().
+// Cancels every handle the panel could possibly have running (the
+// countdown ticker plus anything sgPlayDice/sgPlayCard/sgAnimateDelta
+// started) so nothing keeps ticking against detached DOM, and resets the
+// latch so the NEXT game starts from a clean slate. playSuperResult()
+// already resets .sgbody's class/innerHTML at the top of every call, so no
+// leftover win/bust/push class from this game can bleed into the next.
+function sgTeardown(){
+  sgStopCountdown();
+  sgClearTimers();
+  sgShown=null;
+}
 
 function sgSetCard(el,s){
   el.textContent=s||"";
@@ -990,9 +1067,9 @@ function sgAnimateDelta(el,to,ms){
     const t=Math.min(1,(now-start)/ms);
     const v=Math.round(to*t);
     el.textContent=(v>0?"+":"")+v+" 🪙";
-    if(t<1)requestAnimationFrame(step);
+    if(t<1)sgTrackRAF(step);
   }
-  requestAnimationFrame(step);
+  sgTrackRAF(step);
 }
 
 function sgPlayDice(body,dice,done){
@@ -1004,12 +1081,12 @@ function sgPlayDice(body,dice,done){
   wrap.appendChild(d1);wrap.appendChild(d2);
   body.appendChild(wrap);
   let step=0;
-  const iv=setInterval(()=>{
+  const iv=sgTrackInterval(()=>{
     step=(step+1)%SG_TUMBLE_SEQ.length;
     d1.textContent=DICE_FACE[SG_TUMBLE_SEQ[step]];
     d2.textContent=DICE_FACE[SG_TUMBLE_SEQ[(step+6)%SG_TUMBLE_SEQ.length]];
   },90);
-  setTimeout(()=>{
+  sgTrackTimeout(()=>{
     clearInterval(iv);
     d1.classList.remove("tumbling");d2.classList.remove("tumbling");
     d1.textContent=DICE_FACE[(dice&&dice[0])||1];
@@ -1028,11 +1105,11 @@ function sgPlayCard(body,cardStr,pick,done){
   const c=document.createElement("span");
   c.className="sgcard back flip";
   body.appendChild(c);
-  setTimeout(()=>{
+  sgTrackTimeout(()=>{
     c.classList.remove("back");
     sgSetCard(c,cardStr);
   },SG_PROCESS_MS/2);
-  setTimeout(done,SG_PROCESS_MS);
+  sgTrackTimeout(done,SG_PROCESS_MS);
 }
 
 function sgPlayOutcome(bodyWrap,g){
@@ -1340,15 +1417,28 @@ function render(v){
   const g=v.super;
   if(!g){
     sgEl.classList.remove("on");
-    sgShown=null;
+    // Tears down every timer/interval/rAF the panel could have running and
+    // resets the outcome latch — see sgTeardown().
+    sgTeardown();
   }else{
     sgEl.classList.add("on");
     const mine=g.user_id===myUserID;
     sgEl.querySelector(".sgacts").style.display=(mine&&g.state==="offered")?"":"none";
-    sgEl.querySelector(".sgwait").textContent=
-      g.state==="offered"
-        ? (mine?("Обирай — "+g.left+" с"):("«"+g.name+"» грає Супер гру — "+g.left+" с"))
-        : "";
+    if(g.state==="offered"){
+      // g.left is seconds remaining AS OF THIS SNAPSHOT, not a live tick —
+      // resync the absolute local deadline every time one arrives (never
+      // just once) so local drift can't accumulate and a newer server
+      // value always wins, then let sgCountdownIv tick the display between
+      // snapshots. See the sgDeadlineMs block comment above.
+      sgDeadlineMs=Date.now()+g.left*1000;
+      sgWaitMine=mine;
+      sgWaitName=g.name;
+      sgRenderWait();
+      if(!sgCountdownIv)sgCountdownIv=setInterval(sgRenderWait,300);
+    }else{
+      sgStopCountdown();
+      sgEl.querySelector(".sgwait").textContent="";
+    }
     sgEl.querySelector(".sgstake").textContent=g.stake+" 🪙";
     // Latched so a repeated broadcast (another player's move, a chat
     // message, ...) while the result sits on screen never restarts it.
