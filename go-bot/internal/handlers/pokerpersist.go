@@ -15,6 +15,12 @@ import (
 // process died.
 const snapshotMaxAge = 2 * time.Hour
 
+// A pending Супер гра is deliberately NOT part of the snapshot. It lives on
+// PokerHub and dies with the process, so a redeploy mid-game leaves the
+// player holding the winnings they already had and moves no money. Resuming
+// one would mean deciding after the fact whether a payout that was never
+// written should be, and there is no safe answer to that.
+
 // persistTable writes one table's snapshot. Caller must hold the table lock
 // and not h.mu — Snapshot reads the seats, and the DB write happens with the
 // table lock held, the same shape settle already uses.

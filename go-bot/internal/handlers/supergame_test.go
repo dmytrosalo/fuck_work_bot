@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -496,5 +498,26 @@ func TestSuperViewHidesAnExpiredGame(t *testing.T) {
 	}
 	if v := h.superViewLocked("t1"); v != nil {
 		t.Errorf("superViewLocked of an expired game = %+v, want nil", v)
+	}
+}
+
+// A deploy mid-game must lose the offer, not resume it. Resuming would mean
+// deciding, after the fact, whether money that was never written should be —
+// and there is no safe answer. Dropping it leaves the player with the
+// winnings they already have.
+func TestPendingSuperGameDoesNotSurviveASnapshot(t *testing.T) {
+	h := &PokerHub{super: map[string]*superGame{}}
+	tbl := seatedTable(t, "u1", "u2")
+	h.setSuper(tbl.ID, &superGame{
+		UserID: "u1", Stake: 1000, State: "offered",
+		Deadline: time.Now().Add(superDecideWindow),
+	})
+
+	raw, err := json.Marshal(tbl.Snapshot())
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if strings.Contains(string(raw), "super") {
+		t.Errorf("table snapshot carries super game state: %s", raw)
 	}
 }
