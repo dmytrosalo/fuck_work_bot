@@ -6,7 +6,7 @@
 
 ## Context
 
-Winning a poker hand currently ends in a number changing on a plaque. Супер гра turns some of those wins into a shared moment: the table stops, the winner picks one of two gambles for their winnings, and everyone at the table watches the result land.
+Winning a poker hand currently ends in a number changing on a plaque. Супер гра turns some of those wins into a shared moment: the table stops, the winner gambles their winnings on a game the server draws for them, and everyone at the table watches the result land.
 
 This is the first feature in the Mini App that moves real богдудіки outside the poker settlement path, so most of this document is about not breaking the two things that are already documented as separately reviewed for money safety: `SettlePoker`'s zero-sum invariant and the table's stage machine.
 
@@ -22,11 +22,11 @@ This is the first feature in the Mini App that moves real богдудіки out
 | Split pots | **No Супер гра at all** | One winner or nothing — no tie-breaking rule to get wrong |
 | RNG | **Server-side only** | Client RNG is editable from the console, and this is real currency |
 | Money path | **Separate transaction against `bank:house`** | `SettlePoker`'s player-vs-player zero-sum stays untouched |
-| Pending game at restart | **Dropped, treated as skipped** | A deploy mid-game cannot half-apply money |
+| Pending game at restart | **Dropped, nothing paid** | A deploy mid-game cannot half-apply money |
 
 ## The two games
 
-The winner picks one. Stake is `won` — their net result for the hand just finished.
+The server draws one of these at offer time. Stake is `won` — the winner's net result for the hand just finished.
 
 ### Кубики (2d6)
 
@@ -58,22 +58,30 @@ the rules, only the player's own call within a game the server already fixed.
 | Кубики | Кинути, or Пас |
 | Червоне/чорне | Червоне, Чорне, or Пас |
 
-### Known asymmetry
+### The EV gap no longer matters
 
-Червоне/чорне is EV-optimal, so a player optimising for expected value should always pick it. Кубики survives as the **lower-variance** option: it keeps half the stake 58% of the time instead of zeroing it 50% of the time. The choice is temperament, not arithmetic.
+The two games are not quite equal: колір returns 1.000, кубики 0.986. When the
+player could choose, that gap was a real design problem — anyone optimising for
+expected value would always take колір and кубики would be dead content.
 
-If the two should be exactly equal instead, the fix is one number: the Кубики low branch pays **11/21 ≈ 52%** rather than 50%, which makes its EV 1.000. Deliberately not done, because the user chose the ½ variant.
+Drawing the game server-side removes the problem rather than solving it. Nobody
+can select the better game, so the 1.4% difference is just variance between two
+draws, not a dominated option. Over many games a player sees both equally, for a
+blended EV of 0.993.
+
+If the two should still be equalised, it is one number: the кубики low branch
+pays **11/21 ≈ 52%** instead of 50%. Deliberately not done — the user chose ½.
 
 ## Flow
 
 1. Hand reaches showdown and settles normally through `SettlePoker`. Nothing about this step changes.
 2. The hub looks for **exactly one** human winner. If the pot was split — more than one seat with `won > 0` — no Супер гра is offered at all. Otherwise, if `won ≥ 10 × big_blind`, the player is off cooldown, and a 15% roll passes, a Супер гра is opened on the table.
-3. The table view now carries a `super` block. Every client renders it: the winner sees three buttons (Кубики / Червоне-чорне / Пас), everyone else sees "«Ім'я» грає Супер гру" and the same countdown.
-4. The winner picks within **10 s**. Pressing Пас resolves immediately so nobody waits.
+3. The table view now carries a `super` block naming the drawn game. Every client renders it: the winner sees the controls that game allows (Кинути / Пас for кубики, Червоне / Чорне / Пас for колір), everyone else sees "«Ім'я» грає Супер гру" and the same countdown.
+4. The winner decides within **10 s**. Pressing Пас resolves immediately so nobody waits.
 5. The server rolls, applies the money, and publishes the result. Clients play the process animation, then the outcome animation, for **4 s**.
 6. The hold releases and the next hand starts as usual.
 
-If the 10 s elapse with no choice, the game resolves as `skipped`: no money moves and the player keeps their winnings.
+If the 10 s elapse with no decision, the game resolves with outcome `skip`: no money moves and the player keeps their winnings.
 
 ## How it holds the table
 
@@ -91,12 +99,12 @@ type superGame struct {
     Name     string
     Stake    int
     Deadline time.Time
-    State    string // "offered" | "resolved" | "skipped"
+    State    string // "offered" | "resolved" — a pass is resolved with Outcome "skip"
     Game     string // "dice" | "color" — drawn by the server at offer time
     Pick     string // "red" | "black", colour game only
     Dice     [2]int
     Card     string // e.g. "K♦"
-    Outcome  string // "double" | "keep" | "half" | "bust"
+    Outcome  string // "double" | "keep" | "half" | "bust" | "skip"
     Delta    int    // signed balance change actually applied
 }
 ```
@@ -130,7 +138,7 @@ Both respect `prefers-reduced-motion`: the result appears without the tumble or 
 
 | Case | Behaviour |
 |---|---|
-| Winner disconnects after the offer | Timeout fires, resolves as `skipped`, table advances |
+| Winner disconnects after the offer | Timeout fires, resolves with outcome `skip`, table advances |
 | Winner busts to 0 on the same hand | Cannot happen — the offer requires `won > 0` |
 | Split pot | No game is offered; the hand ends normally |
 | Winner is a bot, split with a human | Still a split — more than one seat won, so no game |
