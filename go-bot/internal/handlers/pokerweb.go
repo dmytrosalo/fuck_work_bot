@@ -234,14 +234,15 @@ button:disabled{opacity:.35}
    pot. Both layers are decoration only: pointer-transparent and stacked
    under the cards, so neither can swallow a tap meant for the table --
    the same guarantee #win documents above. */
-.hookah{position:absolute;right:-20px;bottom:0;width:24px;height:31px;
- opacity:.9;pointer-events:none;z-index:2}
+.hookah{position:absolute;right:-42px;bottom:-2px;width:48px;height:48px;
+ opacity:.95;pointer-events:none;z-index:2;
+ filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
 .hookah svg{width:100%;height:100%;display:block}
 /* Two puffs off the bowl, the second offset so they read as a rhythm
    rather than one blob. They hang off the seat, which render() rebuilds
    every snapshot -- see smokeUntil for why that is safe. */
-.hookah::before,.hookah::after{content:"";position:absolute;left:7px;top:-7px;
- width:11px;height:11px;border-radius:50%;background:rgba(226,238,255,.55);
+.hookah::before,.hookah::after{content:"";position:absolute;left:17px;top:-6px;
+ width:14px;height:14px;border-radius:50%;background:rgba(226,238,255,.6);
  /* The blur is what turns these from two grey dots into smoke. */
  filter:blur(3px);opacity:0;pointer-events:none}
 .seat.smoking .hookah::before{animation:hookahpuff 3.4s ease-out}
@@ -254,15 +255,25 @@ button:disabled{opacity:.35}
    static markup rather than a per-render node so it survives the seat
    rebuild, and sits directly after #oval so it floats over the table but
    under the board cards and the seat plaques. */
-.haze{position:absolute;inset:0;pointer-events:none;opacity:0;filter:blur(7px);
- background:radial-gradient(58% 42% at 50% 56%,rgba(214,232,255,.34),
-  rgba(214,232,255,.13) 55%,transparent 76%)}
-.haze.go{animation:hookahhaze 4.2s ease-out}
+/* Five overlapping blobs rather than one centred wash: a single gradient
+   reads as "the table got slightly lighter", while lumpy overlapping ones
+   read as actual smoke. The blur is what fuses them into cloud. */
+.haze{position:absolute;inset:0;pointer-events:none;opacity:0;filter:blur(11px);
+ background:
+  radial-gradient(26% 32% at 28% 44%,rgba(232,244,255,.62),transparent 70%),
+  radial-gradient(32% 38% at 56% 62%,rgba(216,234,255,.58),transparent 72%),
+  radial-gradient(22% 28% at 74% 40%,rgba(236,246,255,.50),transparent 70%),
+  radial-gradient(38% 28% at 44% 76%,rgba(212,230,255,.46),transparent 74%),
+  radial-gradient(20% 26% at 86% 66%,rgba(226,240,255,.40),transparent 72%)}
+.haze.go{animation:hookahhaze 6.5s ease-out}
+/* Opacity holds a plateau from 14% to 68% instead of touching 1 for an
+   instant. The earlier curve peaked and immediately fell away, which on a
+   phone read as nothing having happened at all. */
 @keyframes hookahhaze{
- 0%{opacity:0;transform:translate(-13%,7%) scale(.72)}
- 26%{opacity:1}
- 68%{opacity:.72}
- 100%{opacity:0;transform:translate(11%,-5%) scale(1.34)}}
+ 0%{opacity:0;transform:translate(-15%,8%) scale(.7)}
+ 14%{opacity:1}
+ 68%{opacity:1}
+ 100%{opacity:0;transform:translate(13%,-6%) scale(1.42)}}
 @media (prefers-reduced-motion:reduce){
  .seat.smoking .hookah::before,.seat.smoking .hookah::after{animation:none}
  .haze.go{animation:none}}
@@ -585,16 +596,57 @@ const DROID='<svg viewBox="0 0 24 18" aria-hidden="true">'+
   '<circle cx="7" cy="7.2" r=".95" fill="#f6d879"/><circle cx="13" cy="7.2" r=".95" fill="#f6d879"/>'+
   '<rect x="2" y="11.2" width="16" height="5.4" rx="1.6"/></svg>';
 const CARD_BACK_DROID='<span class="card back droid">'+DROID+'</span>';
-// The hookah standing at Data Android God's seat. Brass over smoked glass,
-// to sit with the gold leaf of his card back.
-const HOOKAH='<svg viewBox="0 0 16 24" aria-hidden="true">'+
-  '<ellipse cx="8" cy="18" rx="4.6" ry="5" fill="#2f4f74" stroke="#c9a253" stroke-width=".7"/>'+
-  '<ellipse cx="6.6" cy="16.4" rx="1.5" ry="2" fill="rgba(255,255,255,.16)"/>'+
-  '<rect x="7.1" y="6.4" width="1.8" height="7.2" fill="#c9a253"/>'+
-  '<rect x="5.7" y="4.6" width="4.6" height="2" rx=".5" fill="#8f6a12"/>'+
-  '<rect x="6.5" y="3.2" width="3" height="1.6" rx=".5" fill="#c9a253"/>'+
-  '<path d="M9.2 11.6c3.5.7 4.9 2.7 4.3 5.4" stroke="#c9a253" stroke-width="1" '+
-    'fill="none" stroke-linecap="round"/></svg>';
+// The hookah standing at Data Android God's seat. Full-colour icon from
+// SVG Repo, inlined so the page stays self-contained -- the Mini App
+// ships as one template with no static asset route behind it.
+const HOOKAH='<svg viewBox="0 0 512 512" aria-hidden="true">'+
+  '<path fill="#E6E6E6" d="M143.689,304.14c-10.762,0-24.01-2.373-36.786-10.934c-32.074-21.494-29.09'+
+  '5-61.117-28.953-62.794 c2.108-24.763,17.813-41.76,24.468-47.919c26.449-24.473,58.97-19.741,96.62'+
+  '7-14.263c35.723,5.197,76.212,11.088,123.953-4.751 c17.366-5.763,49.691-16.488,72.482-47.314c22.7'+
+  '58-30.782,25.353-66.145,23.522-90.388c-0.357-4.727,3.185-8.848,7.913-9.205 c4.729-0.358,8.849,3.'+
+  '186,9.205,7.913c1.679,22.224,0.425,65.014-26.836,101.886c-26.025,35.2-63.074,47.493-80.88,53.401'+
+  ' c-51.597,17.119-96.084,10.646-131.83,5.447c-36.031-5.242-62.065-9.031-82.496,9.875c-5.187,4.799'+
+  '-17.424,17.993-19.023,36.774 c-0.026,0.31-2.359,31.154,21.404,47.077c18.458,12.37,39.126,6.989,4'+
+  '3.081,5.787c4.538-1.381,9.331,1.178,10.711,5.712 '+
+  'c1.38,4.536-1.178,9.33-5.713,10.71C161.041,302.219,153.371,304.14,143.689,304.14z"/><path '+
+  'fill="#FFDB6C" '+
+  'd="M221.786,145.074c-4.74,0-8.584-3.842-8.584-8.584v-27.669c0-4.742,3.843-8.584,8.584-8.584 '+
+  'c4.74,0,8.584,3.842,8.584,8.584v27.669C230.369,141.232,226.526,145.074,221.786,145.074z"/><path '+
+  'fill="#634E9B" d="M337.031,473.087H107.218c-17.577,0-31.825,14.249-31.825,31.825l0,0c0,3.898,3.1'+
+  '9,7.088,7.088,7.088 h279.289c3.898,0,7.088-3.19,7.088-7.088l0,0C368.857,487.336,354.608,473.087,'+
+  '337.031,473.087z"/><path fill="#FFDB6C" '+
+  'd="M148.12,473.092c-14.728-16.686-23.665-38.604-23.665-62.61c0-52.275,42.377-94.65,94.65-94.65 '+
+  's94.65,42.377,94.65,94.65c0,24.006-8.936,45.924-23.665,62.609"/><path fill="#FFB04C" '+
+  'd="M219.106,315.831c-6.519,0-12.884,0.66-19.033,1.915c43.152,8.809,75.619,46.981,75.619,92.736 c'+
+  '0,24.006-8.936,45.924-23.665,62.609H148.119l0,0l141.973-0.001c14.727-16.686,23.665-38.604,23.665'+
+  '-62.609 C313.757,358.208,271.381,315.831,219.106,315.831z"/><path fill="#6EAECD" d="M259.321,315'+
+  '.831H184.93c-12.642,0-22.89-10.248-22.89-22.89l0,0c0-12.642,10.248-22.89,22.89-22.89 h74.392c12.'+
+  '642,0,22.89,10.248,22.89,22.89l0,0C282.21,305.583,271.962,315.831,259.321,315.831z"/><path '+
+  'fill="#5388B4" d="M259.32,270.051h-28.231c12.642,0,22.89,10.248,22.89,22.89l0,0c0,12.642-10.248,'+
+  '22.89-22.89,22.89 h28.231c12.642,0,22.89-10.248,22.89-22.89l0,0C282.21,280.3,271.962,270.051,259'+
+  '.32,270.051z"/><path fill="#634E9B" '+
+  'd="M276.203,108.822H168.048c-12.642,0-22.89-10.248-22.89-22.89v-4.359 c0-2.649,2.147-4.797,4.797'+
+  '-4.797h144.341c2.65,0,4.797,2.147,4.797,4.797v4.359C299.091,98.574,288.843,108.822,276.203,108.8'+
+  '22z"/><path fill="#4C3A7A" d="M269.813,76.776v9.156c0,12.642-10.248,22.89-22.89,22.89h29.279c12.'+
+  '642,0,22.89-10.248,22.89-22.89 v-4.359c0-2.649-2.147-4.797-4.797-4.797H269.813z"/><path '+
+  'fill="#EE3446" '+
+  'd="M183.784,270.051c0-21.175,17.165-38.34,38.34-38.34s38.34,17.165,38.34,38.34"/><path '+
+  'fill="#BA2C53" d="M222.124,231.711c-4.119,0-8.084,0.657-11.803,1.86c15.398,4.979,26.538,19.425,2'+
+  '6.538,36.481h23.605 C260.465,248.877,243.3,231.711,222.124,231.711z"/><g><circle fill="#42A555" '+
+  'cx="221.78" cy="207.828" r="23.885"/><circle fill="#42A555" cx="222.306" cy="160.057" '+
+  'r="23.885"/></g><g><path fill="#427451" '+
+  'd="M221.786,183.94c-3.327,0-6.493,0.683-9.371,1.912c8.533,3.644,14.516,12.109,14.516,21.974 s-5.'+
+  '982,18.33-14.516,21.974c2.877,1.229,6.044,1.912,9.371,1.912c13.191,0,23.885-10.694,23.885-23.887'+
+  ' C245.672,194.634,234.978,183.94,221.786,183.94z"/><path fill="#427451" '+
+  'd="M222.306,136.168c-3.327,0-6.493,0.683-9.371,1.912c8.533,3.644,14.516,12.109,14.516,21.974 s-5'+
+  '.982,18.33-14.516,21.973c2.877,1.229,6.044,1.912,9.371,1.912c13.191,0,23.885-10.694,23.885-23.88'+
+  '5 C246.192,146.862,235.498,136.168,222.306,136.168z"/></g><path fill="#FFDB6C" '+
+  'd="M245.672,76.776H197.9l-23.563-66.217C172.505,5.41,176.322,0,181.787,0h76.957 '+
+  'c5.328,0,9.131,5.161,7.552,10.249L245.672,76.776z"/><path fill="#FFB04C" d="M244.052,0L220.25,76'+
+  '.776h25.421l20.625-66.528C267.874,5.161,264.071,0,258.743,0H244.052z"/><path fill="#4C3A7A" '+
+  'd="M337.031,473.087h-47.196c17.455,0,31.605,14.149,31.605,31.605V512h40.33 '+
+  'c3.914,0,7.088-3.174,7.088-7.088l0,0C368.857,487.336,354.608,473.087,337.031,473.087z"/>'+
+  '</svg>';
 function backFor(userID){
   if(userID==="bot:1")return CARD_BACK_BO;
   if(userID==="bot:2")return CARD_BACK_DROID;
