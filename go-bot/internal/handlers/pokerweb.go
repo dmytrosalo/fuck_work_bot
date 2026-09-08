@@ -187,6 +187,7 @@ button{flex:1;padding:12px 0;border:0;border-radius:8px;font-weight:700;font-siz
  background:#243147;color:#c9d5e8}
 button.pri{background:#e8a33d;color:#2b1d05}
 button.dng{background:#3a2029;color:#e08a9a}
+button.ghost{background:transparent;color:#8fa1bd;border:1px dashed #34435c}
 button:disabled{opacity:.35}
 #msg{text-align:center;padding:8px;color:#9fb0c9;font-size:12px;min-height:18px}
 /* Pre-action row. Occupies the same slot as #acts and only one of the two is
@@ -301,10 +302,78 @@ button:disabled{opacity:.35}
  20%{transform:translateX(-50%) translateY(0) scale(1)}
  84%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
  100%{opacity:0;transform:translateX(-50%) translateY(-7px) scale(1)}}
+/* Супер гра: a centred modal over the felt, hidden unless a game from
+   v.super is live. Like #win and .haze it must never swallow a tap meant
+   for the table underneath -- display:none simply removes it from
+   hit-testing, so that guarantee holds for free whenever .on is absent,
+   the same way #buyin's overlay works. */
+#supergame{position:absolute;inset:0;display:none;align-items:center;
+ justify-content:center;background:rgba(6,10,18,.72);z-index:7}
+#supergame.on{display:flex}
+.sgbox{background:linear-gradient(160deg,#1b2536,#121927);
+ border:1px solid #33415a;border-radius:16px;padding:16px 18px;
+ min-width:220px;max-width:86%;text-align:center;
+ box-shadow:0 10px 34px rgba(0,0,0,.6)}
+.sgtitle{font-size:15px;font-weight:800;color:#ffd166;letter-spacing:.02em}
+.sgstake{color:#7ddba5;font-weight:700;font-size:13px;margin-top:2px}
+.sgbody{min-height:66px;display:flex;flex-direction:column;align-items:center;
+ justify-content:center;gap:6px;margin:10px 0}
+.sgdice{display:flex;gap:10px;justify-content:center}
+.sgdie{font-size:40px;line-height:1;display:inline-block}
+/* The face text is swapped by JS on a fixed, non-random cadence -- see
+   SG_TUMBLE_SEQ -- this animation only supplies the wobble. */
+.sgdie.tumbling{animation:dicetumble .16s linear infinite}
+.sgcard{display:inline-block;background:#fff;color:#111;border-radius:8px;
+ width:56px;height:78px;line-height:78px;font-size:24px;font-weight:800;
+ box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.sgcard.back{background:linear-gradient(135deg,#2b4a7a,#1a2d4d)}
+.sgcard.red{color:#d62828}
+.sgcard.flip{animation:cardflip 1.2s ease-in-out}
+.sglabel{color:#8fa1bd;font-size:11px}
+.sgoutcome{font-size:18px;font-weight:800;color:#ffd166}
+.sgdelta{font-size:15px;font-weight:700;color:#7ddba5}
+.sgbody.win{animation:superwin 2.8s ease-out}
+.sgbody.bust,.sgbody.half{animation:superlose 2.8s ease-out forwards}
+.sgbody.bust .sgdelta,.sgbody.half .sgdelta{color:#e08a9a}
+.sgbody.push{animation:sgpulse 2.8s ease-out}
+.sgbody.skip{animation:sgfade 1s ease-out}
+.sgacts{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.sgacts button{flex:0 0 auto;min-width:84px}
+.sgwait{color:#9fb0c9;font-size:12px;margin-top:8px;min-height:16px}
+@keyframes dicetumble{
+ 0%{transform:rotate(0) scale(1)}
+ 25%{transform:rotate(-16deg) scale(1.08)}
+ 50%{transform:rotate(12deg) scale(.94)}
+ 75%{transform:rotate(-8deg) scale(1.05)}
+ 100%{transform:rotate(0) scale(1)}}
+@keyframes cardflip{
+ 0%{transform:rotateY(0) scale(1)}
+ 45%{transform:rotateY(92deg) scale(1.05)}
+ 55%{transform:rotateY(88deg) scale(1.05)}
+ 100%{transform:rotateY(0) scale(1)}}
+@keyframes superwin{
+ 0%{transform:scale(.7);opacity:0;filter:drop-shadow(0 0 0 rgba(255,209,102,0))}
+ 30%{transform:scale(1.2);opacity:1;filter:drop-shadow(0 0 18px rgba(255,209,102,.9))}
+ 60%{transform:scale(1);filter:drop-shadow(0 0 10px rgba(255,209,102,.6))}
+ 100%{transform:scale(1);opacity:1;filter:drop-shadow(0 0 0 rgba(255,209,102,0))}}
+@keyframes superlose{
+ 0%{filter:grayscale(0);opacity:1;transform:scale(1)}
+ 40%{filter:grayscale(.7);opacity:.85;transform:scale(.97)}
+ 100%{filter:grayscale(1);opacity:.6;transform:scale(.94)}}
+@keyframes sgpulse{
+ 0%{transform:scale(1);opacity:.6}
+ 30%{transform:scale(1.06);opacity:1}
+ 100%{transform:scale(1);opacity:1}}
+@keyframes sgfade{
+ 0%{opacity:.4}
+ 100%{opacity:1}}
 @media (prefers-reduced-motion:reduce){
  .seat.smoking .hookah::before,.seat.smoking .hookah::after{animation:none}
  .haze.go{animation:none}
- .seat.blaming .blame{animation:none}}
+ .seat.blaming .blame{animation:none}
+ .sgdie.tumbling{animation:none}
+ .sgcard.flip{animation:none}
+ .sgbody.win,.sgbody.bust,.sgbody.half,.sgbody.push,.sgbody.skip{animation:none}}
 </style></head><body>
 <div id="bar"><span id="session">♠ Покер</span><span id="blinds"></span>
  <button id="themebtn" title="Колір столу">🎨</button>
@@ -328,6 +397,18 @@ button:disabled{opacity:.35}
   <button data-felt="" id="feltrandom" title="Випадкове фото">🎲</button>
 </div>
 <div id="felt"><div id="oval"></div><div id="haze" class="haze"></div><div id="centre"><div id="board"></div><div id="pot"></div></div><div id="win"><b></b></div>
+<div id="supergame"><div class="sgbox">
+  <div class="sgtitle">Супер гра</div>
+  <div class="sgstake"></div>
+  <div class="sgbody"></div>
+  <div class="sgacts">
+    <button data-sg="dice">Кубики</button>
+    <button data-sg="red">Червоне</button>
+    <button data-sg="black">Чорне</button>
+    <button data-sg="skip" class="ghost">Пас</button>
+  </div>
+  <div class="sgwait"></div>
+</div></div>
  <div id="buyin"><h3>Скільки береш за стіл?</h3><div class="opts"></div><div class="bal"></div></div></div>
 <div id="mine"><span><span id="me"></span><span id="stack"></span></span><span id="hole"></span></div>
 <div id="handline"></div>
@@ -770,6 +851,14 @@ let lastStage=null;
 // Latch so the win banner plays once per hand — see render().
 let winShown=false;
 
+// Latches the Супер гра outcome, on the same principle as winShown just
+// above: state.super rebroadcasts while the result sits on screen (another
+// player's chat message, another seat's move, ...) and the result animation
+// must play exactly once, not restart on every one of those. Reset to null
+// the instant the panel disappears (state.super absent), which is also the
+// only moment a NEW game can legitimately reuse the same outcome value.
+let sgShown=null;
+
 // Data Android God's hookah smoke. render() rebuilds every .seat from
 // scratch on each snapshot, so a class dropped straight onto his seat would
 // vanish on the next one mid-puff. smokeUntil is the state instead: render()
@@ -872,6 +961,112 @@ function showWin(n){
   el.classList.remove("go");
   void el.offsetWidth;
   el.classList.add("go");
+}
+
+// Супер гра result playback. Every function below is driven ENTIRELY by
+// values the server already decided (g.dice, g.card, g.outcome, g.delta) --
+// nothing here rolls or picks anything, which is why SG_TUMBLE_SEQ below is
+// a fixed sequence and not Math.random(): real богдудіки move on this, and
+// a client-side roll of any kind would be a money bug.
+const DICE_FACE=["","⚀","⚁","⚂","⚃","⚄","⚅"];
+const SUPER_OUTCOME_UA={double:"×2! Подвоєння",keep:"×1 — без змін",
+  half:"×½ — половина",bust:"Банкрут",skip:"Пас"};
+const SG_PROCESS_MS=1200,SG_OUTCOME_MS=2800;
+// Fixed cycling order for the dice "tumble" before it lands on the real
+// v.super.dice — decoration only, see the block comment above.
+const SG_TUMBLE_SEQ=[2,5,3,6,1,4,2,6,3,5,1,4];
+
+function sgSetCard(el,s){
+  el.textContent=s||"";
+  el.classList.toggle("red",!!(s&&(s.indexOf("♦")>=0||s.indexOf("♥")>=0)));
+}
+
+// Counts a delta from 0 up (or down) to its real, server-decided value over
+// ms milliseconds. The number it settles on is g.delta — this only paces
+// how it gets there.
+function sgAnimateDelta(el,to,ms){
+  const start=performance.now();
+  function step(now){
+    const t=Math.min(1,(now-start)/ms);
+    const v=Math.round(to*t);
+    el.textContent=(v>0?"+":"")+v+" 🪙";
+    if(t<1)requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function sgPlayDice(body,dice,done){
+  const wrap=document.createElement("div");
+  wrap.className="sgdice";
+  const d1=document.createElement("span");d1.className="sgdie tumbling";
+  const d2=document.createElement("span");d2.className="sgdie tumbling";
+  d1.textContent=DICE_FACE[1];d2.textContent=DICE_FACE[1];
+  wrap.appendChild(d1);wrap.appendChild(d2);
+  body.appendChild(wrap);
+  let step=0;
+  const iv=setInterval(()=>{
+    step=(step+1)%SG_TUMBLE_SEQ.length;
+    d1.textContent=DICE_FACE[SG_TUMBLE_SEQ[step]];
+    d2.textContent=DICE_FACE[SG_TUMBLE_SEQ[(step+6)%SG_TUMBLE_SEQ.length]];
+  },90);
+  setTimeout(()=>{
+    clearInterval(iv);
+    d1.classList.remove("tumbling");d2.classList.remove("tumbling");
+    d1.textContent=DICE_FACE[(dice&&dice[0])||1];
+    d2.textContent=DICE_FACE[(dice&&dice[1])||1];
+    done();
+  },SG_PROCESS_MS);
+}
+
+function sgPlayCard(body,cardStr,pick,done){
+  if(pick){
+    const lbl=document.createElement("div");
+    lbl.className="sglabel";
+    lbl.textContent="Ставка: "+(pick==="red"?"червоне":"чорне");
+    body.appendChild(lbl);
+  }
+  const c=document.createElement("span");
+  c.className="sgcard back flip";
+  body.appendChild(c);
+  setTimeout(()=>{
+    c.classList.remove("back");
+    sgSetCard(c,cardStr);
+  },SG_PROCESS_MS/2);
+  setTimeout(done,SG_PROCESS_MS);
+}
+
+function sgPlayOutcome(bodyWrap,g){
+  const cls={double:"win",keep:"push",half:"half",bust:"bust",skip:"skip"}[g.outcome]||"";
+  if(cls)bodyWrap.classList.add(cls);
+  const lbl=document.createElement("div");
+  lbl.className="sgoutcome";
+  lbl.textContent=SUPER_OUTCOME_UA[g.outcome]||g.outcome;
+  bodyWrap.appendChild(lbl);
+  // A pass reads as a quiet dismissal, not a loss: no delta to count for it.
+  if(g.outcome!=="skip"){
+    const amt=document.createElement("div");
+    amt.className="sgdelta";
+    bodyWrap.appendChild(amt);
+    sgAnimateDelta(amt,g.delta||0,SG_OUTCOME_MS);
+  }
+}
+
+// Plays the process animation for whichever game v.super WAS (dice tumble
+// or card flip), then the outcome animation. Called once per resolved game
+// — see sgShown in render().
+function playSuperResult(g){
+  const body=document.querySelector("#supergame .sgbody");
+  body.className="sgbody";
+  body.innerHTML="";
+  if(g.game==="dice"){
+    sgPlayDice(body,g.dice,()=>sgPlayOutcome(body,g));
+  }else if(g.game==="color"){
+    sgPlayCard(body,g.card,g.pick,()=>sgPlayOutcome(body,g));
+  }else{
+    // "skip", or anything else the server ever sends without a process
+    // step: straight to the (quiet) outcome.
+    sgPlayOutcome(body,g);
+  }
 }
 
 // Recomputes the action row (call amount, enabled/disabled) from the last
@@ -1137,6 +1332,32 @@ function render(v){
       if(BLAME[s.user_id]&&(s.won||0)< -(v.big_blind||0))maybeBlame(s.user_id);
     }
   }
+
+  // Супер гра: rendered entirely off v.super, which the server sends
+  // identically to every seat at the table. The client only ever displays
+  // what it's told — see playSuperResult for why no roll ever happens here.
+  const sgEl=document.getElementById("supergame");
+  const g=v.super;
+  if(!g){
+    sgEl.classList.remove("on");
+    sgShown=null;
+  }else{
+    sgEl.classList.add("on");
+    const mine=g.user_id===myUserID;
+    sgEl.querySelector(".sgacts").style.display=(mine&&g.state==="offered")?"":"none";
+    sgEl.querySelector(".sgwait").textContent=
+      g.state==="offered"
+        ? (mine?("Обирай — "+g.left+" с"):("«"+g.name+"» грає Супер гру — "+g.left+" с"))
+        : "";
+    sgEl.querySelector(".sgstake").textContent=g.stake+" 🪙";
+    // Latched so a repeated broadcast (another player's move, a chat
+    // message, ...) while the result sits on screen never restarts it.
+    if(g.state==="resolved"&&sgShown!==g.outcome){
+      sgShown=g.outcome;
+      playSuperResult(g);
+    }
+  }
+
   document.getElementById("me").textContent=me?clip(me.name):"";
   document.getElementById("stack").textContent=me?me.stack:"";
   const holeEl=document.getElementById("hole");
@@ -1310,6 +1531,30 @@ document.getElementById("avbtn").onclick=()=>{
   avBox.querySelectorAll("button").forEach(b=>
     b.classList.toggle("sel",Number(b.getAttribute("data-av"))===mine));
 };
+
+// Супер гра buttons. Hidden the instant one is tapped so a double-tap
+// cannot fire two requests — the server refuses the second anyway (409
+// Хід уже пройшов-style), this is belt and braces. There is no response
+// body to render: the broadcast that follows updates this viewer along
+// with everyone else, so this never calls render() itself.
+document.querySelectorAll("#supergame [data-sg]").forEach(btn=>{
+  btn.addEventListener("click",async()=>{
+    const k=btn.dataset.sg;
+    const body=k==="dice"?{game:"dice"}:k==="skip"?{game:"skip"}:{game:"color",pick:k};
+    document.querySelector("#supergame .sgacts").style.display="none";
+    try{
+      const r=await fetch("/api/poker/"+TABLE+"/super",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-Telegram-Init-Data":INIT},
+        body:JSON.stringify(body)
+      });
+      // Never re-post on failure: 409 means it's already resolved, 500
+      // means the payout failed server-side — either way the next
+      // broadcast is the source of truth, not a retry from here.
+      if(!r.ok)setError(r.status===409?"Супер гру вже зіграно":"Не вдалося зіграти Супер гру");
+    }catch(e){setError("Зʼєднання втрачено…")}
+  });
+});
 
 // Recent hands, fetched on demand. Deliberately not carried on the state
 // payload: ten boards on every broadcast would cost far more than a list

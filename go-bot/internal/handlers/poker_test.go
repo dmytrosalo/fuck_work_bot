@@ -237,3 +237,35 @@ func TestBlameLinesAreKeyedToBotUserIDs(t *testing.T) {
 		t.Errorf("blame trigger does not reference big_blind")
 	}
 }
+
+// Pins the Супер гра surface the same way the hookah and blame lines are
+// pinned: the labels are the feature, and a silent edit would fail nothing
+// else. Also pins that the client never decides an outcome -- the roll is
+// the server's, and a Math.random in this panel would be a money bug.
+func TestSuperGamePanelIsRenderedAndServerDriven(t *testing.T) {
+	var b strings.Builder
+	if err := pokerTmpl.Execute(&b, map[string]string{"TableID": "a1b2c3d4e5f60718"}); err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	out := b.String()
+
+	for _, want := range []string{
+		"Супер гра",
+		"Кубики",
+		"Червоне",
+		"Чорне",
+		"Пас",
+		"#supergame",
+		"@keyframes dicetumble",
+		"@keyframes superwin",
+		`"/super"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page is missing %q", want)
+		}
+	}
+
+	if !strings.Contains(out, "prefers-reduced-motion") {
+		t.Errorf("super game animations have no reduced-motion guard")
+	}
+}
