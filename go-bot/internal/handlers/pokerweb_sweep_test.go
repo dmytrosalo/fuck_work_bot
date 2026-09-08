@@ -921,6 +921,12 @@ func TestSweepOnceDrivesBotsToShowdownAndSettlesOnce(t *testing.T) {
 		// left behind by an earlier chopped-pot retry — corrupting exactly
 		// the before/after balance snapshot this test depends on.
 		h := NewPokerHub(db, nil, "test-token")
+		// Pin superRoll to always miss the 15% chance gate: this hand qualifies
+		// for an offered Супер гра, and without pinning, the test would hold
+		// the showdown open 15% of the time (a latent flake on assertions that
+		// check final balances assuming the hand fully settled). The test cares
+		// about settlement behavior, not super game rolls.
+		h.superRoll = func() float64 { return 1.0 }
 		tbl := h.Create(int64(attempt))
 		tbl.Lock()
 		if err := tbl.Sit("111", "Alice", aliceBuyIn); err != nil {
