@@ -17,6 +17,9 @@ type SeatView struct {
 	// cannot tell them apart from an active player and renders them
 	// holding face-down cards they do not have.
 	InHand bool `json:"in_hand"`
+	// Asleep is true for a seat that timed out its turn clock and is sitting
+	// out: not dealt in, posts no blinds, until Wake clears it.
+	Asleep bool `json:"asleep,omitempty"`
 	// Avatar indexes the client's avatar pool. Public by design: everyone
 	// at the table sees which one you picked.
 	Avatar int      `json:"avatar"`
@@ -105,7 +108,7 @@ func (t *Table) ViewFor(userID string) TableView {
 		sv := SeatView{
 			UserID: s.UserID, Name: s.Name, Stack: s.Stack, Bet: s.Bet,
 			Folded: s.Folded, AllIn: s.AllIn, InHand: s.InHand, ToAct: i == t.ToAct,
-			Avatar: s.Avatar,
+			Avatar: s.Avatar, Asleep: s.Asleep,
 		}
 		if t.Stage == StageShowdown && s.InHand {
 			sv.Won = s.Stack - s.startStack

@@ -156,6 +156,11 @@ func (t *Table) advance() {
 // has expired: check if it is free, otherwise fold. Reports whether it acted.
 // Without this, a player who closes Telegram mid-hand freezes the table
 // forever with chips already committed to the pot.
+//
+// The seat that timed out is then put to sleep: not dealt into the next
+// hand, posts no blinds, sits out until Wake clears it. Without this, the
+// SAME player freezes the table again next hand, and the one after that,
+// forever — the auto-action alone only ever buys one hand's relief.
 func (t *Table) ForceTimeout() bool {
 	if t.Stage == StageWaiting || t.Stage == StageShowdown {
 		return false
@@ -168,5 +173,29 @@ func (t *Table) ForceTimeout() bool {
 	if s.Bet >= t.highBet() {
 		a = ActCheck
 	}
-	return t.Act(s.UserID, a, 0) == nil
+	// Taken BEFORE Act: Act can advance the hand (settle, deal a new
+	// street), which may move ToAct or otherwise leave no reliable way to
+	// re-find this seat afterwards.
+	if t.Act(s.UserID, a, 0) != nil {
+		return false
+	}
+	s.Asleep = true
+	return true
+}
+
+// Wake clears Asleep on userID's seat, so they are dealt back into the next
+// hand. Reports whether anything changed, and bumps Seq only then.
+func (t *Table) Wake(userID string) bool {
+	for _, s := range t.Seats {
+		if s.UserID != userID {
+			continue
+		}
+		if !s.Asleep {
+			return false
+		}
+		s.Asleep = false
+		t.Seq++
+		return true
+	}
+	return false
 }

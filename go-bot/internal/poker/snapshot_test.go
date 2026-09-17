@@ -105,3 +105,35 @@ func TestRestoreKeepsButtonInRange(t *testing.T) {
 		t.Errorf("restored table could not deal: %v", err)
 	}
 }
+
+// A restart wakes everyone: sleep state does not survive a snapshot/restore
+// round-trip. This pins the intended behaviour so a future change to carry
+// the Asleep field cannot silently make sleep survive a deploy.
+func TestRestoreWakesAsleepSeats(t *testing.T) {
+	tbl := NewTable("t", -1)
+	_ = tbl.Sit("a", "Dmytro", 5000)
+	_ = tbl.Sit("b", "Danya", 3000)
+
+	// Put one player to sleep and verify it stuck.
+	idx := tbl.SeatIndexOf("b")
+	tbl.Seats[idx].Asleep = true
+	if !tbl.Seats[idx].Asleep {
+		t.Fatal("setup: failed to put seat asleep")
+	}
+
+	// Round-trip through snapshot and restore.
+	snap := tbl.Snapshot()
+	restored := RestoreTable(snap)
+
+	// The restored seat must be awake, while its stack is preserved.
+	restoredIdx := restored.SeatIndexOf("b")
+	if restoredIdx < 0 {
+		t.Fatal("restored table missing the sleeping player")
+	}
+	if restored.Seats[restoredIdx].Asleep {
+		t.Error("restored seat is asleep, want awake after restart")
+	}
+	if restored.Seats[restoredIdx].Stack != 3000 {
+		t.Errorf("restored seat stack = %d, want 3000 — stack not preserved", restored.Seats[restoredIdx].Stack)
+	}
+}

@@ -299,3 +299,36 @@ func TestActBotsReturnsFalseWhenSeatToActIsHuman(t *testing.T) {
 	}
 	tbl.Unlock()
 }
+
+// TestHasActiveHumanIgnoresSleepingPlayers verifies that hasActiveHuman
+// treats a sleeping human as absent, preventing bots from dealing hands to
+// each other when the sole human is unavailable.
+func TestHasActiveHumanIgnoresSleepingPlayers(t *testing.T) {
+	h := NewPokerHub(nil, nil, "test-token")
+	tbl := h.Create(1)
+	tbl.Lock()
+	_ = tbl.Sit("u1", "Danya", 5000)
+	h.ensureBots(tbl)
+
+	// With the human awake, hasActiveHuman should return true.
+	if !hasActiveHuman(tbl) {
+		t.Error("hasActiveHuman = false with awake human, want true")
+	}
+
+	// Put the human to sleep.
+	idx := tbl.SeatIndexOf("u1")
+	tbl.Seats[idx].Asleep = true
+
+	// With the sole human asleep, hasActiveHuman should return false.
+	if hasActiveHuman(tbl) {
+		t.Error("hasActiveHuman = true with only sleeping human, want false")
+	}
+
+	// Wake the human; it should report true again.
+	tbl.Seats[idx].Asleep = false
+	if !hasActiveHuman(tbl) {
+		t.Error("hasActiveHuman = false after waking human, want true")
+	}
+
+	tbl.Unlock()
+}

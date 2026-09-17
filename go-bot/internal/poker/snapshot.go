@@ -28,6 +28,12 @@ type SeatSnapshot struct {
 // What must survive is the money and the seating: who is at the table, with
 // how many chips, plus the identity and clocks that the blind schedule and
 // the session display are computed from.
+//
+// Asleep is deliberately NOT carried over: a process restart wakes everyone
+// up. RestoreTable below builds plain new Seat structs, whose Asleep is the
+// zero value (false), so this is automatic — a restart is exactly the kind
+// of fresh start a stuck player should get, not one more reason to keep
+// sitting out.
 type TableSnapshot struct {
 	ID        string    `json:"id"`
 	ChatID    int64     `json:"chat_id"`

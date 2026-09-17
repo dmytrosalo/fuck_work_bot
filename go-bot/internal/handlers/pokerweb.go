@@ -130,6 +130,8 @@ body{margin:0;background:#0a0e17;color:#e6edf7;font:14px -apple-system,"Segoe UI
  font-size:11px;line-height:1.2}
 .seat .st{color:#7ddba5;font-size:12px;font-weight:700}
 .seat.folded{opacity:.4}
+.seat.asleep{opacity:.35}
+.sleepTag{display:block;margin-top:2px;color:#8fa1bd;font-size:11px}
 .seat.act .av{border-color:#ffd166;box-shadow:0 0 12px rgba(255,209,102,.6)}
 .seat.act .plaque{border-color:#ffd166;background:#1d2740}
 .seat.act .nm{color:#ffd166}
@@ -204,6 +206,11 @@ button:disabled{opacity:.35}
 #pre button.armed{background:#2f4462;color:#ffd166;border:1px solid #ffd166}
 #pre button:disabled{opacity:.3}
 .waitTag{display:block;margin-top:2px;color:#8fa1bd;font-size:9px;font-style:italic}
+/* Occupies the same slot as #acts, shown only to the sleeping player
+   themself — see applyButtons(). */
+#wakebox{display:none;padding:10px;background:#121927;text-align:center;color:#8fa1bd;font-size:12px}
+#wakebox.on{display:block}
+#wakebox button{margin-top:8px;background:#e8a33d;color:#2b1d05}
 /* Table chat */
 #chat{background:#0d1220;border-top:1px solid #1a2233}
 #chatlog{height:89px;overflow-y:auto;padding:7px 12px;font-size:14px;line-height:1.45}
@@ -429,6 +436,9 @@ button:disabled{opacity:.35}
   <button id="btn-check" disabled>Чек</button>
   <button id="btn-call" disabled>Колл</button>
   <button id="btn-raise" class="pri" disabled>Рейз</button>
+</div>
+<div id="wakebox">😴 Ти заснув після паузи — стіл грає без тебе<br>
+  <button id="btn-wake">Прокинутись</button>
 </div>
 <div id="raisebox">
   <div id="raiseval"></div>
@@ -1179,8 +1189,12 @@ function applyButtons(){
   // Not dealt in means nothing to pre-select: the queued action could only
   // fire on a LATER hand, against a price that no longer exists.
   const canQueue=live&&!!me&&me.in_hand&&!myTurn&&!me.folded&&!me.all_in;
-  document.getElementById("prewrap").classList.toggle("on",canQueue);
-  document.getElementById("acts").style.display=canQueue?"none":"flex";
+  // Asleep occupies the same slot as #acts/#prewrap — a sleeping player has
+  // nothing to act or pre-act on, only a way back in.
+  const asleep=!!(me&&me.asleep);
+  document.getElementById("wakebox").classList.toggle("on",asleep);
+  document.getElementById("prewrap").classList.toggle("on",canQueue&&!asleep);
+  document.getElementById("acts").style.display=asleep?"none":(canQueue?"none":"flex");
   if(!canQueue&&!myTurn)clearPre();
   const preCall=document.querySelector('#pre button[data-pre="call"]');
   preCall.textContent=toCall>0?("Колл "+toCall):"Колл";
@@ -1267,7 +1281,7 @@ function render(v){
     const ang=(Math.PI/2)+(2*Math.PI*((i-meIdx+n)%n)/n);
     const isActive=live&&s.to_act;
     const d=document.createElement("div");
-    d.className="seat"+(s.folded?" folded":"")+(isActive?" act":"");
+    d.className="seat"+(s.folded?" folded":"")+(s.asleep?" asleep":"")+(isActive?" act":"");
     // Keyed off user_id, never the display name — botNames is editable
     // prose and his card back and avatar already key off "bot:2" for the
     // same reason (see pokerbots.go).
@@ -1338,6 +1352,13 @@ function render(v){
       hole.className="oppHole";
       hole.innerHTML=s.hole?s.hole.map(c=>card(c,s.user_id===myUserID&&madeSet.has(c))).join(""):backsFor(s.user_id);
       d.appendChild(hole);
+    }else if(s.asleep){
+      // A distinct tag from the plain "чекає" wait below: this seat isn't
+      // between hands, it timed out and is sitting out until it wakes up.
+      const zzz=document.createElement("div");
+      zzz.className="sleepTag";
+      zzz.textContent="😴";
+      d.appendChild(zzz);
     }else if(!s.in_hand&&v.stage!=="waiting"){
       const wait=document.createElement("div");
       wait.className="waitTag";
@@ -1470,6 +1491,9 @@ function render(v){
   const holeEl=document.getElementById("hole");
   if(me&&me.hole&&me.hole.length){
     holeEl.innerHTML=me.hole.map(cardMaybeMade).join("");
+  }else if(me&&me.asleep&&live){
+    holeEl.innerHTML="";
+    holeEl.textContent="😴 Ти спиш — прокинься, щоб зіграти";
   }else if(me&&!me.in_hand&&live){
     // Sat down after the deal: explain the empty hand instead of leaving a
     // blank space that reads as a failure to load.
@@ -1784,6 +1808,18 @@ document.getElementById("leavebtn").onclick=async()=>{
     if(!view)return;
   }
   render(view);
+};
+
+// Waking up after a turn timeout put us to sleep. No local timer ever
+// re-arms this on its own — the state comes entirely from the server view.
+document.getElementById("btn-wake").onclick=async()=>{
+  let r;
+  try{
+    r=await fetch("/api/poker/"+TABLE+"/wake",{
+      method:"POST",headers:{"X-Telegram-Init-Data":INIT}});
+  }catch(e){setError("Зʼєднання втрачено…");return}
+  if(!r.ok){setError(await r.text());return}
+  render(await r.json());
 };
 
 const chatInput=document.getElementById("chatinput");
@@ -2339,6 +2375,8 @@ func (h *PokerHub) Register(mux *http.ServeMux) {
 			h.handleHistory(w, tbl)
 		case "leave":
 			h.handleLeave(w, tbl, uid)
+		case "wake":
+			h.handleWake(w, tbl, uid)
 		case "super":
 			h.handleSuper(w, r, tbl, uid)
 		default:
