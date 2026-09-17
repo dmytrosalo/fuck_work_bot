@@ -337,6 +337,28 @@ func main() {
 	}
 
 	// Take 777777 coins back from Danya.
+	// Gift Danya 10000 coins for the new Ксюха.
+	danyaKsyukha := "gift_danya_ksyukha_10000"
+	if db.GetMeta(danyaKsyukha) == "" {
+		if danyaID, found := db.FindUserByName("Danya"); found {
+			db.UpdateBalance(danyaID, "Danya", 10000)
+			db.LogTransaction(danyaID, "Danya", "gift", 10000)
+			db.SetMeta(danyaKsyukha, "done")
+			log.Println("Gifted Danya +10000 coins for the new Ксюха")
+
+			chats, _ := db.GetActiveChats()
+			for _, chatID := range chats {
+				id, err := strconv.ParseInt(chatID, 10, 64)
+				if err != nil {
+					continue
+				}
+				bot.Send(&tele.Chat{ID: id}, "🎁 Danya отримує 10000 богдудіків 🪙\n\nна нову ксюху")
+			}
+		} else {
+			log.Println("Danya not found in balances, Ксюха gift deferred to next boot")
+		}
+	}
+
 	danyaTake777 := "take_danya_777777"
 	if db.GetMeta(danyaTake777) == "" {
 		if danyaID, found := db.FindUserByName("Danya"); found {
